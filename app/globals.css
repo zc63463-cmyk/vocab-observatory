@@ -1,26 +1,172 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-canvas: #f6f1e7;
+  --color-canvas-deep: #e9dec9;
+  --color-panel: rgba(255, 251, 244, 0.85);
+  --color-panel-strong: rgba(247, 240, 227, 0.95);
+  --color-border: rgba(103, 77, 44, 0.16);
+  --color-border-strong: rgba(103, 77, 44, 0.28);
+  --color-ink: #231a12;
+  --color-ink-soft: rgba(35, 26, 18, 0.72);
+  --color-accent: #0f6f62;
+  --color-accent-2: #b2572f;
+  --color-highlight: #f3dca2;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--color-canvas);
+  --color-foreground: var(--color-ink);
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-heading);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(243, 220, 162, 0.75), transparent 32%),
+    radial-gradient(circle at 88% 10%, rgba(15, 111, 98, 0.14), transparent 20%),
+    linear-gradient(180deg, #f9f4ea 0%, #f6f1e7 38%, #efe6d7 100%);
+  color: var(--color-ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(178, 87, 47, 0.22);
+}
+
+.ambient-bg {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(110deg, rgba(15, 111, 98, 0.08), transparent 30%),
+    linear-gradient(290deg, rgba(178, 87, 47, 0.1), transparent 25%);
+  mask-image: radial-gradient(circle at center, black 55%, transparent 92%);
+}
+
+.panel {
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 16px 44px rgba(71, 50, 20, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.panel-strong {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-panel-strong);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 18px 52px rgba(71, 50, 20, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.section-title {
+  font-family: var(--font-heading), serif;
+  letter-spacing: -0.03em;
+}
+
+.prose-obsidian {
+  color: var(--color-ink-soft);
+}
+
+.prose-obsidian h1,
+.prose-obsidian h2,
+.prose-obsidian h3,
+.prose-obsidian h4 {
+  color: var(--color-ink);
+  font-family: var(--font-heading), serif;
+  letter-spacing: -0.03em;
+  margin-top: 1.3em;
+  margin-bottom: 0.5em;
+}
+
+.prose-obsidian p,
+.prose-obsidian li,
+.prose-obsidian blockquote {
+  line-height: 1.75;
+}
+
+.prose-obsidian ul,
+.prose-obsidian ol {
+  padding-left: 1.25rem;
+}
+
+.prose-obsidian blockquote {
+  border-left: 3px solid rgba(15, 111, 98, 0.28);
+  margin: 1.25rem 0;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.44);
+  border-radius: 0.85rem;
+}
+
+.prose-obsidian code {
+  background: rgba(35, 26, 18, 0.08);
+  border-radius: 0.4rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.9em;
+}
+
+.prose-obsidian table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 0.9rem;
+  margin: 1rem 0;
+}
+
+.prose-obsidian th,
+.prose-obsidian td {
+  border: 1px solid rgba(103, 77, 44, 0.16);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.prose-obsidian thead {
+  background: rgba(15, 111, 98, 0.08);
+}
+
+.prose-obsidian mark {
+  background: var(--color-highlight);
+  color: var(--color-ink);
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.25rem;
+}
+
+.soft-grid {
+  background-image:
+    linear-gradient(rgba(103, 77, 44, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 77, 44, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: center;
+}
+
+.pill {
+  border: 1px solid rgba(15, 111, 98, 0.16);
+  background: rgba(15, 111, 98, 0.08);
+  color: #0c534a;
+}
+
+.pill-warm {
+  border: 1px solid rgba(178, 87, 47, 0.16);
+  background: rgba(178, 87, 47, 0.08);
+  color: #8a4525;
 }

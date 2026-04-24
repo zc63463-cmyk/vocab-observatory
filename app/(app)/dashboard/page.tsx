@@ -1,0 +1,227 @@
+import Link from "next/link";
+import { Badge } from "@/components/ui/Badge";
+import { MetricCard } from "@/components/ui/MetricCard";
+import { getDashboardSummary } from "@/lib/dashboard";
+import { formatDate, formatDateTime } from "@/lib/utils";
+
+export default async function DashboardPage() {
+  const summary = await getDashboardSummary();
+  const maxReviewVolume = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
+  const distributionEntries = [
+    { label: "Again", value: summary.ratingDistribution.again },
+    { label: "Hard", value: summary.ratingDistribution.hard },
+    { label: "Good", value: summary.ratingDistribution.good },
+    { label: "Easy", value: summary.ratingDistribution.easy },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <section className="panel-strong rounded-[2rem] p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+          Owner Dashboard
+        </p>
+        <h1 className="section-title mt-3 text-5xl font-semibold">学习仪表盘</h1>
+        <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-ink-soft)]">
+          这里汇总当前复习负载、今日完成量、笔记数和最近活动。后续可以在此基础上继续扩展更细的统计。
+        </p>
+      </section>
+
+      {summary.configured ? (
+        <>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Tracked Words" value={summary.metrics.trackedWords} />
+            <MetricCard label="Due Today" value={summary.metrics.dueToday} tone="warm" />
+            <MetricCard label="Reviewed Today" value={summary.metrics.reviewedToday} />
+            <MetricCard label="Reviewed 7d" value={summary.metrics.reviewed7d} tone="warm" />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="panel rounded-[1.75rem] p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title text-2xl font-semibold">最近一次同步</h2>
+                  <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                    词库导入是否健康、失败文件是否可追踪，都从这里确认。
+                  </p>
+                </div>
+                {summary.importOverview.latestRun ? (
+                  <Badge
+                    tone={
+                      summary.importOverview.latestRun.status === "completed_with_errors" ||
+                      summary.importOverview.latestRun.status === "failed"
+                        ? "warm"
+                        : "default"
+                    }
+                  >
+                    {summary.importOverview.latestRun.status}
+                  </Badge>
+                ) : null}
+              </div>
+
+              {!summary.importOverview.available ? (
+                <p className="mt-5 text-sm text-[var(--color-ink-soft)]">
+                  尚未应用导入追踪迁移，运行 `0003_import_tracking.sql` 后这里会显示同步历史。
+                </p>
+              ) : !summary.importOverview.latestRun ? (
+                <p className="mt-5 text-sm text-[var(--color-ink-soft)]">
+                  还没有导入历史。下一次执行 `/api/imports/github` 后会在此记录。
+                </p>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <MetricCard label="Created" value={summary.importOverview.latestRun.created_count} />
+                    <MetricCard label="Updated" value={summary.importOverview.latestRun.updated_count} />
+                    <MetricCard label="Errors" value={summary.importOverview.latestRun.error_count} tone="warm" />
+                  </div>
+                  <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+                    <p>开始时间：{formatDateTime(summary.importOverview.latestRun.started_at)}</p>
+                    <p>结束时间：{formatDateTime(summary.importOverview.latestRun.finished_at)}</p>
+                    <p>有效导入：{summary.importOverview.latestRun.imported_count}</p>
+                    <p>未变化：{summary.importOverview.latestRun.unchanged_count}</p>
+                    <p>软删除：{summary.importOverview.latestRun.soft_deleted_count}</p>
+                  </div>
+                  {summary.importOverview.recentErrors.length > 0 ? (
+                    <div className="space-y-3">
+                      {summary.importOverview.recentErrors.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                        >
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                            {entry.error_stage}
+                          </p>
+                          <p className="mt-2 font-semibold">{entry.source_path ?? "pipeline"}</p>
+                          <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">
+                            {entry.error_message}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </section>
+
+            <section className="panel rounded-[1.75rem] p-6">
+              <h2 className="section-title text-2xl font-semibold">7 天复习趋势</h2>
+              <div className="mt-5 space-y-4">
+                {summary.reviewVolume7d.map((item) => (
+                  <div key={item.date} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-[var(--color-ink-soft)]">
+                      <span>{formatDate(item.date)}</span>
+                      <span>{item.count}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(15,111,98,0.08)]">
+                      <div
+                        className="h-2 rounded-full bg-[var(--color-accent)]"
+                        style={{ width: `${(item.count / maxReviewVolume) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                  评分分布
+                </h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {distributionEntries.map((entry) => (
+                    <div
+                      key={entry.label}
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                        {entry.label}
+                      </p>
+                      <p className="mt-2 section-title text-3xl font-semibold">{entry.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="panel rounded-[1.75rem] p-6">
+              <h2 className="section-title text-2xl font-semibold">最近复习</h2>
+              <div className="mt-4 space-y-3">
+                {summary.recentLogs.length === 0 ? (
+                  <p className="text-sm text-[var(--color-ink-soft)]">还没有复习记录。</p>
+                ) : (
+                  summary.recentLogs.map((log, index) => (
+                    <div
+                      key={`${log.reviewed_at}-${index}`}
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        {log.words ? (
+                          <Link
+                            href={`/words/${log.words.slug}`}
+                            className="font-semibold text-[var(--color-accent)]"
+                          >
+                            {log.words.lemma}
+                          </Link>
+                        ) : (
+                          <span className="font-semibold">已删除词条</span>
+                        )}
+                        <span className="text-xs uppercase tracking-[0.16em] text-[var(--color-ink-soft)]">
+                          {log.rating}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                        {formatDateTime(log.reviewed_at)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="panel rounded-[1.75rem] p-6">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title text-2xl font-semibold">最近笔记</h2>
+                <Link href="/notes" className="text-sm font-semibold text-[var(--color-accent)]">
+                  查看全部 -&gt;
+                </Link>
+              </div>
+              <div className="mt-4 space-y-3">
+                {summary.notes.length === 0 ? (
+                  <p className="text-sm text-[var(--color-ink-soft)]">还没有个人笔记。</p>
+                ) : (
+                  summary.notes.map((note, index) => (
+                    <div
+                      key={`${note.updated_at}-${index}`}
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                    >
+                      {note.words ? (
+                        <Link
+                          href={`/words/${note.words.slug}`}
+                          className="font-semibold text-[var(--color-accent)]"
+                        >
+                          {note.words.lemma}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold">已删除词条</span>
+                      )}
+                      <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">
+                        {note.content_md.slice(0, 140) || "空白笔记"}
+                      </p>
+                      <p className="mt-2 text-xs text-[var(--color-ink-soft)]">
+                        {formatDateTime(note.updated_at)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </div>
+        </>
+      ) : (
+        <div className="panel rounded-[1.75rem] p-8 text-sm leading-7 text-[var(--color-ink-soft)]">
+          当前还没有 Supabase 配置，因此后台页处于占位模式。
+        </div>
+      )}
+    </div>
+  );
+}
