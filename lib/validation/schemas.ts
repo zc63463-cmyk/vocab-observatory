@@ -29,3 +29,7 @@ export const reviewRejoinSchema = z.object({
 export const noteSchema = z.object({
   contentMd: z.string().max(20_000),
 });
+
+export const noteRestoreSchema = z.object({
+  revisionId: z.string().uuid(),
+});

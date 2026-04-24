@@ -1,5 +1,6 @@
 import { getOwnerUser } from "@/lib/auth";
 import { getLatestImportOverview } from "@/lib/imports";
+import { getCurrentRetrievability } from "@/lib/review/fsrs-adapter";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
 
@@ -53,6 +54,7 @@ export async function getDashboardSummary() {
       activeSession: null as { cards_seen: number; id: string; started_at: string } | null,
       configured: false,
       forgettingRate30d: 0,
+      fsrsForgettingRate: 0,
       importOverview,
       metrics: {
         dueToday: 0,
@@ -114,6 +116,7 @@ export async function getDashboardSummary() {
     reviewLogs30dResult,
     reviewLogs30dWithWordsResult,
     streakResult,
+    activeProgressResult,
     activeSessionResult,
   ] = await Promise.all([
     supabase
@@ -165,6 +168,11 @@ export async function getDashboardSummary() {
       .eq("user_id", owner.id)
       .gte("reviewed_at", yearAgo.toISOString())
       .order("reviewed_at", { ascending: false }),
+    supabase
+      .from("user_word_progress")
+      .select("scheduler_payload")
+      .eq("user_id", owner.id)
+      .neq("state", "suspended"),
     supabase
       .from("sessions")
       .select("id, cards_seen, started_at")
@@ -242,10 +250,22 @@ export async function getDashboardSummary() {
     )),
   );
 
+  const retrievabilityValues = ((activeProgressResult.data ?? []) as Array<{
+    scheduler_payload: unknown;
+  }>)
+    .map((row) => getCurrentRetrievability(row.scheduler_payload as never))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const fsrsForgettingRate =
+    retrievabilityValues.length > 0
+      ? retrievabilityValues.reduce((sum, value) => sum + (1 - value), 0) /
+        retrievabilityValues.length
+      : 0;
+
   return {
     activeSession: activeSessionResult.data ?? null,
     configured: true,
     forgettingRate30d: reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0,
+    fsrsForgettingRate,
     importOverview,
     metrics: {
       dueToday: dueTodayResult.count ?? 0,

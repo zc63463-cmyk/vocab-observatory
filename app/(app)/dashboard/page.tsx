@@ -48,7 +48,9 @@ export default async function DashboardPage() {
                     汇总当天任务、当前 session 与最近 30 天表现。
                   </p>
                 </div>
-                <Badge tone="warm">{(summary.forgettingRate30d * 100).toFixed(0)}% 遗忘率</Badge>
+                <Badge tone="warm">
+                  {(summary.fsrsForgettingRate * 100).toFixed(0)}% FSRS 理论遗忘率
+                </Badge>
               </div>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -62,6 +64,7 @@ export default async function DashboardPage() {
                 <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
                   <p>当前会话开始于：{formatDateTime(summary.activeSession.started_at)}</p>
                   <p>当前会话已完成：{summary.activeSession.cards_seen}</p>
+                  <p>行为遗忘率（30天 Again 占比）：{(summary.forgettingRate30d * 100).toFixed(0)}%</p>
                 </div>
               ) : null}
             </section>
@@ -228,9 +231,16 @@ export default async function DashboardPage() {
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <section className="panel rounded-[1.75rem] p-6">
-              <h2 className="section-title text-2xl font-semibold">最近复习</h2>
-              <div className="mt-4 space-y-3">
+            <CollapsiblePanel
+              title="最近复习"
+              defaultOpen={true}
+              summary={
+                summary.recentLogs[0]
+                  ? `最近一次复习：${formatDateTime(summary.recentLogs[0].reviewed_at)} · 当前展示 ${summary.recentLogs.length} 条`
+                  : "暂无复习记录"
+              }
+            >
+              <div className="space-y-3">
                 {summary.recentLogs.length === 0 ? (
                   <p className="text-sm text-[var(--color-ink-soft)]">还没有复习记录。</p>
                 ) : (
@@ -261,11 +271,18 @@ export default async function DashboardPage() {
                   ))
                 )}
               </div>
-            </section>
+            </CollapsiblePanel>
 
-            <section className="panel rounded-[1.75rem] p-6">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title text-2xl font-semibold">最近笔记</h2>
+            <CollapsiblePanel
+              title="最近笔记"
+              defaultOpen={false}
+              summary={
+                summary.notes[0]
+                  ? `最近一次更新：${formatDateTime(summary.notes[0].updated_at)} · 当前展示 ${summary.notes.length} 条`
+                  : "暂无笔记记录"
+              }
+            >
+              <div className="flex items-center justify-end">
                 <Link href="/notes" className="text-sm font-semibold text-[var(--color-accent)]">
                   查看全部 -&gt;
                 </Link>
@@ -302,7 +319,7 @@ export default async function DashboardPage() {
                   ))
                 )}
               </div>
-            </section>
+            </CollapsiblePanel>
           </div>
         </>
       ) : (

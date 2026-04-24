@@ -45,6 +45,7 @@ export function WordNotes({
   const [updatedAt, setUpdatedAt] = useState<string | null>(initialUpdatedAt);
   const [version, setVersion] = useState(initialVersion);
   const [view, setView] = useState<"edit" | "preview">("edit");
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const deferredContent = useDeferredValue(content);
 
   const previewHtml = marked.parse(normalizeObsidianMarkdown(deferredContent)) as string;
@@ -93,6 +94,44 @@ export function WordNotes({
       setSaveState("error");
     }
   }, [content, lastSavedContent, loadHistory, version, wordId]);
+
+  const restoreRevision = useCallback(
+    async (revisionId: string, revisionVersion: number) => {
+      setRestoringVersion(revisionVersion);
+      try {
+        const response = await fetch(`/api/notes/${wordId}/restore`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ revisionId }),
+        });
+        const payload = (await response.json()) as {
+          contentMd?: string;
+          error?: string;
+          restoredFromVersion?: number;
+          updatedAt?: string;
+          version?: number;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "恢复失败");
+        }
+
+        setContent(payload.contentMd ?? "");
+        setLastSavedContent(payload.contentMd ?? "");
+        setUpdatedAt(payload.updatedAt ?? null);
+        setVersion(payload.version ?? version);
+        setSaveState("saved");
+        setView("edit");
+        await loadHistory();
+      } catch {
+        setSaveState("error");
+      } finally {
+        setRestoringVersion(null);
+      }
+    },
+    [loadHistory, version, wordId],
+  );
 
   useEffect(() => {
     if (content === lastSavedContent) {
@@ -182,7 +221,7 @@ export function WordNotes({
       {history.length > 0 ? (
         <div className="mt-5 space-y-3">
           <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
-            最近版本
+            最近版本快照
           </h3>
           {history.map((revision) => (
             <div
@@ -198,6 +237,20 @@ export function WordNotes({
               <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">
                 {excerpt(revision.content_md || "空白笔记", 160)}
               </p>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  disabled={restoringVersion !== null || revision.version === version}
+                  onClick={() => void restoreRevision(revision.id, revision.version)}
+                  className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {revision.version === version
+                    ? "当前版本"
+                    : restoringVersion === revision.version
+                      ? "恢复中..."
+                      : "恢复此版本"}
+                </button>
+              </div>
             </div>
           ))}
         </div>

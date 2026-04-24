@@ -59,6 +59,22 @@ export function buildInitialSchedulerPayload(now = new Date()) {
   return fromCard(createEmptyCard(now));
 }
 
+export function getCurrentRetrievability(
+  payload: StoredSchedulerCard | null | undefined,
+  now = new Date(),
+) {
+  if (!payload) {
+    return null;
+  }
+
+  const card = toCard(payload);
+  if (card.state === State.New) {
+    return null;
+  }
+
+  return scheduler.get_retrievability(card, now, false);
+}
+
 export function applyReviewAnswer(
   payload: StoredSchedulerCard | null | undefined,
   rating: ReviewRating,
