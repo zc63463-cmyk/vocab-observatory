@@ -75,6 +75,9 @@ npm run sync:vault
 
 ## Vercel 部署说明
 - 详见 [docs/DEPLOY_VERCEL.md](./docs/DEPLOY_VERCEL.md)
+- 日常维护文档：
+  - [人工版](./docs/维护-操作指导-人工版.md)
+  - [AI Agent 版](./docs/维护-操作指导-AI-Agent版.md)
 - 在 Vercel 配置与本地一致的环境变量
 - `vercel.json` 已内置每日一次的 Cron
 - 如果设置了 `CRON_SECRET`，Vercel Cron 会携带 `Authorization: Bearer <CRON_SECRET>`
