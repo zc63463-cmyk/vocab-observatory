@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
+import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -8,6 +9,8 @@ export default async function DashboardPage() {
   const summary = await getDashboardSummary();
   const maxReviewVolume7d = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
   const maxReviewVolume30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 1);
+  const reviewsToday = summary.reviewVolume30d.at(-1)?.count ?? 0;
+  const reviewPeak30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 0);
   const distributionEntries = [
     { label: "Again", value: summary.ratingDistribution.again },
     { label: "Hard", value: summary.ratingDistribution.hard },
@@ -170,9 +173,14 @@ export default async function DashboardPage() {
               </div>
             </section>
 
-            <section className="panel rounded-[1.75rem] p-6">
-              <h2 className="section-title text-2xl font-semibold">30 天复习趋势</h2>
-              <div className="mt-5 space-y-3">
+            <CollapsiblePanel
+              title="30 天复习趋势"
+              defaultOpen={false}
+              badge={<Badge tone="warm">默认收起</Badge>}
+              subtitle="这块更适合需要时再展开查看，不占用首屏空间。"
+              summary={`最近30天共复习 ${summary.metrics.reviewed30d} 次，今日 ${reviewsToday} 次，峰值 ${reviewPeak30d} 次/天。`}
+            >
+              <div className="space-y-3">
                 {summary.reviewVolume30d.slice(-10).map((item) => (
                   <div key={item.date} className="space-y-2">
                     <div className="flex items-center justify-between text-sm text-[var(--color-ink-soft)]">
@@ -216,7 +224,7 @@ export default async function DashboardPage() {
                   )}
                 </div>
               </div>
-            </section>
+            </CollapsiblePanel>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
