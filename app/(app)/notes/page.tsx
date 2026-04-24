@@ -40,6 +40,9 @@ export default async function NotesPage() {
                   {formatDateTime(note.updated_at)}
                 </p>
               </div>
+              <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                Version {note.version}
+              </p>
               <p className="mt-4 text-sm leading-7 text-[var(--color-ink-soft)]">
                 {note.content_md || "空白笔记"}
               </p>

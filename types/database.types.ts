@@ -77,6 +77,28 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["import_runs"]["Insert"]>;
         Relationships: [];
       };
+      note_revisions: {
+        Row: {
+          content_md: string;
+          created_at: string;
+          id: string;
+          note_id: string;
+          user_id: string;
+          version: number;
+          word_id: string;
+        };
+        Insert: {
+          content_md?: string;
+          created_at?: string;
+          id?: string;
+          note_id: string;
+          user_id: string;
+          version: number;
+          word_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["note_revisions"]["Insert"]>;
+        Relationships: [];
+      };
       notes: {
         Row: {
           content_md: string;

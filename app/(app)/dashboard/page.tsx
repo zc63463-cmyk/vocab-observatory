@@ -6,7 +6,8 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 
 export default async function DashboardPage() {
   const summary = await getDashboardSummary();
-  const maxReviewVolume = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
+  const maxReviewVolume7d = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
+  const maxReviewVolume30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 1);
   const distributionEntries = [
     { label: "Again", value: summary.ratingDistribution.again },
     { label: "Hard", value: summary.ratingDistribution.hard },
@@ -22,20 +23,46 @@ export default async function DashboardPage() {
         </p>
         <h1 className="section-title mt-3 text-5xl font-semibold">学习仪表盘</h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-ink-soft)]">
-          这里汇总当前复习负载、今日完成量、笔记数和最近活动。后续可以在此基础上继续扩展更细的统计。
+          这里汇总当前复习负载、今日完成量、连续学习状态、遗忘率与语义场健康度。
         </p>
       </section>
 
       {summary.configured ? (
         <>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Tracked Words" value={summary.metrics.trackedWords} />
+            <MetricCard label="Streak Days" value={summary.metrics.streakDays} />
             <MetricCard label="Due Today" value={summary.metrics.dueToday} tone="warm" />
             <MetricCard label="Reviewed Today" value={summary.metrics.reviewedToday} />
-            <MetricCard label="Reviewed 7d" value={summary.metrics.reviewed7d} tone="warm" />
+            <MetricCard label="Today New" value={summary.metrics.todayNewCount} tone="warm" />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
+            <section className="panel rounded-[1.75rem] p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title text-2xl font-semibold">今日学习面板</h2>
+                  <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                    汇总当天任务、当前 session 与最近 30 天表现。
+                  </p>
+                </div>
+                <Badge tone="warm">{(summary.forgettingRate30d * 100).toFixed(0)}% 遗忘率</Badge>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Tracked" value={summary.metrics.trackedWords} />
+                <MetricCard label="Notes" value={summary.metrics.notesCount} tone="warm" />
+                <MetricCard label="Reviews 7d" value={summary.metrics.reviewed7d} />
+                <MetricCard label="Reviews 30d" value={summary.metrics.reviewed30d} tone="warm" />
+              </div>
+
+              {summary.activeSession ? (
+                <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+                  <p>当前会话开始于：{formatDateTime(summary.activeSession.started_at)}</p>
+                  <p>当前会话已完成：{summary.activeSession.cards_seen}</p>
+                </div>
+              ) : null}
+            </section>
+
             <section className="panel rounded-[1.75rem] p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -101,7 +128,9 @@ export default async function DashboardPage() {
                 </div>
               )}
             </section>
+          </div>
 
+          <div className="grid gap-6 lg:grid-cols-2">
             <section className="panel rounded-[1.75rem] p-6">
               <h2 className="section-title text-2xl font-semibold">7 天复习趋势</h2>
               <div className="mt-5 space-y-4">
@@ -114,7 +143,7 @@ export default async function DashboardPage() {
                     <div className="h-2 rounded-full bg-[rgba(15,111,98,0.08)]">
                       <div
                         className="h-2 rounded-full bg-[var(--color-accent)]"
-                        style={{ width: `${(item.count / maxReviewVolume) * 100}%` }}
+                        style={{ width: `${(item.count / maxReviewVolume7d) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -137,6 +166,54 @@ export default async function DashboardPage() {
                       <p className="mt-2 section-title text-3xl font-semibold">{entry.value}</p>
                     </div>
                   ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="panel rounded-[1.75rem] p-6">
+              <h2 className="section-title text-2xl font-semibold">30 天复习趋势</h2>
+              <div className="mt-5 space-y-3">
+                {summary.reviewVolume30d.slice(-10).map((item) => (
+                  <div key={item.date} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-[var(--color-ink-soft)]">
+                      <span>{formatDate(item.date)}</span>
+                      <span>{item.count}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(178,87,47,0.08)]">
+                      <div
+                        className="h-2 rounded-full bg-[var(--color-accent-2)]"
+                        style={{ width: `${(item.count / maxReviewVolume30d) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                  薄弱语义场
+                </h3>
+                <div className="mt-4 space-y-3">
+                  {summary.weakestSemanticFields.length === 0 ? (
+                    <p className="text-sm text-[var(--color-ink-soft)]">
+                      最近 30 天样本量还不够，暂时无法判断薄弱语义场。
+                    </p>
+                  ) : (
+                    summary.weakestSemanticFields.map((field) => (
+                      <div
+                        key={field.name}
+                        className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <p className="font-semibold">{field.name}</p>
+                          <Badge tone="warm">{(field.againRate * 100).toFixed(0)}%</Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                          样本数：{field.total}
+                        </p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </section>
@@ -204,6 +281,9 @@ export default async function DashboardPage() {
                       ) : (
                         <span className="font-semibold">已删除词条</span>
                       )}
+                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                        Version {note.version}
+                      </p>
                       <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">
                         {note.content_md.slice(0, 140) || "空白笔记"}
                       </p>

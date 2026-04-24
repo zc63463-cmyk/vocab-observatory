@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { applyReviewAnswer } from "@/lib/review/fsrs-adapter";
+import { incrementSessionCardsSeen } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { reviewAnswerSchema } from "@/lib/validation/schemas";
 import type { Database, Json } from "@/types/database.types";
@@ -105,6 +106,8 @@ export async function POST(request: NextRequest) {
   if (logError) {
     throw logError;
   }
+
+  await incrementSessionCardsSeen(supabase, parsed.data.sessionId);
 
   return NextResponse.json({
     ok: true,

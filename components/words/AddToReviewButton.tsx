@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useState } from "react";
 import Link from "next/link";
+import { startTransition, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { formatDateTime } from "@/lib/utils";
 import type { OwnerWordProgressSummary } from "@/lib/words";
@@ -17,8 +17,9 @@ export function AddToReviewButton({
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState(initialProgress);
   const dueNow = progress?.is_due ?? false;
+  const isSuspended = progress?.state === "suspended";
 
-  function handleClick() {
+  function handleAdd() {
     setPending(true);
     startTransition(async () => {
       try {
@@ -43,6 +44,35 @@ export function AddToReviewButton({
     });
   }
 
+  function handleRejoin() {
+    if (!progress) {
+      return;
+    }
+
+    setPending(true);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/review/rejoin", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ progressId: progress.id }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "恢复失败");
+        }
+        setProgress(payload.progress ?? null);
+        setMessage("该词条已恢复复习。");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "恢复失败");
+      } finally {
+        setPending(false);
+      }
+    });
+  }
+
   if (progress) {
     return (
       <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.48)] p-5">
@@ -52,11 +82,15 @@ export function AddToReviewButton({
               复习状态
             </p>
             <h3 className="section-title mt-2 text-2xl font-semibold">
-              {dueNow ? "今天到期" : "已加入复习"}
+              {isSuspended ? "已暂停" : dueNow ? "今天到期" : "已加入复习"}
             </h3>
           </div>
-          <Badge tone={dueNow ? "warm" : "default"}>
-            {progress.review_count > 0 ? `${progress.review_count} 次回顾` : "新卡片"}
+          <Badge tone={isSuspended || dueNow ? "warm" : "default"}>
+            {isSuspended
+              ? "已暂停"
+              : progress.review_count > 0
+                ? `${progress.review_count} 次回顾`
+                : "新卡片"}
           </Badge>
         </div>
 
@@ -66,12 +100,25 @@ export function AddToReviewButton({
           <p>上次复习：{formatDateTime(progress.last_reviewed_at)}</p>
         </div>
 
-        <Link
-          href="/review"
-          className="mt-5 inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
-        >
-          {dueNow ? "进入今日复习" : "查看复习队列"}
-        </Link>
+        <div className="mt-5 flex flex-wrap gap-3">
+          {isSuspended ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={handleRejoin}
+              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {pending ? "恢复中..." : "恢复复习"}
+            </button>
+          ) : (
+            <Link
+              href="/review"
+              className="inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
+            >
+              {dueNow ? "进入今日复习" : "查看复习队列"}
+            </Link>
+          )}
+        </div>
 
         {message ? <p className="mt-3 text-sm text-[var(--color-ink-soft)]">{message}</p> : null}
       </div>
@@ -83,7 +130,7 @@ export function AddToReviewButton({
       <button
         type="button"
         disabled={pending}
-        onClick={handleClick}
+        onClick={handleAdd}
         className="w-full rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {pending ? "处理中..." : "加入复习"}

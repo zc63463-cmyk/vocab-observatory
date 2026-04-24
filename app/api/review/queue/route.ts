@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { getOrCreateReviewSession } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
+import type { ReviewQueueItem } from "@/lib/review/types";
 
 export async function GET() {
   const ownerSession = await requireOwnerApiSession();
@@ -8,11 +10,14 @@ export async function GET() {
   }
 
   const supabase = ownerSession.supabase!;
+  const session = await getOrCreateReviewSession(supabase, ownerSession.user!.id);
   const { data, error } = await supabase
     .from("user_word_progress")
     .select(
       "id, word_id, state, review_count, due_at, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
     )
+    .eq("user_id", ownerSession.user!.id)
+    .neq("state", "suspended")
     .lte("due_at", new Date().toISOString())
     .order("due_at", { ascending: true })
     .limit(20);
@@ -37,13 +42,14 @@ export async function GET() {
       slug: string;
       title: string;
     };
-  }>).map((row) => ({
+  }>).map((row): ReviewQueueItem => ({
     content_hash_snapshot: row.content_hash_snapshot,
     definition_md: row.words.definition_md,
     due_at: row.due_at,
     ipa: row.words.ipa,
+    is_new: row.state === "new",
     lemma: row.words.lemma,
-    metadata: row.words.metadata,
+    metadata: row.words.metadata as ReviewQueueItem["metadata"],
     progress_id: row.id,
     review_count: row.review_count,
     short_definition: row.words.short_definition,
@@ -53,5 +59,14 @@ export async function GET() {
     word_id: row.word_id,
   }));
 
-  return NextResponse.json({ items });
+  return NextResponse.json({
+    items,
+    session,
+    stats: {
+      completed: session.cards_seen,
+      dueToday: items.length,
+      newCards: items.filter((item) => item.is_new).length,
+      remaining: items.length,
+    },
+  });
 }

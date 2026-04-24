@@ -9,6 +9,21 @@ export const addToReviewSchema = z.object({
 export const reviewAnswerSchema = z.object({
   progressId: z.string().uuid(),
   rating: reviewRatingSchema,
+  sessionId: z.string().uuid(),
+});
+
+export const reviewSkipSchema = z.object({
+  progressId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+});
+
+export const reviewSuspendSchema = z.object({
+  progressId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+});
+
+export const reviewRejoinSchema = z.object({
+  progressId: z.string().uuid(),
 });
 
 export const noteSchema = z.object({

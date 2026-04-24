@@ -1,63 +1,207 @@
 "use client";
 
-import { startTransition, useState } from "react";
+import { marked } from "marked";
+import {
+  useCallback,
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useState,
+} from "react";
+import { normalizeObsidianMarkdown } from "@/lib/markdown";
+import { excerpt, formatDateTime } from "@/lib/utils";
+
+interface NoteRevision {
+  content_md: string;
+  created_at: string;
+  id: string;
+  version: number;
+}
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 export function WordNotes({
   initialContent,
+  initialHistory,
+  initialUpdatedAt,
+  initialVersion,
   wordId,
 }: {
   initialContent: string;
+  initialHistory: NoteRevision[];
+  initialUpdatedAt: string | null;
+  initialVersion: number;
   wordId: string;
 }) {
   const [content, setContent] = useState(initialContent);
-  const [message, setMessage] = useState("");
-  const [pending, setPending] = useState(false);
+  const [history, setHistory] = useState<NoteRevision[]>(initialHistory);
+  const [lastSavedContent, setLastSavedContent] = useState(initialContent);
+  const [saveState, setSaveState] = useState<"idle" | "saved" | "saving" | "error">(
+    "idle",
+  );
+  const [updatedAt, setUpdatedAt] = useState<string | null>(initialUpdatedAt);
+  const [version, setVersion] = useState(initialVersion);
+  const [view, setView] = useState<"edit" | "preview">("edit");
+  const deferredContent = useDeferredValue(content);
 
-  function handleSave() {
-    setPending(true);
-    startTransition(async () => {
-      try {
-        const response = await fetch(`/api/notes/${wordId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ contentMd: content }),
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "保存失败");
-        }
-        setMessage("笔记已保存。");
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "保存失败");
-      } finally {
-        setPending(false);
+  const previewHtml = marked.parse(normalizeObsidianMarkdown(deferredContent)) as string;
+
+  const loadHistory = useCallback(async () => {
+    const response = await fetch(`/api/notes/${wordId}/history`);
+    const payload = (await response.json()) as {
+      error?: string;
+      revisions?: NoteRevision[];
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "加载历史失败");
+    }
+    setHistory(payload.revisions ?? []);
+  }, [wordId]);
+
+  const persist = useCallback(async (force = false) => {
+    if (!force && content === lastSavedContent) {
+      return;
+    }
+
+    setSaveState("saving");
+    try {
+      const response = await fetch(`/api/notes/${wordId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ contentMd: content }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        updatedAt?: string;
+        version?: number;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "保存失败");
       }
-    });
-  }
+
+      setLastSavedContent(content);
+      setUpdatedAt(payload.updatedAt ?? null);
+      setVersion(payload.version ?? version);
+      setSaveState("saved");
+      await loadHistory();
+    } catch {
+      setSaveState("error");
+    }
+  }, [content, lastSavedContent, loadHistory, version, wordId]);
+
+  useEffect(() => {
+    if (content === lastSavedContent) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void startTransition(async () => {
+        await persist(false);
+      });
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [content, lastSavedContent, persist]);
 
   return (
     <section className="panel rounded-[1.75rem] p-6">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="section-title text-2xl font-semibold">个人笔记</h2>
+        <div>
+          <h2 className="section-title text-2xl font-semibold">个人笔记</h2>
+          <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+            {saveState === "saving"
+              ? "保存中..."
+              : saveState === "saved"
+                ? `已保存 · 版本 ${version}`
+                : saveState === "error"
+                  ? "自动保存失败，请手动重试"
+                  : "编辑后会自动保存"}
+          </p>
+        </div>
         <button
           type="button"
-          disabled={pending}
-          onClick={handleSave}
-          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
+          onClick={() => void persist(true)}
+          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
         >
-          {pending ? "保存中..." : "保存"}
+          立即保存
         </button>
       </div>
-      <textarea
-        value={content}
-        onChange={(event) => setContent(event.target.value)}
-        rows={10}
-        className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
-        placeholder="记录你的例句、误区、联想和复习提示。"
-      />
-      {message ? <p className="mt-3 text-sm text-[var(--color-ink-soft)]">{message}</p> : null}
+
+      <div className="mt-4 flex gap-3">
+        <button
+          type="button"
+          onClick={() => setView("edit")}
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${
+            view === "edit"
+              ? "bg-[var(--color-accent)] text-white"
+              : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
+          }`}
+        >
+          编辑
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("preview")}
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${
+            view === "preview"
+              ? "bg-[var(--color-accent)] text-white"
+              : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
+          }`}
+        >
+          预览
+        </button>
+      </div>
+
+      {view === "edit" ? (
+        <textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          rows={10}
+          className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
+          placeholder="记录你的例句、误区、联想和复习提示。"
+        />
+      ) : (
+        <div
+          className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] p-4"
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
+      )}
+
+      <div className="mt-5 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+        <p>当前版本：{version}</p>
+        <p>最后保存：{formatDateTime(updatedAt)}</p>
+      </div>
+
+      {history.length > 0 ? (
+        <div className="mt-5 space-y-3">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+            最近版本
+          </h3>
+          {history.map((revision) => (
+            <div
+              key={revision.id}
+              className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-semibold">Version {revision.version}</p>
+                <p className="text-xs text-[var(--color-ink-soft)]">
+                  {formatDateTime(revision.created_at)}
+                </p>
+              </div>
+              <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">
+                {excerpt(revision.content_md || "空白笔记", 160)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

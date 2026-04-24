@@ -1,25 +1,43 @@
 "use client";
 
 import { startTransition, useEffect, useState } from "react";
+import { MetricCard } from "@/components/ui/MetricCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RatingButtons } from "@/components/review/RatingButtons";
 import { ReviewCard } from "@/components/review/ReviewCard";
-import type { ReviewQueueItem } from "@/lib/review/types";
+import { formatDateTime } from "@/lib/utils";
+import type {
+  ReviewQueueItem,
+  ReviewQueueStats,
+  ReviewSessionSummary,
+} from "@/lib/review/types";
+
+interface QueueResponse {
+  items: ReviewQueueItem[];
+  session: ReviewSessionSummary | null;
+  stats: ReviewQueueStats | null;
+}
 
 export function ReviewQueue() {
   const [items, setItems] = useState<ReviewQueueItem[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [session, setSession] = useState<ReviewSessionSummary | null>(null);
+  const [stats, setStats] = useState<ReviewQueueStats | null>(null);
 
-  async function fetchQueue() {
+  async function fetchQueue(): Promise<QueueResponse> {
     const response = await fetch("/api/review/queue");
-    const payload = await response.json();
+    const payload = (await response.json()) as QueueResponse & { error?: string };
     if (!response.ok) {
       throw new Error(payload.error ?? "加载复习队列失败");
     }
 
-    return payload.items ?? [];
+    return {
+      items: payload.items ?? [],
+      session: payload.session ?? null,
+      stats: payload.stats ?? null,
+    };
   }
 
   async function loadQueue(showLoader = true) {
@@ -27,7 +45,10 @@ export function ReviewQueue() {
       setLoading(true);
     }
     try {
-      setItems(await fetchQueue());
+      const queue = await fetchQueue();
+      setItems(queue.items);
+      setSession(queue.session);
+      setStats(queue.stats);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载复习队列失败");
@@ -41,9 +62,11 @@ export function ReviewQueue() {
 
     void (async () => {
       try {
-        const nextItems = await fetchQueue();
+        const queue = await fetchQueue();
         if (!cancelled) {
-          setItems(nextItems);
+          setItems(queue.items);
+          setSession(queue.session);
+          setStats(queue.stats);
           setMessage("");
         }
       } catch (error) {
@@ -62,9 +85,33 @@ export function ReviewQueue() {
     };
   }, []);
 
+  function updateStatsAfterRemoval(item: ReviewQueueItem, incrementCompleted = false) {
+    setStats((current) =>
+      current
+        ? {
+            completed: current.completed + (incrementCompleted ? 1 : 0),
+            dueToday: Math.max(current.dueToday - 1, 0),
+            newCards: Math.max(current.newCards - (item.is_new ? 1 : 0), 0),
+            remaining: Math.max(current.remaining - 1, 0),
+          }
+        : current,
+    );
+
+    if (incrementCompleted) {
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              cards_seen: current.cards_seen + 1,
+            }
+          : current,
+      );
+    }
+  }
+
   function handleRate(rating: "again" | "hard" | "good" | "easy") {
     const current = items[0];
-    if (!current) {
+    if (!current || !session) {
       return;
     }
 
@@ -79,6 +126,7 @@ export function ReviewQueue() {
           body: JSON.stringify({
             progressId: current.progress_id,
             rating,
+            sessionId: session.id,
           }),
         });
         const payload = await response.json();
@@ -87,12 +135,86 @@ export function ReviewQueue() {
         }
         const nextItems = items.slice(1);
         setItems(nextItems);
+        updateStatsAfterRemoval(current, true);
         setMessage(`已记录 ${rating.toUpperCase()}。`);
         if (nextItems.length === 0) {
-          await loadQueue();
+          await loadQueue(false);
         }
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "提交评分失败");
+      } finally {
+        setPending(false);
+      }
+    });
+  }
+
+  function handleSkip() {
+    const current = items[0];
+    if (!current || !session) {
+      return;
+    }
+
+    setPending(true);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/review/skip", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            progressId: current.progress_id,
+            sessionId: session.id,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "跳过失败");
+        }
+
+        setItems([...items.slice(1), current]);
+        setMessage("已跳过，当前卡片已移到队尾。");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "跳过失败");
+      } finally {
+        setPending(false);
+      }
+    });
+  }
+
+  function handleSuspend() {
+    const current = items[0];
+    if (!current || !session) {
+      return;
+    }
+
+    setPending(true);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/review/suspend", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            progressId: current.progress_id,
+            sessionId: session.id,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "暂停失败");
+        }
+
+        const nextItems = items.slice(1);
+        setItems(nextItems);
+        updateStatsAfterRemoval(current, false);
+        setMessage("已暂停该词条，直到你手动恢复复习。");
+        if (nextItems.length === 0) {
+          await loadQueue(false);
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "暂停失败");
       } finally {
         setPending(false);
       }
@@ -105,22 +227,61 @@ export function ReviewQueue() {
 
   if (!items[0]) {
     return (
-      <EmptyState
-        title="当前没有到期词条"
-        description="继续从词条详情页把新单词加入复习，或者等待下一批到期。"
-      />
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="今日到期" value={stats?.dueToday ?? 0} tone="warm" />
+          <MetricCard label="新卡" value={stats?.newCards ?? 0} />
+          <MetricCard label="已完成" value={stats?.completed ?? 0} />
+          <MetricCard label="剩余" value={stats?.remaining ?? 0} tone="warm" />
+        </div>
+        <EmptyState
+          title="当前没有到期词条"
+          description="继续从词条详情页把新单词加入复习，或者等待下一批到期。"
+        />
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
+        <MetricCard label="新卡" value={stats?.newCards ?? 0} />
+        <MetricCard label="已完成" value={stats?.completed ?? 0} />
+        <MetricCard label="剩余" value={stats?.remaining ?? items.length} tone="warm" />
+      </div>
+
+      {session ? (
+        <div className="panel rounded-[1.75rem] p-5 text-sm text-[var(--color-ink-soft)]">
+          当前会话开始于 {formatDateTime(session.started_at)}，已完成 {session.cards_seen} 张卡片。
+        </div>
+      ) : null}
+
       <ReviewCard item={items[0]} />
       <div className="panel rounded-[1.75rem] p-6">
         <p className="text-sm text-[var(--color-ink-soft)]">
-          还剩 {items.length} 个待复习词条。根据回忆质量选择评分，系统会更新下一次复习时间。
+          还剩 {items.length} 个待复习词条。你可以评分、跳过到队尾，或长期暂停某张卡，之后再手动恢复。
         </p>
         <div className="mt-5">
           <RatingButtons disabled={pending} onRate={handleRate} />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={handleSkip}
+            className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            跳过到队尾
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={handleSuspend}
+            className="rounded-full border border-[rgba(178,87,47,0.2)] bg-[rgba(178,87,47,0.08)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-2)] transition hover:bg-[rgba(178,87,47,0.14)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            暂停复习
+          </button>
         </div>
       </div>
       {message ? <p className="text-sm text-[var(--color-ink-soft)]">{message}</p> : null}

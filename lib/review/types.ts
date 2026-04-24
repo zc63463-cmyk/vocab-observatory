@@ -20,6 +20,7 @@ export interface ReviewQueueItem {
   definition_md: string;
   due_at: string | null;
   ipa: string | null;
+  is_new: boolean;
   lemma: string;
   metadata: Json;
   progress_id: string;
@@ -29,6 +30,19 @@ export interface ReviewQueueItem {
   state: string;
   title: string;
   word_id: string;
+}
+
+export interface ReviewSessionSummary {
+  cards_seen: number;
+  id: string;
+  started_at: string;
+}
+
+export interface ReviewQueueStats {
+  completed: number;
+  dueToday: number;
+  newCards: number;
+  remaining: number;
 }
 
 export interface SchedulerUpdate {

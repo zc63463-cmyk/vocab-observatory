@@ -289,7 +289,13 @@ export async function getPublicWordBySlug(slug: string) {
   if (!supabase) {
     return {
       configured: false,
-      note: null,
+      note: null as
+        | {
+            content_md: string;
+            updated_at: string;
+            version: number;
+          }
+        | null,
       word: null as PublicWordDetail | null,
     };
   }
@@ -326,14 +332,16 @@ export async function getPublicWordBySlug(slug: string) {
   }
 
   const owner = await getOwnerUser();
-  let note: { content_md: string; updated_at: string } | null = null;
+  let note:
+    | { content_md: string; updated_at: string; version: number }
+    | null = null;
   let progress: OwnerWordProgressSummary | null = null;
 
   if (owner) {
     const [noteResult, progressResult] = await Promise.all([
       supabase
         .from("notes")
-        .select("content_md, updated_at")
+        .select("content_md, updated_at, version")
         .eq("word_id", word.id)
         .maybeSingle(),
       supabase
