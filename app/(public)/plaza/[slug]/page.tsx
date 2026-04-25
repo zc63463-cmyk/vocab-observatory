@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import type { Route } from "next";
+import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WordCard } from "@/components/words/WordCard";
@@ -25,6 +26,10 @@ export default async function PlazaDetailPage({
 }) {
   const { slug } = await params;
   const result = await getPublicCollectionNoteBySlug(slug);
+
+  if (result.canonicalPath) {
+    redirect(result.canonicalPath as Route);
+  }
 
   if (result.configured && result.available && !result.note) {
     notFound();

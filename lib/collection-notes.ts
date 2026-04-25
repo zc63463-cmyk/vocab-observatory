@@ -1,5 +1,5 @@
 import type { Json } from "@/types/database.types";
-import { slugifyLabel } from "@/lib/utils";
+import { slugifyLabel, unique } from "@/lib/utils";
 
 export type CollectionNoteKind = "root_affix" | "semantic_field";
 
@@ -67,6 +67,71 @@ export function detectCollectionNoteKind(sourcePath: string): CollectionNoteKind
 export function createCollectionNoteSlug(kind: CollectionNoteKind, title: string) {
   const prefix = kind === "root_affix" ? "root" : "semantic";
   return `${prefix}-${slugifyLabel(title)}`;
+}
+
+function safeDecodeUriComponent(value: string) {
+  const variants = [value];
+  let current = value;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+      if (decoded === current) {
+        break;
+      }
+      variants.push(decoded);
+      current = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  return unique(variants);
+}
+
+export function normalizeCollectionNoteSlugValue(value: string) {
+  return value
+    .trim()
+    .normalize("NFKC")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
+export function getCollectionNoteSlugLookupValues(value: string) {
+  return unique(
+    safeDecodeUriComponent(value)
+      .flatMap((candidate) => {
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+          return [];
+        }
+
+        const nfc = trimmed.normalize("NFC");
+        const nfkc = trimmed.normalize("NFKC");
+
+        return [
+          trimmed,
+          nfc,
+          nfkc,
+          nfc.toLowerCase(),
+          nfkc.toLowerCase(),
+          normalizeCollectionNoteSlugValue(trimmed),
+          normalizeCollectionNoteSlugValue(nfc),
+          normalizeCollectionNoteSlugValue(nfkc),
+          slugifyLabel(trimmed),
+          slugifyLabel(nfc),
+          slugifyLabel(nfkc),
+        ].filter(Boolean);
+      })
+      .filter((candidate): candidate is string => Boolean(candidate)),
+  );
+}
+
+export function createCollectionNotePath(slug: string) {
+  return `/plaza/${encodeURIComponent(slug)}`;
 }
 
 export function getCollectionNoteKindLabel(kind: CollectionNoteKind) {

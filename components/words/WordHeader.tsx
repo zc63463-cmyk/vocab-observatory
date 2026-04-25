@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { Badge } from "@/components/ui/Badge";
-import { createCollectionNoteSlug } from "@/lib/collection-notes";
+import { createCollectionNotePath, createCollectionNoteSlug } from "@/lib/collection-notes";
 import type { PublicWordDetail } from "@/lib/words";
 
 function getMetadataValue(word: PublicWordDetail, key: string) {
@@ -18,7 +18,7 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
   const wordFrequency = getMetadataValue(word, "word_freq");
   const prototype = word.prototype_text ?? getMetadataValue(word, "prototype");
   const semanticFieldHref = semanticField
-    ? `/plaza/${createCollectionNoteSlug("semantic_field", semanticField)}`
+    ? createCollectionNotePath(createCollectionNoteSlug("semantic_field", semanticField))
     : null;
 
   return (

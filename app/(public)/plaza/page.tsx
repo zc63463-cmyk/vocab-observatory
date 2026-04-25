@@ -1,11 +1,22 @@
 import Link from "next/link";
+import type { Route } from "next";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { getCollectionNoteSummaryText, getPlazaOverview } from "@/lib/plaza";
+import { createCollectionNotePath } from "@/lib/collection-notes";
+import { getCollectionNoteSummaryText, getPlazaOverview, type PlazaFilterKind } from "@/lib/plaza";
 import { formatDate } from "@/lib/utils";
 
-export default async function PlazaPage() {
-  const result = await getPlazaOverview();
+export default async function PlazaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    kind?: PlazaFilterKind;
+    q?: string;
+  }>;
+}) {
+  const { kind, q } = await searchParams;
+  const result = await getPlazaOverview({ kind, q });
+  const hasActiveFilters = result.filters.kind !== "all" || result.filters.q.length > 0;
 
   return (
     <div className="space-y-8">
@@ -20,7 +31,7 @@ export default async function PlazaPage() {
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <Badge>集合笔记 {result.total}</Badge>
+          <Badge>集合笔记 {result.counts.total}</Badge>
           <Badge tone="warm">公开浏览</Badge>
           <Link
             href="/words"
@@ -29,6 +40,44 @@ export default async function PlazaPage() {
             返回词条库
           </Link>
         </div>
+
+        <form action="/plaza" className="mt-6 space-y-3">
+          <div className="flex max-w-3xl flex-col gap-3 sm:flex-row">
+            <input
+              type="search"
+              name="q"
+              defaultValue={result.filters.q}
+              placeholder="搜索词根词缀、语义场、摘要..."
+              className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+            />
+            <button className="rounded-2xl bg-[var(--color-accent)] px-6 py-4 text-sm font-semibold text-white transition hover:opacity-90">
+              检索广场
+            </button>
+          </div>
+
+          <div className="grid gap-3 md:max-w-xs">
+            <select
+              name="kind"
+              defaultValue={result.filters.kind}
+              className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+            >
+              <option value="all">全部类型</option>
+              <option value="root_affix">词根词缀</option>
+              <option value="semantic_field">语义场</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3 text-sm text-[var(--color-ink-soft)]">
+            <span>
+              共 {result.counts.total} 篇，当前命中 {result.counts.showing} 篇
+            </span>
+            {hasActiveFilters ? (
+              <Link href="/plaza" className="font-semibold text-[var(--color-accent)]">
+                清除筛选
+              </Link>
+            ) : null}
+          </div>
+        </form>
       </section>
 
       {!result.configured ? (
@@ -41,10 +90,15 @@ export default async function PlazaPage() {
           title="词汇广场尚未初始化"
           description="当前还没有 collection_notes 表或公开数据。先执行 0006_collection_notes.sql，再重新跑一次导入同步。"
         />
-      ) : result.groups.length === 0 ? (
+      ) : result.counts.total === 0 ? (
         <EmptyState
           title="还没有集合笔记"
           description="导入完成后，这里会按词根词缀和语义场两类展示集合型 Obsidian 笔记。"
+        />
+      ) : result.groups.length === 0 ? (
+        <EmptyState
+          title="没有匹配的集合笔记"
+          description="当前筛选条件下没有命中结果，试试更短的关键词，或切回全部类型。"
         />
       ) : (
         result.groups.map((group) => (
@@ -63,7 +117,7 @@ export default async function PlazaPage() {
               {group.notes.map((note) => (
                 <Link
                   key={note.id}
-                  href={`/plaza/${note.slug}`}
+                  href={createCollectionNotePath(note.slug) as Route}
                   className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition duration-200 hover:-translate-y-1 hover:border-[var(--color-border-strong)] hover:shadow-[0_22px_54px_rgba(71,50,20,0.14)]"
                 >
                   <div className="flex items-start justify-between gap-4">

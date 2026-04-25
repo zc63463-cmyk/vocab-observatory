@@ -1,7 +1,10 @@
 import { unstable_cache } from "next/cache";
 import { hasSupabasePublicEnv } from "@/lib/env";
 import {
+  createCollectionNotePath,
+  createCollectionNoteSlug,
   getCollectionNoteKindLabel,
+  getCollectionNoteSlugLookupValues,
   isCollectionNotesRelationMissing,
   type CollectionNoteKind,
   type PublicCollectionNoteDetail,
@@ -23,12 +26,19 @@ const PUBLIC_REVALIDATE_SECONDS = 300;
 const KIND_ORDER: CollectionNoteKind[] = ["root_affix", "semantic_field"];
 
 type CollectionNoteRow = Database["public"]["Tables"]["collection_notes"]["Row"];
-type CachedCollectionRowsResult =
-  | { rows: CollectionNoteRow[]; status: "ok" }
-  | { rows: []; status: "missing_env" | "missing_relation" };
+type CachedCollectionSummariesResult =
+  | { notes: PublicCollectionNoteSummary[]; status: "ok" }
+  | { notes: []; status: "missing_env" | "missing_relation" };
 type CachedCollectionDetailResult =
   | { note: PublicCollectionNoteDetail | null; status: "ok" }
   | { note: null; status: "missing_env" | "missing_relation" };
+
+export type PlazaFilterKind = "all" | CollectionNoteKind;
+
+export interface PlazaFilters {
+  kind: PlazaFilterKind;
+  q: string;
+}
 
 export interface PlazaNoteGroup {
   count: number;
@@ -40,6 +50,11 @@ export interface PlazaNoteGroup {
 export interface PlazaOverview {
   available: boolean;
   configured: boolean;
+  counts: {
+    showing: number;
+    total: number;
+  };
+  filters: PlazaFilters;
   groups: PlazaNoteGroup[];
   total: number;
 }
@@ -89,6 +104,85 @@ function toRelatedWord(word: PublicWordIndexEntry): PublicCollectionRelatedWord 
   };
 }
 
+function createCollectionNoteLookupValues(note: Pick<PublicCollectionNoteSummary, "kind" | "slug" | "title">) {
+  return new Set(
+    [
+      ...getCollectionNoteSlugLookupValues(note.slug),
+      ...getCollectionNoteSlugLookupValues(createCollectionNoteSlug(note.kind, note.title)),
+    ].filter(Boolean),
+  );
+}
+
+export function normalizePlazaFilters(filters?: Partial<PlazaFilters>): PlazaFilters {
+  return {
+    kind:
+      filters?.kind === "root_affix" || filters?.kind === "semantic_field"
+        ? filters.kind
+        : "all",
+    q: filters?.q?.trim() ?? "",
+  };
+}
+
+function buildCollectionSearchText(note: PublicCollectionNoteSummary) {
+  return [
+    note.title,
+    note.summary ?? "",
+    getMetadataString(note.metadata, "coreMeaning") ?? "",
+    getMetadataString(note.metadata, "definition") ?? "",
+    ...note.tags,
+  ]
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+}
+
+function matchesCollectionQuery(note: PublicCollectionNoteSummary, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  return buildCollectionSearchText(note).includes(query.normalize("NFKC").toLowerCase());
+}
+
+export function filterCollectionNotes(
+  notes: PublicCollectionNoteSummary[],
+  filters?: Partial<PlazaFilters>,
+) {
+  const normalizedFilters = normalizePlazaFilters(filters);
+
+  return notes.filter((note) => {
+    if (normalizedFilters.kind !== "all" && note.kind !== normalizedFilters.kind) {
+      return false;
+    }
+
+    if (!matchesCollectionQuery(note, normalizedFilters.q)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+export function findCompatibleCollectionNote(
+  notes: Pick<PublicCollectionNoteSummary, "kind" | "slug" | "title">[],
+  requestedSlug: string,
+) {
+  const requestedLookups = new Set(getCollectionNoteSlugLookupValues(requestedSlug));
+
+  return (
+    notes.find((note) => {
+      const noteLookups = createCollectionNoteLookupValues(note);
+      for (const candidate of requestedLookups) {
+        if (noteLookups.has(candidate)) {
+          return true;
+        }
+      }
+
+      return false;
+    }) ?? null
+  );
+}
+
 async function getRelatedWords(note: PublicCollectionNoteSummary) {
   const allWords = await getAllPublicWordIndexEntries();
 
@@ -109,12 +203,12 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
     .map(toRelatedWord);
 }
 
-const getCachedCollectionRows = unstable_cache(
-  async (): Promise<CachedCollectionRowsResult> => {
+const getCachedCollectionSummaries = unstable_cache(
+  async (): Promise<CachedCollectionSummariesResult> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
       return {
-        rows: [],
+        notes: [],
         status: "missing_env",
       };
     }
@@ -129,7 +223,7 @@ const getCachedCollectionRows = unstable_cache(
 
     if (isCollectionNotesRelationMissing(error)) {
       return {
-        rows: [],
+        notes: [],
         status: "missing_relation",
       };
     }
@@ -139,11 +233,11 @@ const getCachedCollectionRows = unstable_cache(
     }
 
     return {
-      rows: (data ?? []) as CollectionNoteRow[],
+      notes: ((data ?? []) as CollectionNoteRow[]).map(toSummary),
       status: "ok",
     };
   },
-  ["public-collection-note-rows"],
+  ["public-collection-note-summaries"],
   { revalidate: PUBLIC_REVALIDATE_SECONDS },
 );
 
@@ -204,44 +298,61 @@ const getCachedCollectionDetail = unstable_cache(
   { revalidate: PUBLIC_REVALIDATE_SECONDS },
 );
 
-export async function getPlazaOverview(): Promise<PlazaOverview> {
+export async function getPlazaOverview(filters?: Partial<PlazaFilters>): Promise<PlazaOverview> {
+  const normalizedFilters = normalizePlazaFilters(filters);
+
   if (!hasSupabasePublicEnv()) {
     return {
       available: false,
       configured: false,
+      counts: {
+        showing: 0,
+        total: 0,
+      },
+      filters: normalizedFilters,
       groups: [],
       total: 0,
     };
   }
 
-  const result = await getCachedCollectionRows();
+  const result = await getCachedCollectionSummaries();
   if (result.status !== "ok") {
     return {
       available: false,
       configured: true,
+      counts: {
+        showing: 0,
+        total: 0,
+      },
+      filters: normalizedFilters,
       groups: [],
       total: 0,
     };
   }
 
+  const filteredNotes = filterCollectionNotes(result.notes, normalizedFilters);
   const grouped = new Map<CollectionNoteKind, PublicCollectionNoteSummary[]>();
-  for (const row of result.rows) {
-    const summary = toSummary(row);
-    const bucket = grouped.get(summary.kind) ?? [];
-    bucket.push(summary);
-    grouped.set(summary.kind, bucket);
+  for (const note of filteredNotes) {
+    const bucket = grouped.get(note.kind) ?? [];
+    bucket.push(note);
+    grouped.set(note.kind, bucket);
   }
 
   return {
     available: true,
     configured: true,
+    counts: {
+      showing: filteredNotes.length,
+      total: result.notes.length,
+    },
+    filters: normalizedFilters,
     groups: KIND_ORDER.map((kind) => ({
       count: grouped.get(kind)?.length ?? 0,
       kind,
       label: getCollectionNoteKindLabel(kind),
       notes: grouped.get(kind) ?? [],
     })).filter((group) => group.count > 0),
-    total: result.rows.length,
+    total: result.notes.length,
   };
 }
 
@@ -249,17 +360,67 @@ export async function getPublicCollectionNoteBySlug(slug: string) {
   if (!hasSupabasePublicEnv()) {
     return {
       available: false,
+      canonicalPath: null as string | null,
       configured: false,
       note: null as PublicCollectionNoteDetail | null,
     };
   }
 
-  const result = await getCachedCollectionDetail(slug);
+  const exactResult = await getCachedCollectionDetail(slug);
+  if (exactResult.status !== "ok") {
+    return {
+      available: false,
+      canonicalPath: null,
+      configured: true,
+      note: null,
+    };
+  }
+
+  if (exactResult.note) {
+    return {
+      available: true,
+      canonicalPath: null,
+      configured: true,
+      note: exactResult.note,
+    };
+  }
+
+  const summariesResult = await getCachedCollectionSummaries();
+  if (summariesResult.status !== "ok") {
+    return {
+      available: false,
+      canonicalPath: null,
+      configured: true,
+      note: null,
+    };
+  }
+
+  const matchedNote = findCompatibleCollectionNote(summariesResult.notes, slug);
+  if (!matchedNote) {
+    return {
+      available: true,
+      canonicalPath: null,
+      configured: true,
+      note: null,
+    };
+  }
+
+  const canonicalDetail = await getCachedCollectionDetail(matchedNote.slug);
+  if (canonicalDetail.status !== "ok") {
+    return {
+      available: false,
+      canonicalPath: null,
+      configured: true,
+      note: null,
+    };
+  }
 
   return {
-    available: result.status === "ok",
+    available: true,
+    canonicalPath:
+      matchedNote.slug !== slug ? createCollectionNotePath(matchedNote.slug) : null,
     configured: true,
-    note: result.note,
+    note: canonicalDetail.note,
   };
 }
 
