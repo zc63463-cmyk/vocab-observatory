@@ -10,10 +10,19 @@ import { WordHeader } from "@/components/words/WordHeader";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
-import { getPublicWordBySlug } from "@/lib/words";
+import { getAllPublicWordIndexEntries, getPublicWordBySlug } from "@/lib/words";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
+const STATIC_WORD_PARAM_LIMIT = 12;
+
+export async function generateStaticParams() {
+  const words = await getAllPublicWordIndexEntries();
+
+  return words.slice(0, STATIC_WORD_PARAM_LIMIT).map((word) => ({
+    slug: word.slug,
+  }));
+}
 
 function WordDetailFallback() {
   return (
