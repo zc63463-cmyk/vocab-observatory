@@ -3,6 +3,7 @@ import type { Metadata, Route } from "next";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
+import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
@@ -160,15 +161,15 @@ async function PlazaDetailContent({
 
   return (
     <div className="space-y-6">
-      <section className="panel-strong rounded-[2rem] p-8">
-        <Link
-          href="/plaza"
-          className="text-sm font-semibold text-[var(--color-accent)]"
-        >
-          &larr; 返回词汇广场
-        </Link>
+      <Breadcrumb
+        items={[
+          { href: "/plaza", label: "词汇广场" },
+          { label: note.title },
+        ]}
+      />
 
-        <div className="mt-5 flex flex-wrap gap-2">
+      <section className="panel-strong rounded-[2rem] p-8">
+        <div className="flex flex-wrap gap-2">
           <Badge>{getCollectionNoteKindLabel(note.kind)}</Badge>
           <Badge tone="warm">最近更新 {formatDate(note.updated_at)}</Badge>
           <Badge>关联词条 {note.related_words.length}</Badge>

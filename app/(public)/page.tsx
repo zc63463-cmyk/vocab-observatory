@@ -4,6 +4,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { FeaturedWordsGrid } from "@/components/motion/FeaturedWordsGrid";
+import { AnimatedCounter } from "@/components/motion/AnimatedCounter";
+import { MagneticButton } from "@/components/motion/MagneticButton";
+import { HeroDecorSVG } from "@/components/motion/HeroDecorSVG";
 import { getLandingSnapshot } from "@/lib/words";
 
 export const dynamic = "force-static";
@@ -26,8 +29,10 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-10">
-      <section className="panel-strong overflow-hidden rounded-[2.25rem] px-8 py-10 sm:px-12">
-        <div className="grid gap-10 lg:grid-cols-[1.3fr_0.7fr]">
+      <section className="panel-strong relative overflow-hidden rounded-[2.25rem] px-8 py-10 sm:px-12">
+        <HeroDecorSVG />
+
+        <div className="relative grid gap-10 lg:grid-cols-[1.3fr_0.7fr]">
           <div>
             <Badge>Obsidian -&gt; Supabase -&gt; Vercel</Badge>
             <h1 className="section-title mt-6 max-w-4xl text-5xl font-semibold leading-tight sm:text-6xl">
@@ -45,9 +50,11 @@ export default async function HomePage() {
                 placeholder="搜索单词、释义、语义场..."
                 inputSize="lg"
               />
-              <Button type="submit" size="lg">
-                搜索词条
-              </Button>
+              <MagneticButton>
+                <Button type="submit" size="lg">
+                  搜索词条
+                </Button>
+              </MagneticButton>
             </form>
           </div>
 
@@ -57,7 +64,7 @@ export default async function HomePage() {
                 当前状态
               </p>
               <p className="section-title mt-4 text-4xl font-semibold">
-                {snapshot.totalWords}
+                <AnimatedCounter target={snapshot.totalWords} />
               </p>
               <p className="mt-3 text-sm leading-7 text-[var(--color-ink-soft)]">
                 已准备公开浏览的词条数量。内容源默认来自 `{snapshot.repoName}`。

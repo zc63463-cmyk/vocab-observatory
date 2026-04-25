@@ -1,11 +1,13 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useState } from "react";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RatingButtons } from "@/components/review/RatingButtons";
 import { ReviewCard } from "@/components/review/ReviewCard";
+import { ReviewProgressBar } from "@/components/review/ReviewProgressBar";
+import { CompletionCelebration } from "@/components/review/CompletionCelebration";
 import { useToast } from "@/components/ui/Toast";
 import { formatDateTime } from "@/lib/utils";
 import type {
@@ -112,9 +114,9 @@ export function ReviewQueue() {
     }
   }
 
-  function handleRate(rating: "again" | "hard" | "good" | "easy") {
+  const handleRate = useCallback((rating: "again" | "hard" | "good" | "easy") => {
     const current = items[0];
-    if (!current || !session) {
+    if (!current || !session || pending) {
       return;
     }
 
@@ -149,11 +151,11 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }
+  }, [items, session, pending]);
 
-  function handleSkip() {
+  const handleSkip = useCallback(() => {
     const current = items[0];
-    if (!current || !session) {
+    if (!current || !session || pending) {
       return;
     }
 
@@ -183,11 +185,11 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }
+  }, [items, session, pending]);
 
-  function handleSuspend() {
+  const handleSuspend = useCallback(() => {
     const current = items[0];
-    if (!current || !session) {
+    if (!current || !session || pending) {
       return;
     }
 
@@ -222,25 +224,82 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }
+  }, [items, session, pending]);
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't trigger if user is typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      // Don't trigger if modifiers are held
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+
+      switch (e.key) {
+        case "1":
+          handleRate("again");
+          break;
+        case "2":
+          handleRate("hard");
+          break;
+        case "3":
+          handleRate("good");
+          break;
+        case "4":
+          handleRate("easy");
+          break;
+        case "s":
+        case "S":
+          handleSkip();
+          break;
+        case "p":
+        case "P":
+          handleSuspend();
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleRate, handleSkip, handleSuspend]);
 
   if (loading) {
     return <EmptyState title="正在加载" description="正在获取当前到期的词条。" />;
   }
 
-  if (!items[0]) {
+  const completedCount = stats?.completed ?? 0;
+  const remainingCount = stats?.remaining ?? items.length;
+  const isQueueDone = items.length === 0 && completedCount > 0;
+
+  if (items.length === 0) {
     return (
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="今日到期" value={stats?.dueToday ?? 0} tone="warm" />
           <MetricCard label="新卡" value={stats?.newCards ?? 0} />
-          <MetricCard label="已完成" value={stats?.completed ?? 0} />
-          <MetricCard label="剩余" value={stats?.remaining ?? 0} tone="warm" />
+          <MetricCard label="已完成" value={completedCount} />
+          <MetricCard label="剩余" value={remainingCount} tone="warm" />
         </div>
-        <EmptyState
-          title="当前没有到期词条"
-          description="继续从词条详情页把新单词加入复习，或者等待下一批到期。"
-        />
+
+        {isQueueDone ? (
+          <CompletionCelebration
+            completedCount={completedCount}
+            sessionCardsSeen={session?.cards_seen ?? 0}
+          />
+        ) : (
+          <EmptyState
+            title="当前没有到期词条"
+            description="继续从词条详情页把新单词加入复习，或者等待下一批到期。"
+          />
+        )}
       </div>
     );
   }
@@ -250,9 +309,11 @@ export function ReviewQueue() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
         <MetricCard label="新卡" value={stats?.newCards ?? 0} />
-        <MetricCard label="已完成" value={stats?.completed ?? 0} />
-        <MetricCard label="剩余" value={stats?.remaining ?? items.length} tone="warm" />
+        <MetricCard label="已完成" value={completedCount} />
+        <MetricCard label="剩余" value={remainingCount} tone="warm" />
       </div>
+
+      <ReviewProgressBar completed={completedCount} remaining={remainingCount} />
 
       {session ? (
         <div className="panel rounded-[1.75rem] p-5 text-sm text-[var(--color-ink-soft)]">
@@ -265,6 +326,9 @@ export function ReviewQueue() {
         <p className="text-sm text-[var(--color-ink-soft)]">
           还剩 {items.length} 个待复习词条。你可以评分、跳过到队尾，或长期暂停某张卡，之后再手动恢复。
         </p>
+        <div className="mt-2 text-xs text-[var(--color-ink-soft)] opacity-70">
+          键盘快捷键：1=Again / 2=Hard / 3=Good / 4=Easy / S=跳过 / P=暂停
+        </div>
         <div className="mt-5">
           <RatingButtons disabled={pending} onRate={handleRate} />
         </div>

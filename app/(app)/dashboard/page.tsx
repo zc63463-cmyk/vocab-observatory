@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { MiniBarChart } from "@/components/ui/MiniBarChart";
+import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -11,11 +13,12 @@ export default async function DashboardPage() {
   const maxReviewVolume30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 1);
   const reviewsToday = summary.reviewVolume30d.at(-1)?.count ?? 0;
   const reviewPeak30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 0);
-  const distributionEntries = [
-    { label: "Again", value: summary.ratingDistribution.again },
-    { label: "Hard", value: summary.ratingDistribution.hard },
-    { label: "Good", value: summary.ratingDistribution.good },
-    { label: "Easy", value: summary.ratingDistribution.easy },
+
+  const ratingSegments = [
+    { label: "Again", value: summary.ratingDistribution.again, color: "#ef4444" },
+    { label: "Hard", value: summary.ratingDistribution.hard, color: "#f59e0b" },
+    { label: "Good", value: summary.ratingDistribution.good, color: "#22c55e" },
+    { label: "Easy", value: summary.ratingDistribution.easy, color: "#3b82f6" },
   ];
 
   return (
@@ -139,40 +142,17 @@ export default async function DashboardPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="panel rounded-[1.75rem] p-6">
               <h2 className="section-title text-2xl font-semibold">7 天复习趋势</h2>
-              <div className="mt-5 space-y-4">
-                {summary.reviewVolume7d.map((item) => (
-                  <div key={item.date} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm text-[var(--color-ink-soft)]">
-                      <span>{formatDate(item.date)}</span>
-                      <span>{item.count}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-[var(--color-surface-muted)]">
-                      <div
-                        className="h-2 rounded-full bg-[var(--color-accent)]"
-                        style={{ width: `${(item.count / maxReviewVolume7d) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <MiniBarChart
+                data={summary.reviewVolume7d}
+                maxCount={maxReviewVolume7d}
+                className="mt-5"
+              />
 
               <div className="mt-8">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
                   评分分布
                 </h3>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {distributionEntries.map((entry) => (
-                    <div
-                      key={entry.label}
-                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
-                    >
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
-                        {entry.label}
-                      </p>
-                      <p className="mt-2 section-title text-3xl font-semibold">{entry.value}</p>
-                    </div>
-                  ))}
-                </div>
+                <StackedRatingBar segments={ratingSegments} className="mt-4" />
               </div>
             </section>
 
@@ -183,22 +163,11 @@ export default async function DashboardPage() {
               subtitle="这块更适合需要时再展开查看，不占用首屏空间。"
               summary={`最近30天共复习 ${summary.metrics.reviewed30d} 次，今日 ${reviewsToday} 次，峰值 ${reviewPeak30d} 次/天。`}
             >
-              <div className="space-y-3">
-                {summary.reviewVolume30d.slice(-10).map((item) => (
-                  <div key={item.date} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm text-[var(--color-ink-soft)]">
-                      <span>{formatDate(item.date)}</span>
-                      <span>{item.count}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-[var(--color-surface-muted-warm)]">
-                      <div
-                        className="h-2 rounded-full bg-[var(--color-accent-2)]"
-                        style={{ width: `${(item.count / maxReviewVolume30d) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <MiniBarChart
+                data={summary.reviewVolume30d.slice(-14)}
+                maxCount={maxReviewVolume30d}
+                accentColor="var(--color-accent-2)"
+              />
 
               <div className="mt-8">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
