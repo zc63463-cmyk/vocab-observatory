@@ -13,7 +13,7 @@ function fromLegacyExamples(
     }));
 }
 
-function renderCards(
+function renderCorpusCards(
   items: Array<{ note: string | null; text: string }>,
   label: string,
 ) {
@@ -40,6 +40,44 @@ function renderCards(
   );
 }
 
+function renderCollocationCards(items: CollocationItem[]) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="pill text-[11px] uppercase tracking-[0.2em]">搭配</span>
+        <p className="text-sm text-[var(--color-ink-soft)]">{items.length} 条</p>
+      </div>
+      <div className="space-y-3">
+        {items.map((item, index) => (
+          <div
+            key={`${item.phrase}-${index}`}
+            className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+          >
+            <p className="font-semibold">{item.phrase}</p>
+            {item.gloss ? (
+              <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">{item.gloss}</p>
+            ) : null}
+            {item.examples.length > 0 ? (
+              <div className="mt-3 space-y-2 rounded-[1rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] p-3">
+                {item.examples.map((example, exampleIndex) => (
+                  <div key={`${item.phrase}-example-${exampleIndex}`} className="space-y-1">
+                    <p className="text-sm leading-7">{example.text}</p>
+                    {example.translation ? (
+                      <p className="text-sm leading-7 text-[var(--color-ink-soft)]">
+                        {example.translation}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function WordExamples({
   collocations,
   corpusItems,
@@ -49,14 +87,7 @@ export function WordExamples({
   corpusItems: CorpusItem[];
   legacyExamples?: ParsedExample[];
 }) {
-  const displayCollocations =
-    collocations.length > 0
-      ? collocations.map((item) => ({
-          note: item.note,
-          text: item.phrase,
-        }))
-      : fromLegacyExamples(legacyExamples, "collocation");
-
+  const displayCollocations = collocations;
   const displayCorpus =
     corpusItems.length > 0
       ? corpusItems.map((item) => ({
@@ -65,7 +96,14 @@ export function WordExamples({
         }))
       : fromLegacyExamples(legacyExamples, "corpus");
 
-  if (displayCollocations.length === 0 && displayCorpus.length === 0) {
+  const fallbackCollocations =
+    displayCollocations.length === 0 ? fromLegacyExamples(legacyExamples, "collocation") : [];
+
+  if (
+    displayCollocations.length === 0 &&
+    fallbackCollocations.length === 0 &&
+    displayCorpus.length === 0
+  ) {
     return null;
   }
 
@@ -73,8 +111,11 @@ export function WordExamples({
     <section className="panel rounded-[1.75rem] p-6">
       <h2 className="section-title text-2xl font-semibold">搭配与语料</h2>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {displayCollocations.length > 0 ? renderCards(displayCollocations, "搭配") : null}
-        {displayCorpus.length > 0 ? renderCards(displayCorpus, "语料") : null}
+        {displayCollocations.length > 0 ? renderCollocationCards(displayCollocations) : null}
+        {displayCollocations.length === 0 && fallbackCollocations.length > 0
+          ? renderCorpusCards(fallbackCollocations, "搭配")
+          : null}
+        {displayCorpus.length > 0 ? renderCorpusCards(displayCorpus, "语料") : null}
       </div>
     </section>
   );

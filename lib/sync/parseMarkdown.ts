@@ -4,6 +4,7 @@ import {
   castStructuredWordJson,
   createEmptyStructuredWordFields,
   type AntonymItem,
+  type CollocationExample,
   type CollocationItem,
   type CoreDefinition,
   type CorpusItem,
@@ -251,21 +252,126 @@ function parsePrototypeText(section: string) {
   return matchFirst(section, /\*\*原型义\*\*：(.+)/)?.trim() ?? null;
 }
 
-function parseCollocations(section: string) {
-  return extractSectionBulletLines(section).map((line) => {
-    const match = /^\*\*(.+?)\*\*[：:]\s*(.+)$/.exec(line);
-    if (match) {
+function looksLikeEnglishExample(value: string) {
+  return /[A-Za-z]/.test(value);
+}
+
+function splitExampleTranslation(value: string) {
+  const trimmed = stripFormatting(value).replace(/^例[:：]\s*/u, "");
+  if (!trimmed || !/^["'“]?[A-Za-z]/u.test(trimmed) || !looksLikeEnglishExample(trimmed)) {
+    return null;
+  }
+
+  const bilingualMatch = /^(.+?)\s*[\uFF08(]([^()（）]+)[\uFF09)]$/u.exec(trimmed);
+  if (bilingualMatch && looksLikeEnglishExample(bilingualMatch[1])) {
+    return {
+      text: stripFormatting(bilingualMatch[1]),
+      translation: stripFormatting(bilingualMatch[2]) || null,
+    } satisfies CollocationExample;
+  }
+
+  const firstHanIndex = [...trimmed].findIndex((char) => /\p{Script=Han}/u.test(char));
+  if (firstHanIndex > 0) {
+    return {
+      text: trimmed.slice(0, firstHanIndex).trim(),
+      translation: trimmed.slice(firstHanIndex).trim() || null,
+    } satisfies CollocationExample;
+  }
+
+  return {
+    text: trimmed,
+    translation: null,
+  } satisfies CollocationExample;
+}
+
+function parseCollocationDetails(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {
+      examples: [] as CollocationExample[],
+      gloss: null as string | null,
+    };
+  }
+
+  const directExample = splitExampleTranslation(trimmed);
+  if (directExample) {
+    return {
+      examples: [directExample],
+      gloss: null,
+    };
+  }
+
+  const glossPlusExampleMatch = /^(.*?)\s*[\uFF08(]([^()（）]+)[\uFF09)]$/u.exec(trimmed);
+  if (glossPlusExampleMatch) {
+    const inlineExample = splitExampleTranslation(glossPlusExampleMatch[2]);
+    if (inlineExample) {
       return {
-        note: stripFormatting(match[2]),
-        phrase: stripFormatting(match[1]),
-      } satisfies CollocationItem;
+        examples: [inlineExample],
+        gloss: stripFormatting(glossPlusExampleMatch[1]) || null,
+      };
+    }
+  }
+
+  return {
+    examples: [] as CollocationExample[],
+    gloss: stripFormatting(trimmed) || null,
+  };
+}
+
+function parseCollocationEntry(line: string) {
+  const match = /^\*\*(.+?)\*\*(.*)$/.exec(line);
+  if (!match) {
+    return null;
+  }
+
+  const phrase = stripFormatting(match[1]);
+  let remainder = match[2].trim();
+  let leadingGloss: string | null = null;
+
+  const leadingGlossMatch = /^[\uFF08(]([^()（）]+)[\uFF09)]\s*[：:]\s*(.+)$/u.exec(remainder);
+  if (leadingGlossMatch && !looksLikeEnglishExample(leadingGlossMatch[1])) {
+    leadingGloss = stripFormatting(leadingGlossMatch[1]) || null;
+    remainder = leadingGlossMatch[2].trim();
+  } else {
+    remainder = remainder.replace(/^[：:]\s*/u, "");
+  }
+
+  const details = parseCollocationDetails(remainder);
+  const gloss = leadingGloss ?? details.gloss;
+
+  return {
+    examples: details.examples,
+    gloss,
+    note: gloss,
+    phrase,
+  } satisfies CollocationItem;
+}
+
+function parseCollocations(section: string) {
+  const items: CollocationItem[] = [];
+
+  for (const line of extractSectionBulletLines(section)) {
+    const entry = parseCollocationEntry(line);
+    if (entry) {
+      items.push(entry);
+      continue;
     }
 
-    return {
+    const trailingExample = splitExampleTranslation(line);
+    if (trailingExample && items.length > 0) {
+      items[items.length - 1].examples.push(trailingExample);
+      continue;
+    }
+
+    items.push({
+      examples: [],
+      gloss: null,
       note: null,
       phrase: stripFormatting(line),
-    } satisfies CollocationItem;
-  });
+    });
+  }
+
+  return items;
 }
 
 function parseCorpusItems(section: string) {

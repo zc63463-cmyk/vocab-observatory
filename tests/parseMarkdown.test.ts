@@ -208,4 +208,102 @@ tags: []
       },
     ]);
   });
+
+  it("splits collocations into phrase gloss and inline examples", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "acquire"
+tags: []
+---
+
+# acquire
+
+## 核心释义
+
+**v.** ①获得；
+
+## 搭配与短语
+
+> [!example]- 搭配
+> - **acquire knowledge/skills**（获得知识/技能）：She acquired fluency in French.（她学会了流利的法语。）
+> - **acquire a reputation**：获得声誉（The company has acquired a reputation for quality.）
+`,
+      "Wiki/L0_words/acquire.md",
+    );
+
+    expect(word.collocations).toEqual([
+      {
+        phrase: "acquire knowledge/skills",
+        gloss: "获得知识/技能",
+        note: "获得知识/技能",
+        examples: [
+          {
+            text: "She acquired fluency in French.",
+            translation: "她学会了流利的法语。",
+          },
+        ],
+      },
+      {
+        phrase: "acquire a reputation",
+        gloss: "获得声誉",
+        note: "获得声誉",
+        examples: [
+          {
+            text: "The company has acquired a reputation for quality.",
+            translation: null,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("attaches follow-up example bullets to the previous collocation", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "practice"
+tags: []
+---
+
+# practice
+
+## 核心释义
+
+**n.** ①实践；
+
+## 搭配与短语
+
+> [!example]- 搭配
+> - **in practice**：在实践中；实际上
+>   - The idea sounds good in theory, but in practice it is difficult to implement.（这个想法理论上听起来不错，但在实践中很难实施。）
+> - **put into practice**：付诸实践
+>   - It is important to put these principles into practice.（将这些原则付诸实践很重要。）
+`,
+      "Wiki/L0_words/practice.md",
+    );
+
+    expect(word.collocations).toEqual([
+      {
+        phrase: "in practice",
+        gloss: "在实践中；实际上",
+        note: "在实践中；实际上",
+        examples: [
+          {
+            text: "The idea sounds good in theory, but in practice it is difficult to implement.",
+            translation: "这个想法理论上听起来不错，但在实践中很难实施。",
+          },
+        ],
+      },
+      {
+        phrase: "put into practice",
+        gloss: "付诸实践",
+        note: "付诸实践",
+        examples: [
+          {
+            text: "It is important to put these principles into practice.",
+            translation: "将这些原则付诸实践很重要。",
+          },
+        ],
+      },
+    ]);
+  });
 });

@@ -6,8 +6,15 @@ export interface CoreDefinition {
 }
 
 export interface CollocationItem {
+  examples: CollocationExample[];
+  gloss: string | null;
   note: string | null;
   phrase: string;
+}
+
+export interface CollocationExample {
+  text: string;
+  translation: string | null;
 }
 
 export interface CorpusItem {

@@ -6,6 +6,7 @@ import {
   createEmptyStructuredWordFields,
   isStructuredWordColumnsMissing,
   type AntonymItem,
+  type CollocationExample,
   type CollocationItem,
   type CoreDefinition,
   type CorpusItem,
@@ -107,14 +108,58 @@ function isCoreDefinition(value: unknown): value is CoreDefinition {
   );
 }
 
-function isCollocationItem(value: unknown): value is CollocationItem {
+function isCollocationExample(value: unknown): value is CollocationExample {
   return (
     typeof value === "object" &&
     value !== null &&
-    "phrase" in value &&
-    typeof value.phrase === "string" &&
-    "note" in value
+    "text" in value &&
+    typeof value.text === "string" &&
+    "translation" in value
   );
+}
+
+function parseCollocationItems(value: Json | undefined) {
+  if (!Array.isArray(value)) {
+    return [] as CollocationItem[];
+  }
+
+  const parsed: CollocationItem[] = [];
+  for (const item of value) {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      !("phrase" in item) ||
+      typeof item.phrase !== "string"
+    ) {
+      continue;
+    }
+
+    const examples: CollocationExample[] = [];
+    if ("examples" in item && Array.isArray(item.examples)) {
+      for (const example of item.examples) {
+        if (isCollocationExample(example)) {
+          examples.push(example);
+        }
+      }
+    }
+    const note =
+      "note" in item && (typeof item.note === "string" || item.note === null)
+        ? item.note
+        : null;
+    const gloss =
+      "gloss" in item && (typeof item.gloss === "string" || item.gloss === null)
+        ? item.gloss
+        : note;
+
+    parsed.push({
+      examples,
+      gloss,
+      note,
+      phrase: item.phrase,
+    });
+  }
+
+  return parsed;
 }
 
 function isCorpusItem(value: unknown): value is CorpusItem {
@@ -244,7 +289,7 @@ function withStructuredFallback(
   return {
     antonym_items: parseStructuredArray(word.antonym_items as Json, isAntonymItem),
     body_md: String(word.body_md ?? ""),
-    collocations: parseStructuredArray(word.collocations as Json, isCollocationItem),
+    collocations: parseCollocationItems(word.collocations as Json),
     core_definitions: parseStructuredArray(word.core_definitions as Json, isCoreDefinition),
     corpus_items: parseStructuredArray(word.corpus_items as Json, isCorpusItem),
     definition_md: String(word.definition_md ?? ""),
