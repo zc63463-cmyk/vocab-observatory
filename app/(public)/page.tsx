@@ -1,7 +1,23 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Badge } from "@/components/ui/Badge";
 import { WordCard } from "@/components/words/WordCard";
 import { getLandingSnapshot } from "@/lib/words";
+
+export const dynamic = "force-static";
+export const revalidate = 300;
+
+export const metadata: Metadata = {
+  description:
+    "把 Obsidian 词库变成可公开浏览、可私有复习的词汇知识站点。涵盖释义、搭配、语料、同反义词等结构化信息。",
+  openGraph: {
+    description:
+      "把 Obsidian 词库变成可公开浏览、可私有复习的词汇知识站点。涵盖释义、搭配、语料、同反义词等结构化信息。",
+    title: "词汇知识库",
+    type: "website",
+  },
+  title: "词汇知识库",
+};
 
 export default async function HomePage() {
   const snapshot = await getLandingSnapshot();

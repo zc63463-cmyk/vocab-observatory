@@ -7,5 +7,9 @@ export async function GET(request: NextRequest) {
     q: request.nextUrl.searchParams.get("q") ?? undefined,
   });
 
-  return NextResponse.json(result);
+  return NextResponse.json(result, {
+    headers: {
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+    },
+  });
 }

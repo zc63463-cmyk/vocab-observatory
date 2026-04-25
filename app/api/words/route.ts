@@ -23,5 +23,12 @@ export async function GET(request: NextRequest) {
     ownerSupabase,
     ownerUserId: owner.id,
   } : undefined);
-  return NextResponse.json(result);
+
+  const headers: Record<string, string> = {};
+
+  if (!owner) {
+    headers["Cache-Control"] = "public, s-maxage=300, stale-while-revalidate=600";
+  }
+
+  return NextResponse.json(result, { headers });
 }

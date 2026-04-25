@@ -1,12 +1,60 @@
 import Link from "next/link";
-import type { Route } from "next";
+import type { Metadata, Route } from "next";
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WordCard } from "@/components/words/WordCard";
 import { getCollectionNoteKindLabel } from "@/lib/collection-notes";
-import { getPublicCollectionNoteBySlug } from "@/lib/plaza";
+import { getPublicCollectionNoteBySlug, getCachedCollectionSummaries } from "@/lib/plaza";
 import { formatDate } from "@/lib/utils";
+
+export const dynamic = "force-static";
+export const revalidate = 300;
+const STATIC_PLAZA_PARAM_LIMIT = 12;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const result = await getPublicCollectionNoteBySlug(slug);
+
+  if (!result.note) {
+    return { title: "集合笔记未找到" };
+  }
+
+  const note = result.note;
+  const kindLabel = getCollectionNoteKindLabel(note.kind);
+  const title = `${note.title} - ${kindLabel} - 词汇知识库`;
+  const description =
+    note.summary
+      ? `${kindLabel}：${note.summary}`
+      : `浏览${kindLabel}「${note.title}」的笔记正文与关联词条。`;
+
+  return {
+    description,
+    openGraph: {
+      description,
+      title,
+      type: "article",
+    },
+    title,
+  };
+}
+
+export async function generateStaticParams() {
+  const result = await getCachedCollectionSummaries();
+
+  if (result.status !== "ok") {
+    return [];
+  }
+
+  return result.notes.slice(0, STATIC_PLAZA_PARAM_LIMIT).map((note) => ({
+    slug: note.slug,
+  }));
+}
 
 function getMetadataString(
   metadata: Record<string, unknown> | null | undefined,
@@ -19,7 +67,53 @@ function getMetadataString(
   return typeof metadata[key] === "string" ? String(metadata[key]) : null;
 }
 
-export default async function PlazaDetailPage({
+function PlazaDetailFallback() {
+  return (
+    <div className="space-y-6">
+      <section className="panel-strong rounded-[2rem] p-8">
+        <div className="h-4 w-32 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-5 flex flex-wrap gap-2">
+          <div className="h-6 w-20 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+          <div className="h-6 w-28 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        </div>
+        <div className="mt-5 h-14 w-64 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-4 h-5 w-96 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+      </section>
+      <section className="panel rounded-[1.75rem] p-6">
+        <div className="h-8 w-36 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-5 h-4 w-full animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-3 h-4 w-5/6 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-3 h-4 w-4/6 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+      </section>
+      <section className="space-y-4">
+        <div className="h-8 w-32 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="panel rounded-[1.75rem] p-6">
+              <div className="h-5 w-24 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+              <div className="mt-4 h-10 w-40 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+              <div className="mt-3 h-4 w-full animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export default function PlazaDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  return (
+    <Suspense fallback={<PlazaDetailFallback />}>
+      <PlazaDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+async function PlazaDetailContent({
   params,
 }: {
   params: Promise<{ slug: string }>;

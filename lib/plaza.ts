@@ -255,7 +255,7 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
     .map(toRelatedWord);
 }
 
-const getCachedCollectionSummaries = unstable_cache(
+export const getCachedCollectionSummaries = unstable_cache(
   async (): Promise<CachedCollectionSummariesResult> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {

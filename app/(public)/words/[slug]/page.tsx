@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
@@ -15,6 +16,36 @@ import { getAllPublicWordIndexEntries, getPublicWordBySlug } from "@/lib/words";
 export const dynamic = "force-static";
 export const revalidate = 300;
 const STATIC_WORD_PARAM_LIMIT = 12;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const result = await getPublicWordBySlug(slug);
+
+  if (!result.word) {
+    return { title: "词条未找到" };
+  }
+
+  const word = result.word;
+  const title = `${word.title} - 词汇知识库`;
+  const description =
+    word.short_definition
+      ? `${word.title}${word.lemma !== word.title ? ` (${word.lemma})` : ""}：${word.short_definition}`
+      : `查看 ${word.title} 的释义、搭配、语料与同反义词。`;
+
+  return {
+    description,
+    openGraph: {
+      description,
+      title,
+      type: "article",
+    },
+    title,
+  };
+}
 
 export async function generateStaticParams() {
   const words = await getAllPublicWordIndexEntries();
