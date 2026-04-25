@@ -5,6 +5,7 @@ import type { Route } from "next";
 import type { User } from "@supabase/supabase-js";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { SkeletonBlock } from "@/components/ui/Skeleton";
 import { AddToReviewButton } from "@/components/words/AddToReviewButton";
 import { WordNotes } from "@/components/words/WordNotes";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -70,12 +71,12 @@ function readJson<T>(url: string, signal?: AbortSignal) {
 
 function LoadingCard() {
   return (
-    <div className="animate-pulse rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
-      <div className="h-4 w-24 rounded-full bg-[var(--color-surface-muted)]" />
-      <div className="mt-4 h-10 rounded-2xl bg-[var(--color-surface-muted)]" />
+    <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
+      <SkeletonBlock className="h-4 w-24" />
+      <SkeletonBlock className="mt-4 h-10 rounded-2xl" />
       <div className="mt-4 space-y-2">
-        <div className="h-3 rounded-full bg-[var(--color-surface-muted)]" />
-        <div className="h-3 rounded-full bg-[var(--color-surface-muted)]" />
+        <SkeletonBlock className="h-3" />
+        <SkeletonBlock className="h-3" />
       </div>
     </div>
   );

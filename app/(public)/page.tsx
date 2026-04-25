@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { WordCard } from "@/components/words/WordCard";
 import { getLandingSnapshot } from "@/lib/words";
 
@@ -37,15 +39,15 @@ export default async function HomePage() {
             </p>
 
             <form action="/words" className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
-              <input
+              <Input
                 type="search"
                 name="q"
                 placeholder="搜索单词、释义、语义场..."
-                className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+                inputSize="lg"
               />
-              <button className="rounded-2xl bg-[var(--color-accent)] px-6 py-4 text-sm font-semibold text-white transition hover:opacity-90">
+              <Button type="submit" size="lg">
                 搜索词条
-              </button>
+              </Button>
             </form>
           </div>
 

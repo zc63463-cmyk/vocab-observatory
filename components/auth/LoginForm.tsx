@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export function LoginForm({
@@ -69,22 +71,21 @@ export function LoginForm({
 
       <label className="mt-8 block">
         <span className="mb-2 block text-sm font-semibold">邮箱</span>
-        <input
+        <Input
           required
           type="email"
           name="email"
           placeholder="owner@example.com"
-          className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
         />
       </label>
 
-      <button
+      <Button
         type="submit"
         disabled={pending}
-        className="mt-6 w-full rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+        fullWidth
       >
         {pending ? "发送中..." : "发送登录链接"}
-      </button>
+      </Button>
 
       {error ? (
         <p className="mt-4 rounded-2xl bg-[var(--color-surface-muted-warm)] px-4 py-3 text-sm text-[var(--color-accent-2)]">

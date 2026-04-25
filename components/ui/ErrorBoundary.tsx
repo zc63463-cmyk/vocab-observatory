@@ -1,6 +1,7 @@
 "use client";
 
 import { Component } from "react";
+import { Button } from "@/components/ui/Button";
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -52,16 +53,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </pre>
             ) : null}
             <div className="mt-6 flex justify-center gap-3">
-              <button
+              <Button
                 type="button"
                 onClick={() => this.setState({ error: null })}
-                className="rounded-full border border-[var(--color-border)] px-6 py-3 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)]"
+                variant="secondary"
               >
                 重试
-              </button>
+              </Button>
               <a
                 href="/"
-                className="rounded-full bg-[var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                className="inline-flex rounded-full bg-[var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
               >
                 返回首页
               </a>

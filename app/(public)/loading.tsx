@@ -1,13 +1,4 @@
-import "./skeleton.css";
-
-function SkeletonBlock({ className }: { className: string }) {
-  return (
-    <div
-      className={`skeleton-shimmer rounded-[1.5rem] ${className}`}
-      style={{ minHeight: "1em" }}
-    />
-  );
-}
+import { SkeletonBlock } from "@/components/ui/Skeleton";
 
 export default function PublicLoading() {
   return (

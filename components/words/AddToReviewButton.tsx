@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { formatDateTime } from "@/lib/utils";
 import type { OwnerWordProgressSummary } from "@/lib/words";
@@ -103,14 +104,14 @@ export function AddToReviewButton({
 
         <div className="mt-5 flex flex-wrap gap-3">
           {isSuspended ? (
-            <button
+            <Button
               type="button"
               disabled={pending}
               onClick={handleRejoin}
-              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+              size="sm"
             >
               {pending ? "恢复中..." : "恢复复习"}
-            </button>
+            </Button>
           ) : (
             <Link
               href="/review"
@@ -126,14 +127,14 @@ export function AddToReviewButton({
 
   return (
     <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
-      <button
+      <Button
         type="button"
         disabled={pending}
         onClick={handleAdd}
-        className="w-full rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+        fullWidth
       >
         {pending ? "处理中..." : "加入复习"}
-      </button>
+      </Button>
     </div>
   );
 }

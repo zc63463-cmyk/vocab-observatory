@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RatingButtons } from "@/components/review/RatingButtons";
 import { ReviewCard } from "@/components/review/ReviewCard";
@@ -268,22 +269,24 @@ export function ReviewQueue() {
           <RatingButtons disabled={pending} onRate={handleRate} />
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button
+          <Button
             type="button"
             disabled={pending}
             onClick={handleSkip}
-            className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)] disabled:cursor-not-allowed disabled:opacity-70"
+            variant="secondary"
+            size="sm"
           >
             跳过到队尾
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             disabled={pending}
             onClick={handleSuspend}
-            className="rounded-full border border-[rgba(178,87,47,0.2)] bg-[var(--color-surface-muted-warm)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-2)] transition hover:bg-[rgba(178,87,47,0.14)] disabled:cursor-not-allowed disabled:opacity-70"
+            variant="danger"
+            size="sm"
           >
             暂停复习
-          </button>
+          </Button>
         </div>
       </div>
     </div>

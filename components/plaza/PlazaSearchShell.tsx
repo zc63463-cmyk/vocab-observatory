@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Input, Select } from "@/components/ui/Input";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { createCollectionNotePath, getCollectionNoteSummaryText } from "@/lib/collection-notes";
 import type { PlazaFilterKind, PlazaOverviewResponse } from "@/lib/plaza";
@@ -112,25 +113,24 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
 
         <div className="mt-6 space-y-3">
           <div className="flex max-w-3xl flex-col gap-3 sm:flex-row">
-            <input
+            <Input
               type="search"
               value={activeFilters.q}
               onChange={onQueryChange}
               placeholder="搜索词根词缀、语义场、摘要..."
-              className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              inputSize="lg"
             />
           </div>
 
           <div className="grid gap-3 md:max-w-xs">
-            <select
+            <Select
               value={activeFilters.kind}
               onChange={onKindChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="all">全部类型</option>
               <option value="root_affix">词根词缀</option>
               <option value="semantic_field">语义场</option>
-            </select>
+            </Select>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--color-ink-soft)]">

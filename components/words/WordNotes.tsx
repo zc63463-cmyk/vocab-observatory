@@ -8,6 +8,8 @@ import {
   useReducer,
   useState,
 } from "react";
+import { Button } from "@/components/ui/Button";
+import { TextArea } from "@/components/ui/Input";
 import { normalizeObsidianMarkdown } from "@/lib/markdown";
 import { sanitizeHtmlSync } from "@/lib/sanitize";
 import { excerpt, formatDateTime } from "@/lib/utils";
@@ -249,46 +251,43 @@ export function WordNotes({
                   : "编辑后会自动保存"}
           </p>
         </div>
-        <button
+        <Button
           type="button"
           onClick={() => void persist(true)}
-          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)]"
+          variant="secondary"
+          size="sm"
         >
           立即保存
-        </button>
+        </Button>
       </div>
 
       <div className="mt-4 flex gap-3">
-        <button
+        <Button
           type="button"
           onClick={() => dispatch({ payload: "edit", type: "SET_VIEW" })}
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${
-            state.view === "edit"
-              ? "bg-[var(--color-accent)] text-white"
-              : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
-          }`}
+          variant="ghost"
+          active={state.view === "edit"}
+          size="sm"
         >
           编辑
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={() => dispatch({ payload: "preview", type: "SET_VIEW" })}
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${
-            state.view === "preview"
-              ? "bg-[var(--color-accent)] text-white"
-              : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
-          }`}
+          variant="ghost"
+          active={state.view === "preview"}
+          size="sm"
         >
           预览
-        </button>
+        </Button>
       </div>
 
       {state.view === "edit" ? (
-        <textarea
+        <TextArea
           value={state.content}
           onChange={(event) => dispatch({ payload: event.target.value, type: "SET_CONTENT" })}
           rows={10}
-          className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-input)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
+          className="mt-4 w-full"
           placeholder="记录你的例句、误区、联想和复习提示。"
         />
       ) : (
@@ -323,18 +322,19 @@ export function WordNotes({
                 {excerpt(revision.content_md || "空白笔记", 160)}
               </p>
               <div className="mt-3">
-                <button
+                <Button
                   type="button"
                   disabled={state.restoringVersion !== null || revision.version === state.version}
                   onClick={() => void restoreRevision(revision.id, revision.version)}
-                  className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)] disabled:cursor-not-allowed disabled:opacity-70"
+                  variant="secondary"
+                  size="sm"
                 >
                   {revision.version === state.version
                     ? "当前版本"
                     : state.restoringVersion === revision.version
                       ? "恢复中..."
                       : "恢复此版本"}
-                </button>
+                </Button>
               </div>
             </div>
           ))}

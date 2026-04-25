@@ -1,4 +1,4 @@
-/* Shimmer skeleton animation — used by loading skeletons */
+/* Shimmer skeleton animation — used by Skeleton component */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;

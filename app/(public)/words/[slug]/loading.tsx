@@ -1,13 +1,4 @@
-import "../skeleton.css";
-
-function SkeletonLine({ className }: { className: string }) {
-  return (
-    <div
-      className={`skeleton-shimmer rounded-full ${className}`}
-      style={{ minHeight: "1em" }}
-    />
-  );
-}
+import { SkeletonLine } from "@/components/ui/Skeleton";
 
 export default function WordDetailLoading() {
   return (

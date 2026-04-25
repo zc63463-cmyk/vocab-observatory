@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Input, Select } from "@/components/ui/Input";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -161,20 +162,19 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
 
         <div className="mt-6 space-y-3">
           <div className="flex max-w-3xl flex-col gap-3 sm:flex-row">
-            <input
+            <Input
               type="search"
               value={activeFilters.q}
               onChange={onQueryChange}
               placeholder="搜索单词、释义、语义场..."
-              className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              inputSize="lg"
             />
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
-            <select
+            <Select
               value={activeFilters.semantic}
               onChange={onSemanticChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部语义场</option>
               {result.filterOptions.semanticFields.map((value) => (
@@ -182,12 +182,11 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
 
-            <select
+            <Select
               value={activeFilters.freq}
               onChange={onFreqChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部词频</option>
               {result.filterOptions.frequencies.map((value) => (
@@ -195,19 +194,18 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
 
             {result.isOwner ? (
-              <select
+              <Select
                 value={activeFilters.review}
                 onChange={onReviewChange}
-                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
               >
                 <option value="all">全部词条</option>
                 <option value="tracked">已加入复习</option>
                 <option value="due">今天到期</option>
                 <option value="untracked">未加入复习</option>
-              </select>
+              </Select>
             ) : (
               <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
                 Owner 登录后可按复习状态筛选

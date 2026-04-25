@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 export default function Error({
   error,
@@ -48,22 +49,24 @@ export default function Error({
 
         {/* CTAs */}
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <button
+          <Button
             type="button"
             onClick={reset}
-            className="group inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3 text-sm font-semibold text-white shadow-md shadow-[var(--color-accent)]/15 transition-all duration-200 hover:-translate-y-px hover:shadow-lg hover:shadow-[var(--color-accent)]/25 active:translate-y-0 active:scale-[0.98]"
+            className="group shadow-md shadow-[var(--color-accent)]/15 hover:-translate-y-px hover:shadow-lg hover:shadow-[var(--color-accent)]/25 active:translate-y-0 active:scale-[0.98]"
+            icon={
+              <svg
+                className="h-3.5 w-3.5 transition-transform group-hover:rotate-180"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            }
           >
             重新加载
-            <svg
-              className="h-3.5 w-3.5 transition-transform group-hover:rotate-180"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
+          </Button>
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-7 py-3 text-sm font-semibold text-[var(--color-ink-soft)] transition-all duration-200 hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.98]"
