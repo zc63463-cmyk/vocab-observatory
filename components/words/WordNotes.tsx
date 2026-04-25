@@ -1,6 +1,5 @@
 "use client";
 
-import { marked } from "marked";
 import {
   useCallback,
   startTransition,
@@ -9,6 +8,7 @@ import {
   useState,
 } from "react";
 import { normalizeObsidianMarkdown } from "@/lib/markdown";
+import { sanitizeHtmlSync } from "@/lib/sanitize";
 import { excerpt, formatDateTime } from "@/lib/utils";
 
 interface NoteRevision {
@@ -18,10 +18,16 @@ interface NoteRevision {
   version: number;
 }
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
+/**
+ * Lazy-loaded markdown renderer — moves `marked` (~50KB gzip) out of the main bundle.
+ * The import is deferred until the user actually switches to preview mode.
+ */
+async function renderMarkdownOnClient(text: string): Promise<string> {
+  const { marked } = await import("marked");
+  marked.setOptions({ breaks: true, gfm: true });
+  const raw = marked.parse(text) as string;
+  return sanitizeHtmlSync(raw);
+}
 
 export function WordNotes({
   initialContent,
@@ -48,7 +54,21 @@ export function WordNotes({
   const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const deferredContent = useDeferredValue(content);
 
-  const previewHtml = marked.parse(normalizeObsidianMarkdown(deferredContent)) as string;
+  // Lazy-render markdown only when preview mode is active — keeps `marked` out of the main bundle
+  const [previewHtml, setPreviewHtml] = useState("");
+
+  useEffect(() => {
+    if (view !== "preview") return;
+
+    let cancelled = false;
+    void renderMarkdownOnClient(normalizeObsidianMarkdown(deferredContent)).then((html) => {
+      if (!cancelled) setPreviewHtml(html);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deferredContent, view]);
 
   const loadHistory = useCallback(async () => {
     const response = await fetch(`/api/notes/${wordId}/history`);

@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import type { Route } from "next";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { createCollectionNotePath, getCollectionNoteSummaryText } from "@/lib/collection-notes";
 import type { PlazaFilterKind, PlazaOverviewResponse } from "@/lib/plaza";
 import { formatDate } from "@/lib/utils";
+import type { Route } from "next";
 
 type PlazaFilters = PlazaOverviewResponse["filters"];
 
@@ -41,128 +40,36 @@ function buildPlazaHref(pathname: string, filters: PlazaFilters) {
   return query ? `${pathname}?${query}` : pathname;
 }
 
+function buildPlazaApiHref(filters: PlazaFilters) {
+  return buildPlazaHref("/api/plaza", filters);
+}
+
 function readPlazaResponse(response: Response) {
   return response.json() as Promise<PlazaOverviewResponse & { error?: string }>;
 }
 
 export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOverviewResponse }) {
-  const pathname = usePathname() ?? "/plaza";
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [result, setResult] = useState(initialResult);
-  const [draftFilters, setDraftFilters] = useState<PlazaFilters>(initialResult.filters);
-  const [draftSourceKey, setDraftSourceKey] = useState(searchParams.toString());
-  const [debouncedQ, setDebouncedQ] = useState(initialResult.filters.q);
-  const [isFetching, setIsFetching] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [isRouting, startTransition] = useTransition();
-  const initialResultRef = useRef(initialResult);
-  const hasHydratedFetchRef = useRef(false);
-  const searchParamsString = searchParams.toString();
-
-  const urlFilters = useMemo(
-    () => {
-      const params = new URLSearchParams(searchParamsString);
-
-      return normalizePlazaFilters({
-        kind: (params.get("kind") as PlazaFilterKind | null) ?? undefined,
-        q: params.get("q") ?? undefined,
-      });
-    },
-    [searchParamsString],
-  );
-
-  const activeFilters = useMemo(
-    () => (draftSourceKey === searchParamsString ? draftFilters : urlFilters),
-    [draftFilters, draftSourceKey, searchParamsString, urlFilters],
-  );
-  const committedQ = draftSourceKey === searchParamsString ? debouncedQ : activeFilters.q;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQ(activeFilters.q);
-    }, draftSourceKey === searchParamsString ? 300 : 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [activeFilters.q, draftSourceKey, searchParamsString]);
-
-  useEffect(() => {
-    const nextFilters = normalizePlazaFilters({
-      ...activeFilters,
-      q: committedQ,
-    });
-
-    if (arePlazaFiltersEqual(nextFilters, urlFilters)) {
-      return;
-    }
-
-    startTransition(() => {
-      router.replace(buildPlazaHref(pathname, nextFilters) as Route, { scroll: false });
-    });
-  }, [activeFilters, committedQ, pathname, router, urlFilters]);
-
-  useEffect(() => {
-    const shouldSkipInitialFetch =
-      !hasHydratedFetchRef.current &&
-      arePlazaFiltersEqual(urlFilters, initialResultRef.current.filters);
-
-    if (shouldSkipInitialFetch) {
-      hasHydratedFetchRef.current = true;
-      return;
-    }
-
-    const controller = new AbortController();
-    const apiHref = buildPlazaHref("/api/plaza", urlFilters);
-
-    setIsFetching(true);
-    setFetchError(null);
-
-    void fetch(apiHref, { signal: controller.signal })
-      .then(async (response) => {
-        const payload = await readPlazaResponse(response);
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load plaza.");
-        }
-
-        return payload;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        hasHydratedFetchRef.current = true;
-        setResult(payload);
-
-        if (!arePlazaFiltersEqual(payload.filters, urlFilters)) {
-          startTransition(() => {
-            router.replace(buildPlazaHref(pathname, payload.filters) as Route, { scroll: false });
-          });
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setFetchError(error instanceof Error ? error.message : "Failed to load plaza.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsFetching(false);
-        }
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [pathname, router, urlFilters]);
+  const {
+    activeFilters,
+    fetchError,
+    isUpdating,
+    result,
+    setFilter,
+  } = useFilteredSearch<PlazaFilters, PlazaOverviewResponse>({
+    areFiltersEqual: arePlazaFiltersEqual,
+    buildApiHref: buildPlazaApiHref,
+    buildHref: buildPlazaHref,
+    getFiltersFromResult: (r) => r.filters,
+    getFiltersFromSearchParams: (params) => ({
+      kind: (params.get("kind") as PlazaFilterKind | null) ?? undefined,
+      q: params.get("q") ?? undefined,
+    }),
+    initialResult,
+    normalizeFilters: normalizePlazaFilters,
+    readResponse: readPlazaResponse,
+  });
 
   const hasActiveFilters = result.filters.kind !== "all" || result.filters.q.length > 0;
-  const isUpdating = isFetching || isRouting;
 
   return (
     <div className="space-y-8">
@@ -192,11 +99,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
             <input
               type="search"
               value={activeFilters.q}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftSourceKey(searchParamsString);
-                setDraftFilters((current) => ({ ...current, q: value }));
-              }}
+              onChange={(event) => setFilter("q", event.target.value)}
               placeholder="搜索词根词缀、语义场、摘要..."
               className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
@@ -209,9 +112,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
                 const value = normalizePlazaFilters({
                   kind: event.target.value as PlazaFilterKind,
                 }).kind;
-
-                setDraftSourceKey(searchParamsString);
-                setDraftFilters((current) => ({ ...current, kind: value }));
+                setFilter("kind", value);
               }}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >

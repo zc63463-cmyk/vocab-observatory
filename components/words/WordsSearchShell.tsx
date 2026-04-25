@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WordCard } from "@/components/words/WordCard";
+import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
@@ -60,70 +60,42 @@ function buildWordsHref(pathname: string, filters: WordFilters) {
   return query ? `${pathname}?${query}` : pathname;
 }
 
+function buildWordsApiHref(filters: WordFilters) {
+  return buildWordsHref("/api/words", filters);
+}
+
 function readWordsResponse(response: Response) {
   return response.json() as Promise<PublicWordsResponse & { error?: string }>;
 }
 
 export function WordsSearchShell({ initialResult }: { initialResult: PublicWordsResponse }) {
-  const pathname = usePathname() ?? "/words";
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [result, setResult] = useState(initialResult);
-  const [draftFilters, setDraftFilters] = useState<WordFilters>(initialResult.filters);
-  const [draftSourceKey, setDraftSourceKey] = useState(searchParams.toString());
-  const [debouncedQ, setDebouncedQ] = useState(initialResult.filters.q);
-  const [isFetching, setIsFetching] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>("checking");
-  const [isRouting, startTransition] = useTransition();
-  const initialResultRef = useRef(initialResult);
-  const hasHydratedFetchRef = useRef(false);
-  const searchParamsString = searchParams.toString();
 
-  const urlFilters = useMemo(
-    () => {
-      const params = new URLSearchParams(searchParamsString);
-
-      return normalizeWordFilters({
-        freq: params.get("freq") ?? undefined,
-        q: params.get("q") ?? undefined,
-        review: (params.get("review") as ReviewFilter | null) ?? undefined,
-        semantic: params.get("semantic") ?? undefined,
-      });
-    },
-    [searchParamsString],
-  );
-
-  const activeFilters = useMemo(
-    () => (draftSourceKey === searchParamsString ? draftFilters : urlFilters),
-    [draftFilters, draftSourceKey, searchParamsString, urlFilters],
-  );
-  const committedQ = draftSourceKey === searchParamsString ? debouncedQ : activeFilters.q;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQ(activeFilters.q);
-    }, draftSourceKey === searchParamsString ? 300 : 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [activeFilters.q, draftSourceKey, searchParamsString]);
-
-  useEffect(() => {
-    const nextFilters = normalizeWordFilters({
-      ...activeFilters,
-      q: committedQ,
-    });
-
-    if (areWordFiltersEqual(nextFilters, urlFilters)) {
-      return;
-    }
-
-    startTransition(() => {
-      router.replace(buildWordsHref(pathname, nextFilters) as Route, { scroll: false });
-    });
-  }, [activeFilters, committedQ, pathname, router, urlFilters]);
+  const {
+    activeFilters,
+    fetchError,
+    isUpdating,
+    result,
+    searchParamsString,
+    setFilter,
+  } = useFilteredSearch<WordFilters, PublicWordsResponse>({
+    areFiltersEqual: areWordFiltersEqual,
+    buildApiHref: buildWordsApiHref,
+    buildHref: buildWordsHref,
+    credentials: "same-origin",
+    getFiltersFromResult: (r) => r.filters,
+    getFiltersFromSearchParams: (params) => ({
+      freq: params.get("freq") ?? undefined,
+      q: params.get("q") ?? undefined,
+      review: (params.get("review") as ReviewFilter | null) ?? undefined,
+      semantic: params.get("semantic") ?? undefined,
+    }),
+    initialResult,
+    normalizeFilters: normalizeWordFilters,
+    readResponse: readWordsResponse,
+    shouldSkipInitialFetch: (urlFilters, initial) =>
+      !initial.isOwner && areWordFiltersEqual(urlFilters, initial.filters),
+  });
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -153,75 +125,6 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     };
   }, []);
 
-  useEffect(() => {
-    if (authState === "checking") {
-      return;
-    }
-
-    const shouldSkipGuestHydration =
-      !hasHydratedFetchRef.current &&
-      authState === "guest" &&
-      !initialResultRef.current.isOwner &&
-      areWordFiltersEqual(urlFilters, initialResultRef.current.filters);
-
-    if (shouldSkipGuestHydration) {
-      hasHydratedFetchRef.current = true;
-      return;
-    }
-
-    const controller = new AbortController();
-    const apiHref = buildWordsHref("/api/words", urlFilters);
-
-    setIsFetching(true);
-    setFetchError(null);
-
-    void fetch(apiHref, {
-      credentials: "same-origin",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const payload = await readWordsResponse(response);
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load words.");
-        }
-
-        return payload;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        hasHydratedFetchRef.current = true;
-        setResult(payload);
-
-        if (!areWordFiltersEqual(payload.filters, urlFilters)) {
-          startTransition(() => {
-            router.replace(buildWordsHref(pathname, payload.filters) as Route, { scroll: false });
-          });
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setFetchError(error instanceof Error ? error.message : "Failed to load words.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsFetching(false);
-        }
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [authState, pathname, router, urlFilters]);
-
-  const isUpdating = isFetching || isRouting;
-
   return (
     <div className="space-y-8">
       <section className="panel-strong rounded-[2rem] p-8">
@@ -238,11 +141,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             <input
               type="search"
               value={activeFilters.q}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftSourceKey(searchParamsString);
-                setDraftFilters((current) => ({ ...current, q: value }));
-              }}
+              onChange={(event) => setFilter("q", event.target.value)}
               placeholder="搜索单词、释义、语义场..."
               className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
@@ -251,11 +150,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
           <div className="grid gap-3 md:grid-cols-3">
             <select
               value={activeFilters.semantic}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftSourceKey(searchParamsString);
-                setDraftFilters((current) => ({ ...current, semantic: value }));
-              }}
+              onChange={(event) => setFilter("semantic", event.target.value)}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部语义场</option>
@@ -268,11 +163,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
 
             <select
               value={activeFilters.freq}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftSourceKey(searchParamsString);
-                setDraftFilters((current) => ({ ...current, freq: value }));
-              }}
+              onChange={(event) => setFilter("freq", event.target.value)}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部词频</option>
@@ -290,9 +181,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                   const value = normalizeWordFilters({
                     review: event.target.value as ReviewFilter,
                   }).review;
-
-                  setDraftSourceKey(searchParamsString);
-                  setDraftFilters((current) => ({ ...current, review: value }));
+                  setFilter("review", value);
                 }}
                 className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
               >

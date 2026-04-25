@@ -3,6 +3,7 @@ import { Fraunces, Manrope } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { GlobalAuthCodeHandler } from "@/components/auth/GlobalAuthCodeHandler";
+import { GlobalErrorBoundary } from "@/components/layout/GlobalErrorBoundary";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -35,12 +36,14 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-[var(--color-canvas)] text-[var(--color-ink)]">
         <div className="ambient-bg" />
-        <div className="relative flex min-h-screen flex-col">
-          <Suspense fallback={null}>
-            <GlobalAuthCodeHandler />
-          </Suspense>
-          {children}
-        </div>
+        <GlobalErrorBoundary>
+          <div className="relative flex min-h-screen flex-col">
+            <Suspense fallback={null}>
+              <GlobalAuthCodeHandler />
+            </Suspense>
+            {children}
+          </div>
+        </GlobalErrorBoundary>
       </body>
     </html>
   );

@@ -95,9 +95,6 @@ export async function getDashboardSummary() {
 
   const today = startOfTodayIso();
   const now = new Date().toISOString();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setHours(0, 0, 0, 0);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setHours(0, 0, 0, 0);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
@@ -105,63 +102,34 @@ export async function getDashboardSummary() {
   yearAgo.setHours(0, 0, 0, 0);
   yearAgo.setDate(yearAgo.getDate() - 364);
 
+  // ── Optimized: 6 parallel queries instead of 12 ──
+  // Merged review_logs queries: 3 → 1 (fetch 30d with words, derive 7d/30d/rating from it)
+  // Merged user_word_progress count queries: 3 → 1 (fetch all progress, count in-memory)
   const [
-    trackedWordsResult,
-    dueTodayResult,
-    todayNewResult,
-    reviewedTodayResult,
-    notesCountResult,
-    recentLogsResult,
-    notesResult,
-    reviewLogs30dResult,
+    // 1. All active progress rows (for tracked count, due count, new count, FSRS retrievability)
+    progressResult,
+    // 2. 30d review logs WITH word metadata (covers: recent logs, 7d/30d volume, rating distribution, semantic fields)
     reviewLogs30dWithWordsResult,
+    // 3. Year-long review dates (for streak calculation)
     streakResult,
-    activeProgressResult,
+    // 4. Recent notes
+    notesResult,
+    // 5. Notes count
+    notesCountResult,
+    // 6. Active session
     activeSessionResult,
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("*", { count: "exact", head: true })
+      .select("state, due_at, scheduler_payload")
       .eq("user_id", owner.id),
     supabase
-      .from("user_word_progress")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", owner.id)
-      .lte("due_at", now),
-    supabase
-      .from("user_word_progress")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", owner.id)
-      .eq("state", "new")
-      .lte("due_at", now),
-    supabase
       .from("review_logs")
-      .select("*", { count: "exact", head: true })
+      .select("rating, reviewed_at, words(lemma, slug, title, metadata)")
       .eq("user_id", owner.id)
-      .gte("reviewed_at", today),
-    supabase.from("notes").select("*", { count: "exact", head: true }).eq("user_id", owner.id),
-    supabase
-      .from("review_logs")
-      .select("rating, reviewed_at, words(lemma, slug, title)")
-      .eq("user_id", owner.id)
+      .gte("reviewed_at", thirtyDaysAgo.toISOString())
       .order("reviewed_at", { ascending: false })
-      .limit(8),
-    supabase
-      .from("notes")
-      .select("content_md, updated_at, version, words(lemma, slug, title)")
-      .eq("user_id", owner.id)
-      .order("updated_at", { ascending: false })
-      .limit(8),
-    supabase
-      .from("review_logs")
-      .select("rating, reviewed_at")
-      .eq("user_id", owner.id)
-      .gte("reviewed_at", thirtyDaysAgo.toISOString()),
-    supabase
-      .from("review_logs")
-      .select("rating, reviewed_at, words(metadata)")
-      .eq("user_id", owner.id)
-      .gte("reviewed_at", thirtyDaysAgo.toISOString()),
+      .limit(500),
     supabase
       .from("review_logs")
       .select("reviewed_at")
@@ -169,10 +137,12 @@ export async function getDashboardSummary() {
       .gte("reviewed_at", yearAgo.toISOString())
       .order("reviewed_at", { ascending: false }),
     supabase
-      .from("user_word_progress")
-      .select("scheduler_payload")
+      .from("notes")
+      .select("content_md, updated_at, version, words(lemma, slug, title)")
       .eq("user_id", owner.id)
-      .neq("state", "suspended"),
+      .order("updated_at", { ascending: false })
+      .limit(8),
+    supabase.from("notes").select("*", { count: "exact", head: true }).eq("user_id", owner.id),
     supabase
       .from("sessions")
       .select("id, cards_seen, started_at")
@@ -185,29 +155,61 @@ export async function getDashboardSummary() {
       .maybeSingle(),
   ]);
 
-  const reviewLogs30d = (reviewLogs30dResult.data ?? []) as Array<{
+  // ── Derive metrics from progress rows (in-memory) ──
+  const progressRows = (progressResult.data ?? []) as Array<{
+    state: string;
+    due_at: string | null;
+    scheduler_payload: unknown;
+  }>;
+  const trackedWords = progressRows.length;
+  const dueToday = progressRows.filter((row) => row.due_at && row.due_at <= now).length;
+  const todayNewCount = progressRows.filter(
+    (row) => row.state === "new" && row.due_at && row.due_at <= now,
+  ).length;
+
+  // ── FSRS retrievability from progress rows ──
+  const retrievabilityValues = progressRows
+    .filter((row) => row.state !== "suspended")
+    .map((row) => getCurrentRetrievability(row.scheduler_payload as never))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const fsrsForgettingRate =
+    retrievabilityValues.length > 0
+      ? retrievabilityValues.reduce((sum, value) => sum + (1 - value), 0) /
+        retrievabilityValues.length
+      : 0;
+
+  // ── Derive review metrics from the single 30d query ──
+  type ReviewLogWithWords = {
     rating: string;
     reviewed_at: string;
-  }>;
+    words: { lemma: string; slug: string; title: string; metadata: unknown } | null;
+  };
+  const reviewLogs30d = (reviewLogs30dWithWordsResult.data ?? []) as ReviewLogWithWords[];
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
   const reviewLogs7d = reviewLogs30d.filter((row) => row.reviewed_at >= sevenDaysAgo.toISOString());
 
-  const ratingDistribution = {
-    again: 0,
-    easy: 0,
-    good: 0,
-    hard: 0,
-  };
+  // Recent logs (top 8) — already ordered by reviewed_at desc, but limit in-memory
+  const recentLogs = reviewLogs30d.slice(0, 8).map((row) => ({
+    rating: row.rating,
+    reviewed_at: row.reviewed_at,
+    words: row.words ? { lemma: row.words.lemma, slug: row.words.slug, title: row.words.title } : null,
+  }));
+
+  // Rating distribution
+  const ratingDistribution = { again: 0, easy: 0, good: 0, hard: 0 };
   for (const row of reviewLogs30d) {
     if (row.rating in ratingDistribution) {
       ratingDistribution[row.rating as keyof typeof ratingDistribution] += 1;
     }
   }
 
+  // Weakest semantic fields
   const semanticCounts = new Map<string, { again: number; total: number }>();
-  for (const row of (reviewLogs30dWithWordsResult.data ?? []) as Array<{
-    rating: string;
-    words: { metadata: unknown } | null;
-  }>) {
+  for (const row of reviewLogs30d) {
     const metadata = row.words?.metadata;
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
       continue;
@@ -244,22 +246,15 @@ export async function getDashboardSummary() {
     })
     .slice(0, 3);
 
+  // Streak
   const streakDays = calculateStreak(
     new Set(((streakResult.data ?? []) as Array<{ reviewed_at: string }>).map((row) =>
       row.reviewed_at.slice(0, 10),
     )),
   );
 
-  const retrievabilityValues = ((activeProgressResult.data ?? []) as Array<{
-    scheduler_payload: unknown;
-  }>)
-    .map((row) => getCurrentRetrievability(row.scheduler_payload as never))
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const fsrsForgettingRate =
-    retrievabilityValues.length > 0
-      ? retrievabilityValues.reduce((sum, value) => sum + (1 - value), 0) /
-        retrievabilityValues.length
-      : 0;
+  // Reviewed today count
+  const reviewedToday = reviewLogs30d.filter((row) => row.reviewed_at >= today).length;
 
   return {
     activeSession: activeSessionResult.data ?? null,
@@ -268,14 +263,14 @@ export async function getDashboardSummary() {
     fsrsForgettingRate,
     importOverview,
     metrics: {
-      dueToday: dueTodayResult.count ?? 0,
+      dueToday,
       notesCount: notesCountResult.count ?? 0,
       reviewed30d: reviewLogs30d.length,
       reviewed7d: reviewLogs7d.length,
-      reviewedToday: reviewedTodayResult.count ?? 0,
+      reviewedToday,
       streakDays,
-      todayNewCount: todayNewResult.count ?? 0,
-      trackedWords: trackedWordsResult.count ?? 0,
+      todayNewCount,
+      trackedWords,
     },
     notes: (notesResult.data ?? []) as Array<{
       content_md: string;
@@ -284,11 +279,7 @@ export async function getDashboardSummary() {
       words: { lemma: string; slug: string; title: string } | null;
     }>,
     ratingDistribution,
-    recentLogs: (recentLogsResult.data ?? []) as Array<{
-      rating: string;
-      reviewed_at: string;
-      words: { lemma: string; slug: string; title: string } | null;
-    }>,
+    recentLogs,
     reviewVolume30d: buildVolumeSeries(30, reviewLogs30d),
     reviewVolume7d: buildVolumeSeries(7, reviewLogs7d),
     weakestSemanticFields,

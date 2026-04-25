@@ -568,7 +568,7 @@ const getCachedPublicWordDetailRecord = unstable_cache(
     );
     const synonymSection = getSection(publicWord.body_md, "同义词辨析");
     const antonymSection = getSection(publicWord.body_md, "反义词");
-    const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = await Promise.all([
+    const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
       renderObsidianMarkdown(publicWord.body_md),
       publicWord.definition_md
         ? renderObsidianMarkdown(publicWord.definition_md)
@@ -576,6 +576,15 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       synonymSection ? renderObsidianMarkdown(synonymSection) : Promise.resolve(""),
       antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
     ]);
+
+    // Sanitize all rendered HTML to prevent XSS
+    const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+    const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = [
+      sanitizeHtmlServer(rawBodyHtml),
+      sanitizeHtmlServer(rawDefinitionHtml),
+      sanitizeHtmlServer(rawSynonymHtml),
+      sanitizeHtmlServer(rawAntonymHtml),
+    ];
 
     return {
       ...publicWord,

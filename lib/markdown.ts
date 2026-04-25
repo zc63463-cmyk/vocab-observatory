@@ -30,9 +30,15 @@ export function normalizeObsidianMarkdown(input: string) {
   return replaceHighlights(replaceWikiLinks(replaceCallouts(input)));
 }
 
-export async function renderObsidianMarkdown(input: string) {
+/**
+ * Render Obsidian markdown to raw HTML (no sanitization).
+ * For server-side usage, the caller should pass the result through `sanitizeHtml()`
+ * from `@/lib/sanitize-server` before storing or serving it.
+ * For client-side usage, use `sanitizeHtmlSync()` from `@/lib/sanitize`.
+ */
+export async function renderObsidianMarkdown(input: string): Promise<string> {
   const normalized = normalizeObsidianMarkdown(input);
-  return marked.parse(normalized);
+  return marked.parse(normalized) as string;
 }
 
 export function getSection(markdown: string, heading: string) {

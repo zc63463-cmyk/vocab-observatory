@@ -334,10 +334,14 @@ const getCachedCollectionDetail = unstable_cache(
 
     const noteRow = data as CollectionNoteRow & { body_md: string };
     const summary = toPublicSummary(toCachedSummary(noteRow));
-    const [bodyHtml, relatedWords] = await Promise.all([
+    const [rawBodyHtml, relatedWords] = await Promise.all([
       renderObsidianMarkdown(noteRow.body_md),
       getRelatedWords(summary),
     ]);
+
+    // Sanitize rendered HTML to prevent XSS
+    const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+    const bodyHtml = sanitizeHtmlServer(rawBodyHtml);
 
     return {
       note: {
