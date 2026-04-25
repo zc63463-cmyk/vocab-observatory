@@ -1,9 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { Route } from "next";
-import { Menu, X } from "lucide-react";
+import {
+  BookOpen,
+  LayoutGrid,
+  Menu,
+  Notebook,
+  Repeat,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+/* ── Icon mapping ── */
+const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  "/words": BookOpen,
+  "/plaza": LayoutGrid,
+  "/review": Repeat,
+  "/dashboard": Notebook,
+  "/notes": Notebook,
+};
 
 interface MobileNavProps {
   items: Array<{ href: Route; label: string }>;
@@ -11,11 +28,30 @@ interface MobileNavProps {
 
 export function MobileNav({ items }: MobileNavProps) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
+  const touchCurrentX = useRef(0);
+  const pathname = usePathname();
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setClosing(true);
+    // Wait for animation to finish before unmounting
+    setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, 280);
+  }, []);
 
-  // close on Escape
+  const toggle = useCallback(() => {
+    if (open) {
+      close();
+    } else {
+      setOpen(true);
+    }
+  }, [open, close]);
+
+  /* ── Escape key ── */
   useEffect(() => {
     if (!open) return;
     function handleKey(event: KeyboardEvent) {
@@ -25,7 +61,7 @@ export function MobileNav({ items }: MobileNavProps) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open, close]);
 
-  // lock body scroll when open
+  /* ── Lock body scroll ── */
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -37,68 +73,242 @@ export function MobileNav({ items }: MobileNavProps) {
     };
   }, [open]);
 
-  // close on route change (link click)
-  function handleLinkClick() {
+  /* ── Close on route change ── */
+  useEffect(() => {
     close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  /* ── Swipe-to-close gesture ── */
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+    touchCurrentX.current = touchStartX.current;
   }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    touchCurrentX.current = e.touches[0].clientX;
+  }
+
+  function handleTouchEnd() {
+    const delta = touchCurrentX.current - touchStartX.current;
+    // Swipe right (positive delta) means closing the right drawer
+    if (delta > 60) {
+      close();
+    }
+  }
+
+  /* ── Determine if a nav item is active ── */
+  function isActive(href: string) {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(href + "/");
+  }
+
+  /* ── Split nav items into groups ── */
+  const publicItems = items.filter((item) =>
+    ["/words", "/plaza"].includes(item.href),
+  );
+  const privateItems = items.filter((item) =>
+    ["/review", "/dashboard", "/notes"].includes(item.href),
+  );
 
   return (
     <div className="md:hidden">
       {/* Hamburger button */}
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)]"
+        onClick={toggle}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition-colors duration-200 hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.92]"
         aria-label={open ? "关闭菜单" : "打开菜单"}
         aria-expanded={open}
       >
-        {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        {open && !closing ? (
+          <X className="h-[18px] w-[18px]" />
+        ) : (
+          <Menu className="h-[18px] w-[18px]" />
+        )}
       </button>
 
       {/* Backdrop */}
-      {open ? (
+      {open && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity"
+          className={`fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
+            closing ? "opacity-0" : "opacity-100"
+          }`}
           onClick={close}
           aria-hidden="true"
         />
-      ) : null}
+      )}
 
       {/* Drawer */}
-      <div
-        ref={drawerRef}
-        className={`fixed right-0 top-0 z-50 h-full w-72 transform border-l border-[var(--color-border)] bg-[var(--color-panel-strong)] backdrop-blur-xl shadow-2xl transition-transform duration-300 ease-out ${
-          open ? "translate-x-0" : "translate-x-full"
-        }`}
-        role="dialog"
-        aria-modal="true"
-        aria-label="导航菜单"
-      >
-        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-          <p className="section-title text-lg font-semibold">导航</p>
-          <button
-            type="button"
-            onClick={close}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border)] transition hover:bg-[var(--color-surface-glass-hover)]"
-            aria-label="关闭菜单"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <nav className="flex flex-col gap-1 px-3 py-4">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={handleLinkClick}
-              className="rounded-xl px-4 py-3 text-sm font-medium text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)]"
+      {open && (
+        <div
+          ref={drawerRef}
+          className={`fixed right-0 top-0 z-50 flex h-full w-[280px] flex-col border-l border-[var(--color-border)] bg-[var(--color-panel-strong)] backdrop-blur-xl shadow-2xl transition-transform duration-[280ms] ${
+            closing
+              ? "translate-x-full ease-[cubic-bezier(0.4,0,0.2,1)]"
+              : "translate-x-0 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          }`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="导航菜单"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+            <p className="section-title text-base font-semibold">Vocab Observatory</p>
+            <button
+              type="button"
+              onClick={close}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.92]"
+              aria-label="关闭菜单"
             >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 overflow-y-auto px-3 py-3">
+            {/* Public section */}
+            <div className="mb-1">
+              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-ink-soft)]">
+                浏览
+              </p>
+              {publicItems.map((item) => {
+                const Icon = NAV_ICONS[item.href];
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={close}
+                    className={`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors duration-150 ${
+                      active
+                        ? "bg-[var(--color-surface-muted)] text-[var(--color-accent)]"
+                        : "text-[var(--color-ink-soft)] hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)]"
+                    }`}
+                  >
+                    {Icon ? (
+                      <Icon
+                        className={`h-[18px] w-[18px] flex-shrink-0 transition-colors duration-150 ${
+                          active
+                            ? "text-[var(--color-accent)]"
+                            : "text-[var(--color-ink-soft)] group-hover:text-[var(--color-ink)]"
+                        }`}
+                      />
+                    ) : null}
+                    {item.label}
+                    {active ? (
+                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div className="my-2 h-px bg-[var(--color-border)]" />
+
+            {/* Private section */}
+            <div className="mb-1">
+              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-ink-soft)]">
+                学习
+              </p>
+              {privateItems.map((item) => {
+                const Icon = NAV_ICONS[item.href];
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={close}
+                    className={`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors duration-150 ${
+                      active
+                        ? "bg-[var(--color-surface-muted)] text-[var(--color-accent)]"
+                        : "text-[var(--color-ink-soft)] hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)]"
+                    }`}
+                  >
+                    {Icon ? (
+                      <Icon
+                        className={`h-[18px] w-[18px] flex-shrink-0 transition-colors duration-150 ${
+                          active
+                            ? "text-[var(--color-accent)]"
+                            : "text-[var(--color-ink-soft)] group-hover:text-[var(--color-ink)]"
+                        }`}
+                      />
+                    ) : null}
+                    {item.label}
+                    {active ? (
+                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* Footer with ThemeToggle */}
+          <div className="border-t border-[var(--color-border)] px-4 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-[var(--color-ink-soft)]">外观模式</span>
+              <MobileThemeToggle />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ── Inline theme toggle for drawer ── */
+type Theme = "light" | "dark" | "system";
+
+function getSystemTheme(): "light" | "dark" {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme: Theme) {
+  const resolved = theme === "system" ? getSystemTheme() : theme;
+  document.documentElement.setAttribute("data-theme", resolved);
+}
+
+function MobileThemeToggle() {
+  const [theme, setTheme] = useState<Theme>("system");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const stored = localStorage.getItem("theme") as Theme | null;
+    if (stored && ["light", "dark", "system"].includes(stored)) {
+      setTheme(stored);
+    }
+  }, []);
+
+  function cycleTheme() {
+    const next: Record<Theme, Theme> = { light: "dark", dark: "system", system: "light" };
+    const newTheme = next[theme];
+    setTheme(newTheme);
+    localStorage.setItem("theme", newTheme);
+    applyTheme(newTheme);
+  }
+
+  if (!mounted) return null;
+
+  const labels: Record<Theme, string> = {
+    light: "浅色",
+    dark: "暗色",
+    system: "跟随系统",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={cycleTheme}
+      className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.95]"
+    >
+      {labels[theme]}
+    </button>
   );
 }
