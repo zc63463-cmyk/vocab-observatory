@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { User } from "@supabase/supabase-js";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AddToReviewButton } from "@/components/words/AddToReviewButton";
 import { WordNotes } from "@/components/words/WordNotes";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -23,6 +23,12 @@ interface NoteRevision {
   version: number;
 }
 
+interface SidebarPayload {
+  history: NoteRevision[];
+  note: NoteSnapshot;
+  progress: OwnerWordProgressSummary | null;
+}
+
 type SidebarState =
   | { status: "checking" | "loading" }
   | { status: "guest" }
@@ -34,27 +40,32 @@ type SidebarState =
     }
   | { message: string; status: "error" };
 
-async function readJson<T>(url: string) {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-  });
-  const payload = (await response.json()) as T & { error?: string };
+type IdleCallbackHandle = number;
+type IdleCallbackFn = (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void;
 
-  if (response.status === 401) {
+function readJson<T>(url: string, signal?: AbortSignal) {
+  return fetch(url, {
+    credentials: "same-origin",
+    signal,
+  }).then(async (response) => {
+    const payload = (await response.json()) as T & { error?: string };
+
+    if (response.status === 401) {
+      return {
+        authorized: false as const,
+        payload,
+      };
+    }
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Request failed.");
+    }
+
     return {
-      authorized: false as const,
+      authorized: true as const,
       payload,
     };
-  }
-
-  if (!response.ok) {
-    throw new Error(payload.error ?? "Request failed.");
-  }
-
-  return {
-    authorized: true as const,
-    payload,
-  };
+  });
 }
 
 function LoadingCard() {
@@ -70,18 +81,63 @@ function LoadingCard() {
   );
 }
 
+function scheduleIdleTask(callback: IdleCallbackFn) {
+  if ("requestIdleCallback" in window && typeof window.requestIdleCallback === "function") {
+    const handle = window.requestIdleCallback(callback, { timeout: 500 });
+
+    return {
+      cancel() {
+        window.cancelIdleCallback?.(handle);
+      },
+      handle,
+    };
+  }
+
+  const handle = window.setTimeout(() => {
+    callback({
+      didTimeout: false,
+      timeRemaining: () => 0,
+    });
+  }, 120);
+
+  return {
+    cancel() {
+      window.clearTimeout(handle);
+    },
+    handle,
+  };
+}
+
 export function OwnerWordSidebar({ wordId }: { wordId: string }) {
   const pathname = usePathname();
   const [sidebarState, setSidebarState] = useState<SidebarState>({ status: "checking" });
+  const abortRef = useRef<AbortController | null>(null);
+  const idleHandleRef = useRef<IdleCallbackHandle | null>(null);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
     let active = true;
 
-    async function loadOwnerData(user: User | null) {
+    function clearPendingWork() {
+      abortRef.current?.abort();
+      abortRef.current = null;
+
+      if (idleHandleRef.current !== null) {
+        if ("cancelIdleCallback" in window && typeof window.cancelIdleCallback === "function") {
+          window.cancelIdleCallback(idleHandleRef.current);
+        } else {
+          window.clearTimeout(idleHandleRef.current);
+        }
+        idleHandleRef.current = null;
+      }
+    }
+
+    async function loadSidebar(user: User | null) {
       if (!active) {
         return;
       }
+
+      clearPendingWork();
 
       if (!user) {
         setSidebarState({ status: "guest" });
@@ -90,44 +146,54 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
 
       setSidebarState({ status: "loading" });
 
-      try {
-        const [progressResult, noteResult, historyResult] = await Promise.all([
-          readJson<{ progress: OwnerWordProgressSummary | null }>(
-            `/api/review/progress/${wordId}`,
-          ),
-          readJson<NoteSnapshot>(`/api/notes/${wordId}`),
-          readJson<{ revisions: NoteRevision[] }>(`/api/notes/${wordId}/history`),
-        ]);
+      const scheduled = scheduleIdleTask(async () => {
+        idleHandleRef.current = null;
 
-        if (!active) {
-          return;
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        try {
+          const result = await readJson<SidebarPayload>(
+            `/api/words/${wordId}/owner-sidebar`,
+            controller.signal,
+          );
+
+          if (!active || controller.signal.aborted) {
+            return;
+          }
+
+          if (!result.authorized) {
+            setSidebarState({ status: "guest" });
+            return;
+          }
+
+          setSidebarState({
+            history: result.payload.history ?? [],
+            note: {
+              contentMd: result.payload.note?.contentMd ?? "",
+              updatedAt: result.payload.note?.updatedAt ?? null,
+              version: result.payload.note?.version ?? 0,
+            },
+            progress: result.payload.progress ?? null,
+            status: "ready",
+          });
+        } catch (error) {
+          if (!active || controller.signal.aborted) {
+            return;
+          }
+
+          setSidebarState({
+            message: error instanceof Error ? error.message : "Failed to load owner tools.",
+            status: "error",
+          });
+        } finally {
+          if (abortRef.current === controller) {
+            abortRef.current = null;
+          }
         }
+      });
 
-        if (!progressResult.authorized || !noteResult.authorized || !historyResult.authorized) {
-          setSidebarState({ status: "guest" });
-          return;
-        }
-
-        setSidebarState({
-          history: historyResult.payload.revisions ?? [],
-          note: {
-            contentMd: noteResult.payload.contentMd ?? "",
-            updatedAt: noteResult.payload.updatedAt ?? null,
-            version: noteResult.payload.version ?? 0,
-          },
-          progress: progressResult.payload.progress ?? null,
-          status: "ready",
-        });
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        setSidebarState({
-          message: error instanceof Error ? error.message : "Failed to load owner tools.",
-          status: "error",
-        });
-      }
+      idleHandleRef.current = scheduled.handle;
     }
 
     const bootstrap = async () => {
@@ -135,7 +201,7 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
         data: { user },
       } = await supabase.auth.getUser();
 
-      await loadOwnerData(user);
+      await loadSidebar(user);
     };
 
     void bootstrap();
@@ -143,11 +209,12 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      void loadOwnerData(session?.user ?? null);
+      void loadSidebar(session?.user ?? null);
     });
 
     return () => {
       active = false;
+      clearPendingWork();
       subscription.unsubscribe();
     };
   }, [wordId]);
@@ -166,12 +233,12 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
 
     return (
       <div className="panel rounded-[1.75rem] p-6 text-sm leading-7 text-[var(--color-ink-soft)]">
-        <p>登录 owner 账号后，你可以在这里保存个人笔记并把词条加入复习。</p>
+        <p>登录 owner 账号后，你可以在这里保存个人笔记，并把词条加入复习。</p>
         <Link
           href={nextHref as Route}
           className="mt-4 inline-flex rounded-full border border-[rgba(15,111,98,0.2)] bg-[rgba(15,111,98,0.08)] px-4 py-2 font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
         >
-          Owner login
+          Owner 登录
         </Link>
       </div>
     );
@@ -189,20 +256,18 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
     return null;
   }
 
-  const readyState = sidebarState;
-
   return (
     <div className="space-y-6">
       <AddToReviewButton
         wordId={wordId}
-        initialProgress={readyState.progress}
+        initialProgress={sidebarState.progress}
       />
       <WordNotes
         wordId={wordId}
-        initialContent={readyState.note.contentMd}
-        initialHistory={readyState.history}
-        initialUpdatedAt={readyState.note.updatedAt}
-        initialVersion={readyState.note.version}
+        initialContent={sidebarState.note.contentMd}
+        initialHistory={sidebarState.history}
+        initialUpdatedAt={sidebarState.note.updatedAt}
+        initialVersion={sidebarState.note.version}
       />
     </div>
   );

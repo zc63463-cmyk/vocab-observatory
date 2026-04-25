@@ -1,5 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
-import { cache } from "react";
 import { env, hasSupabasePublicEnv } from "@/lib/env";
 import { getSection, renderObsidianMarkdown } from "@/lib/markdown";
 import { getPublicSupabaseClientOrNull } from "@/lib/supabase/public";
@@ -14,7 +14,8 @@ import {
   type SynonymItem,
 } from "@/lib/structured-word";
 import { escapePostgrestLike, slugifyLabel } from "@/lib/utils";
-import type { Json } from "@/types/database.types";
+import type { Database, Json } from "@/types/database.types";
+import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 
 const WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
@@ -24,6 +25,8 @@ const WORD_DETAIL_STRUCTURED_SELECT =
   `${WORD_DETAIL_LEGACY_SELECT}, core_definitions, prototype_text, collocations, corpus_items, synonym_items, antonym_items`;
 const DISPLAY_LIMIT = 120;
 const PUBLIC_REVALIDATE_SECONDS = 300;
+
+type ServerSupabaseClient = SupabaseClient<Database>;
 
 export type ReviewFilter = "all" | "tracked" | "due" | "untracked";
 
@@ -89,7 +92,52 @@ export interface WordQueryFilters {
   semantic?: string;
 }
 
+export interface NormalizedWordQueryFilters {
+  freq: string;
+  q: string;
+  review: ReviewFilter;
+  semantic: string;
+}
+
+export interface PublicWordsResponse {
+  configured: boolean;
+  counts: {
+    showing: number;
+    total: number;
+  };
+  filterOptions: {
+    frequencies: string[];
+    semanticFields: string[];
+  };
+  filters: NormalizedWordQueryFilters;
+  isOwner: boolean;
+  truncated: boolean;
+  words: PublicWordSummary[];
+}
+
+export interface LandingSnapshot {
+  configured: boolean;
+  featuredWords: PublicWordSummary[];
+  repoName: string;
+  totalWords: number;
+}
+
+interface CachedPublicWordIndexRecord extends PublicWordIndexEntry {
+  search_text: string;
+  semantic_field: string | null;
+  word_freq: string | null;
+}
+
+interface GetPublicWordsOptions {
+  ownerSupabase?: ServerSupabaseClient | null;
+  ownerUserId?: string | null;
+}
+
 type BarePublicWordSummary = PublicWordIndexEntry;
+
+function isReviewFilter(value: string | undefined): value is ReviewFilter {
+  return value === "all" || value === "tracked" || value === "due" || value === "untracked";
+}
 
 function compactPublicMetadata(metadata: Json) {
   return {
@@ -110,6 +158,83 @@ export function getWordMetadataString(metadata: Json, key: string) {
   }
 
   return null;
+}
+
+export function normalizeWordFilters(
+  filters?: WordQueryFilters,
+  options?: { allowReviewFilter?: boolean },
+): NormalizedWordQueryFilters {
+  return {
+    freq: filters?.freq?.trim() ?? "",
+    q: filters?.q?.trim() ?? "",
+    review:
+      options?.allowReviewFilter && isReviewFilter(filters?.review)
+        ? filters!.review!
+        : "all",
+    semantic: filters?.semantic?.trim() ?? "",
+  };
+}
+
+function buildWordSearchText(word: {
+  lemma: string;
+  semantic_field: string | null;
+  short_definition: string | null;
+  title: string;
+  word_freq: string | null;
+}) {
+  return [
+    word.lemma,
+    word.title,
+    word.short_definition ?? "",
+    word.semantic_field ?? "",
+    word.word_freq ?? "",
+  ]
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+}
+
+function toCachedPublicWordIndexRecord(row: BarePublicWordSummary): CachedPublicWordIndexRecord {
+  const metadata = compactPublicMetadata(row.metadata);
+  const semanticField = getWordMetadataString(metadata, "semantic_field");
+  const wordFrequency = getWordMetadataString(metadata, "word_freq");
+
+  return {
+    ...row,
+    metadata,
+    search_text: buildWordSearchText({
+      lemma: row.lemma,
+      semantic_field: semanticField,
+      short_definition: row.short_definition,
+      title: row.title,
+      word_freq: wordFrequency,
+    }),
+    semantic_field: semanticField,
+    word_freq: wordFrequency,
+  };
+}
+
+function toPublicWordIndexEntry(record: CachedPublicWordIndexRecord): PublicWordIndexEntry {
+  return {
+    id: record.id,
+    ipa: record.ipa,
+    lemma: record.lemma,
+    metadata: record.metadata,
+    short_definition: record.short_definition,
+    slug: record.slug,
+    title: record.title,
+    updated_at: record.updated_at,
+  };
+}
+
+function toPublicWordSummary(
+  record: CachedPublicWordIndexRecord,
+  progress: OwnerWordProgressSummary | null,
+): PublicWordSummary {
+  return {
+    ...toPublicWordIndexEntry(record),
+    progress,
+  };
 }
 
 function parseStructuredArray<T>(value: Json | undefined, guard: (item: unknown) => item is T) {
@@ -224,30 +349,12 @@ function isAntonymItem(value: unknown): value is AntonymItem {
   );
 }
 
-function normalizeFilters(filters?: WordQueryFilters) {
-  return {
-    freq: filters?.freq?.trim() ?? "",
-    q: filters?.q?.trim() ?? "",
-    review: (filters?.review ?? "all") as ReviewFilter,
-    semantic: filters?.semantic?.trim() ?? "",
-  };
-}
-
-function matchesQuery(word: BarePublicWordSummary, query: string) {
+function matchesQuery(word: CachedPublicWordIndexRecord, query: string) {
   if (!query) {
     return true;
   }
 
-  const haystack = [
-    word.lemma,
-    word.title,
-    word.short_definition ?? "",
-    getWordMetadataString(word.metadata, "semantic_field") ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(query.toLowerCase());
+  return word.search_text.includes(query.normalize("NFKC").toLowerCase());
 }
 
 function isDue(dueAt: string | null | undefined) {
@@ -269,6 +376,50 @@ export function serializeOwnerWordProgress(progress: {
     review_count: progress.review_count,
     state: progress.state,
   };
+}
+
+function matchesReviewFilter(
+  progress: OwnerWordProgressSummary | null,
+  reviewFilter: ReviewFilter,
+) {
+  if (reviewFilter === "all") {
+    return true;
+  }
+
+  if (reviewFilter === "tracked") {
+    return Boolean(progress);
+  }
+
+  if (reviewFilter === "due") {
+    return Boolean(progress && progress.state !== "suspended" && progress.is_due);
+  }
+
+  return !progress;
+}
+
+async function getOwnerProgressMap(
+  ownerUserId: string,
+  supabase: ServerSupabaseClient,
+) {
+  const { data, error } = await supabase
+    .from("user_word_progress")
+    .select("word_id, id, due_at, review_count, state, last_reviewed_at")
+    .eq("user_id", ownerUserId);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Map(
+    ((data ?? []) as Array<{
+      due_at: string | null;
+      id: string;
+      last_reviewed_at: string | null;
+      review_count: number;
+      state: string;
+      word_id: string;
+    }>).map((entry) => [entry.word_id, serializeOwnerWordProgress(entry)]),
+  );
 }
 
 export function resolveWordHref(label: string, availableSlugs: Set<string>) {
@@ -334,7 +485,7 @@ function withStructuredFallback(
 }
 
 const getCachedPublicWordRows = unstable_cache(
-  async () => {
+  async (): Promise<CachedPublicWordIndexRecord[] | null> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
       return null;
@@ -351,13 +502,13 @@ const getCachedPublicWordRows = unstable_cache(
       throw error;
     }
 
-    return ((data ?? []) as BarePublicWordSummary[]).map((row) => ({
-      ...row,
-      metadata: compactPublicMetadata(row.metadata),
-    }));
+    return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
   },
   ["public-word-rows"],
-  { revalidate: PUBLIC_REVALIDATE_SECONDS },
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
 );
 
 const getCachedPublicWordDetailRecord = unstable_cache(
@@ -412,7 +563,9 @@ const getCachedPublicWordDetailRecord = unstable_cache(
     }
 
     const publicWord = withStructuredFallback(word);
-    const availableSlugs = new Set((await getCachedPublicWordRows())?.map((entry) => entry.slug) ?? []);
+    const availableSlugs = new Set(
+      ((await getCachedPublicWordRows()) ?? []).map((entry) => entry.slug),
+    );
     const synonymSection = getSection(publicWord.body_md, "同义词辨析");
     const antonymSection = getSection(publicWord.body_md, "反义词");
     const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = await Promise.all([
@@ -439,68 +592,88 @@ const getCachedPublicWordDetailRecord = unstable_cache(
     } satisfies CachedPublicWordDetail;
   },
   ["public-word-detail"],
-  { revalidate: PUBLIC_REVALIDATE_SECONDS },
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordDetail],
+  },
 );
 
-export const getLandingSnapshot = cache(async () => {
-  const repoName = `${env.repoOwner}/${env.repoName}`;
+export const getLandingSnapshot = unstable_cache(
+  async (): Promise<LandingSnapshot> => {
+    const repoName = `${env.repoOwner}/${env.repoName}`;
 
-  if (!hasSupabasePublicEnv()) {
+    if (!hasSupabasePublicEnv()) {
+      return {
+        configured: false,
+        featuredWords: [],
+        repoName,
+        totalWords: 0,
+      };
+    }
+
+    const rows = await getCachedPublicWordRows();
+    const featuredWords = [...(rows ?? [])]
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+      .slice(0, 6)
+      .map((word) => toPublicWordSummary(word, null));
+
     return {
-      featuredWords: [] as PublicWordSummary[],
+      configured: true,
+      featuredWords,
       repoName,
-      totalWords: 0,
-      configured: false,
+      totalWords: rows?.length ?? 0,
     };
-  }
+  },
+  ["public-landing-snapshot"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.landing],
+  },
+);
 
-  const rows = await getCachedPublicWordRows();
-  const featuredWords = [...(rows ?? [])]
-    .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-    .slice(0, 6)
-    .map((word) => ({
-      ...word,
-      progress: null,
-    }));
+export async function getPublicWords(
+  filters?: WordQueryFilters,
+  options?: GetPublicWordsOptions,
+): Promise<PublicWordsResponse> {
+  const isOwner = Boolean(options?.ownerUserId && options.ownerSupabase);
+  const normalizedFilters = normalizeWordFilters(filters, {
+    allowReviewFilter: isOwner,
+  });
 
-  return {
-    configured: true,
-    featuredWords,
-    repoName,
-    totalWords: rows?.length ?? 0,
-  };
-});
-
-export async function getPublicWords(filters?: WordQueryFilters) {
   if (!hasSupabasePublicEnv()) {
     return {
       configured: false,
       counts: { showing: 0, total: 0 },
       filterOptions: {
-        frequencies: [] as string[],
-        semanticFields: [] as string[],
+        frequencies: [],
+        semanticFields: [],
       },
-      filters: normalizeFilters(filters),
-      isOwner: false,
+      filters: normalizedFilters,
+      isOwner,
       truncated: false,
-      words: [] as PublicWordSummary[],
+      words: [],
     };
   }
 
-  const allWords = await getCachedPublicWordRows();
-  const normalizedFilters = normalizeFilters(filters);
+  const [allWords, ownerProgressMap] = await Promise.all([
+    getCachedPublicWordRows(),
+    isOwner
+      ? getOwnerProgressMap(options!.ownerUserId!, options!.ownerSupabase!)
+      : Promise.resolve(new Map<string, OwnerWordProgressSummary>()),
+  ]);
+
   const safeWords = allWords ?? [];
   const semanticFields = [
     ...new Set(
       safeWords
-        .map((word) => getWordMetadataString(word.metadata, "semantic_field"))
+        .map((word) => word.semantic_field)
         .filter((value): value is string => Boolean(value)),
     ),
   ].sort((left, right) => left.localeCompare(right));
   const frequencies = [
     ...new Set(
       safeWords
-        .map((word) => getWordMetadataString(word.metadata, "word_freq"))
+        .map((word) => word.word_freq)
         .filter((value): value is string => Boolean(value)),
     ),
   ].sort((left, right) => left.localeCompare(right));
@@ -510,27 +683,24 @@ export async function getPublicWords(filters?: WordQueryFilters) {
       return false;
     }
 
-    if (
-      normalizedFilters.semantic &&
-      getWordMetadataString(word.metadata, "semantic_field") !== normalizedFilters.semantic
-    ) {
+    if (normalizedFilters.semantic && word.semantic_field !== normalizedFilters.semantic) {
       return false;
     }
 
-    if (
-      normalizedFilters.freq &&
-      getWordMetadataString(word.metadata, "word_freq") !== normalizedFilters.freq
-    ) {
+    if (normalizedFilters.freq && word.word_freq !== normalizedFilters.freq) {
+      return false;
+    }
+
+    if (!matchesReviewFilter(ownerProgressMap.get(word.id) ?? null, normalizedFilters.review)) {
       return false;
     }
 
     return true;
   });
 
-  const visibleWords = filtered.slice(0, DISPLAY_LIMIT).map((word) => ({
-    ...word,
-    progress: null,
-  }));
+  const visibleWords = filtered.slice(0, DISPLAY_LIMIT).map((word) =>
+    toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
+  );
 
   return {
     configured: true,
@@ -542,11 +712,8 @@ export async function getPublicWords(filters?: WordQueryFilters) {
       frequencies,
       semanticFields,
     },
-    filters: {
-      ...normalizedFilters,
-      review: "all" as ReviewFilter,
-    },
-    isOwner: false,
+    filters: normalizedFilters,
+    isOwner,
     truncated: filtered.length > visibleWords.length,
     words: visibleWords,
   };
@@ -580,5 +747,5 @@ export async function getAllPublicWordIndexEntries(): Promise<PublicWordIndexEnt
     return [];
   }
 
-  return (await getCachedPublicWordRows()) ?? [];
+  return ((await getCachedPublicWordRows()) ?? []).map(toPublicWordIndexEntry);
 }

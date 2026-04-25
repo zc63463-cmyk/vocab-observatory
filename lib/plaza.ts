@@ -1,17 +1,19 @@
 import { unstable_cache } from "next/cache";
-import { hasSupabasePublicEnv } from "@/lib/env";
+import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 import {
   createCollectionNotePath,
   createCollectionNoteSlug,
-  getDirectCollectionNoteSlugValues,
   getCollectionNoteKindLabel,
   getCollectionNoteSlugLookupValues,
+  getDirectCollectionNoteSlugValues,
+  getCollectionNoteSummaryText,
   isCollectionNotesRelationMissing,
   type CollectionNoteKind,
   type PublicCollectionNoteDetail,
   type PublicCollectionNoteSummary,
   type PublicCollectionRelatedWord,
 } from "@/lib/collection-notes";
+import { hasSupabasePublicEnv } from "@/lib/env";
 import { renderObsidianMarkdown } from "@/lib/markdown";
 import { getPublicSupabaseClientOrNull } from "@/lib/supabase/public";
 import {
@@ -28,11 +30,15 @@ const KIND_ORDER: CollectionNoteKind[] = ["root_affix", "semantic_field"];
 
 type CollectionNoteRow = Database["public"]["Tables"]["collection_notes"]["Row"];
 type CachedCollectionSummariesResult =
-  | { notes: PublicCollectionNoteSummary[]; status: "ok" }
+  | { notes: CachedCollectionNoteSummary[]; status: "ok" }
   | { notes: []; status: "missing_env" | "missing_relation" };
 type CachedCollectionDetailResult =
   | { note: PublicCollectionNoteDetail | null; status: "ok" }
   | { note: null; status: "missing_env" | "missing_relation" };
+
+interface CachedCollectionNoteSummary extends PublicCollectionNoteSummary {
+  search_text: string;
+}
 
 export type PlazaFilterKind = "all" | CollectionNoteKind;
 
@@ -60,6 +66,8 @@ export interface PlazaOverview {
   total: number;
 }
 
+export type PlazaOverviewResponse = PlazaOverview;
+
 function isCollectionNoteKind(value: string): value is CollectionNoteKind {
   return value === "root_affix" || value === "semantic_field";
 }
@@ -78,8 +86,21 @@ function getMetadataString(metadata: Json, key: string) {
   return null;
 }
 
-function toSummary(row: CollectionNoteRow): PublicCollectionNoteSummary {
-  return {
+function buildCollectionSearchText(note: Pick<PublicCollectionNoteSummary, "metadata" | "summary" | "tags" | "title">) {
+  return [
+    note.title,
+    note.summary ?? "",
+    getMetadataString(note.metadata, "coreMeaning") ?? "",
+    getMetadataString(note.metadata, "definition") ?? "",
+    ...note.tags,
+  ]
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+}
+
+function toCachedSummary(row: CollectionNoteRow): CachedCollectionNoteSummary {
+  const summary: PublicCollectionNoteSummary = {
     id: row.id,
     kind: isCollectionNoteKind(row.kind) ? row.kind : "semantic_field",
     metadata: row.metadata,
@@ -89,6 +110,25 @@ function toSummary(row: CollectionNoteRow): PublicCollectionNoteSummary {
     tags: row.tags ?? [],
     title: row.title,
     updated_at: row.updated_at,
+  };
+
+  return {
+    ...summary,
+    search_text: buildCollectionSearchText(summary),
+  };
+}
+
+function toPublicSummary(summary: CachedCollectionNoteSummary): PublicCollectionNoteSummary {
+  return {
+    id: summary.id,
+    kind: summary.kind,
+    metadata: summary.metadata,
+    related_word_slugs: summary.related_word_slugs,
+    slug: summary.slug,
+    summary: summary.summary,
+    tags: summary.tags,
+    title: summary.title,
+    updated_at: summary.updated_at,
   };
 }
 
@@ -105,7 +145,9 @@ function toRelatedWord(word: PublicWordIndexEntry): PublicCollectionRelatedWord 
   };
 }
 
-function createCollectionNoteLookupValues(note: Pick<PublicCollectionNoteSummary, "kind" | "slug" | "title">) {
+function createCollectionNoteLookupValues(
+  note: Pick<PublicCollectionNoteSummary, "kind" | "slug" | "title">,
+) {
   return new Set(
     [
       ...getCollectionNoteSlugLookupValues(note.slug),
@@ -124,29 +166,21 @@ export function normalizePlazaFilters(filters?: Partial<PlazaFilters>): PlazaFil
   };
 }
 
-function buildCollectionSearchText(note: PublicCollectionNoteSummary) {
-  return [
-    note.title,
-    note.summary ?? "",
-    getMetadataString(note.metadata, "coreMeaning") ?? "",
-    getMetadataString(note.metadata, "definition") ?? "",
-    ...note.tags,
-  ]
-    .join(" ")
-    .normalize("NFKC")
-    .toLowerCase();
-}
-
-function matchesCollectionQuery(note: PublicCollectionNoteSummary, query: string) {
+function matchesCollectionQuery(
+  note: PublicCollectionNoteSummary & { search_text?: string },
+  query: string,
+) {
   if (!query) {
     return true;
   }
 
-  return buildCollectionSearchText(note).includes(query.normalize("NFKC").toLowerCase());
+  return (note.search_text ?? buildCollectionSearchText(note)).includes(
+    query.normalize("NFKC").toLowerCase(),
+  );
 }
 
-export function filterCollectionNotes(
-  notes: PublicCollectionNoteSummary[],
+export function filterCollectionNotes<T extends PublicCollectionNoteSummary & { search_text?: string }>(
+  notes: T[],
   filters?: Partial<PlazaFilters>,
 ) {
   const normalizedFilters = normalizePlazaFilters(filters);
@@ -216,9 +250,7 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
   }
 
   return allWords
-    .filter(
-      (word) => getWordMetadataString(word.metadata, "semantic_field") === note.title,
-    )
+    .filter((word) => getWordMetadataString(word.metadata, "semantic_field") === note.title)
     .sort((left, right) => left.lemma.localeCompare(right.lemma, "zh-CN"))
     .map(toRelatedWord);
 }
@@ -253,12 +285,15 @@ const getCachedCollectionSummaries = unstable_cache(
     }
 
     return {
-      notes: ((data ?? []) as CollectionNoteRow[]).map(toSummary),
+      notes: ((data ?? []) as CollectionNoteRow[]).map(toCachedSummary),
       status: "ok",
     };
   },
   ["public-collection-note-summaries"],
-  { revalidate: PUBLIC_REVALIDATE_SECONDS },
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.plazaIndex],
+  },
 );
 
 const getCachedCollectionDetail = unstable_cache(
@@ -298,7 +333,7 @@ const getCachedCollectionDetail = unstable_cache(
     }
 
     const noteRow = data as CollectionNoteRow & { body_md: string };
-    const summary = toSummary(noteRow);
+    const summary = toPublicSummary(toCachedSummary(noteRow));
     const [bodyHtml, relatedWords] = await Promise.all([
       renderObsidianMarkdown(noteRow.body_md),
       getRelatedWords(summary),
@@ -315,7 +350,10 @@ const getCachedCollectionDetail = unstable_cache(
     };
   },
   ["public-collection-note-detail"],
-  { revalidate: PUBLIC_REVALIDATE_SECONDS },
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.plazaDetail],
+  },
 );
 
 export async function getPlazaOverview(filters?: Partial<PlazaFilters>): Promise<PlazaOverview> {
@@ -354,7 +392,7 @@ export async function getPlazaOverview(filters?: Partial<PlazaFilters>): Promise
   const grouped = new Map<CollectionNoteKind, PublicCollectionNoteSummary[]>();
   for (const note of filteredNotes) {
     const bucket = grouped.get(note.kind) ?? [];
-    bucket.push(note);
+    bucket.push(toPublicSummary(note));
     grouped.set(note.kind, bucket);
   }
 
@@ -443,11 +481,4 @@ export async function getPublicCollectionNoteBySlug(slug: string) {
   };
 }
 
-export function getCollectionNoteSummaryText(note: PublicCollectionNoteSummary) {
-  return (
-    note.summary ||
-    getMetadataString(note.metadata, "coreMeaning") ||
-    getMetadataString(note.metadata, "definition") ||
-    "暂无摘要。"
-  );
-}
+export { getCollectionNoteSummaryText };

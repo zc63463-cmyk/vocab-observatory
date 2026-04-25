@@ -164,6 +164,30 @@ export function shouldSkipCollectionNote(sourcePath: string) {
   return filename.startsWith("_模板-");
 }
 
+export function getCollectionNoteSummaryText(
+  note: Pick<PublicCollectionNoteSummary, "summary" | "metadata">,
+) {
+  if (note.summary) {
+    return note.summary;
+  }
+
+  if (
+    typeof note.metadata === "object" &&
+    note.metadata &&
+    !Array.isArray(note.metadata)
+  ) {
+    if ("coreMeaning" in note.metadata && typeof note.metadata.coreMeaning === "string") {
+      return note.metadata.coreMeaning;
+    }
+
+    if ("definition" in note.metadata && typeof note.metadata.definition === "string") {
+      return note.metadata.definition;
+    }
+  }
+
+  return "暂无摘要。";
+}
+
 export function isCollectionNotesRelationMissing(
   error: { code?: string; message?: string } | null,
 ) {

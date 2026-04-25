@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidatePublicContent } from "@/lib/cache/public";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { canRunImport, jsonError } from "@/lib/request-auth";
 import { syncGitHubWords } from "@/lib/sync/upsertWord";
@@ -11,6 +12,7 @@ async function runImport(request: NextRequest) {
 
   const admin = createAdminSupabaseClient();
   const result = await syncGitHubWords(admin, { triggerType: "api" });
+  revalidatePublicContent();
 
   return NextResponse.json({
     ok: true,
