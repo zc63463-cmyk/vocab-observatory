@@ -1,81 +1,126 @@
-import type { SynonymItem } from "@/lib/structured-word";
+import Link from "next/link";
+import type { Route } from "next";
+import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
+import type { ResolvedSynonymItem } from "@/lib/words";
 
-function getSharedDelta(items: SynonymItem[]) {
-  const values = [...new Set(items.map((item) => item.delta).filter(Boolean))];
+function getSharedDelta(items: ResolvedSynonymItem[]) {
+  const values = [
+    ...new Set(
+      items.map((item) => item.delta?.trim()).filter((value): value is string => Boolean(value)),
+    ),
+  ];
+
   return values.length === 1 ? values[0] : null;
 }
 
+function getSummary(items: ResolvedSynonymItem[], hasFallbackHtml: boolean) {
+  if (items.length === 0) {
+    return hasFallbackHtml ? "按正文回退展示" : "暂无同义词辨析";
+  }
+
+  const preview = items
+    .slice(0, 2)
+    .map((item) => item.word)
+    .join(" / ");
+
+  return `共 ${items.length} 条 · ${preview}`;
+}
+
 export function WordSynonyms({
-  synonymItems,
+  resolvedSynonymItems,
   fallbackHtml,
 }: {
-  synonymItems: SynonymItem[];
+  resolvedSynonymItems: ResolvedSynonymItem[];
   fallbackHtml?: string | null;
 }) {
-  if (synonymItems.length === 0 && !fallbackHtml) {
+  if (resolvedSynonymItems.length === 0 && !fallbackHtml) {
     return null;
   }
 
-  const sharedDelta = getSharedDelta(synonymItems);
+  const sharedDelta = getSharedDelta(resolvedSynonymItems);
 
   return (
-    <section className="panel rounded-[1.75rem] p-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="section-title text-2xl font-semibold">同义词辨析</h2>
-        {sharedDelta ? (
+    <CollapsiblePanel
+      title="同义词辨析"
+      defaultOpen={false}
+      summary={getSummary(resolvedSynonymItems, Boolean(fallbackHtml))}
+      badge={
+        sharedDelta ? (
           <span className="pill text-[11px] uppercase tracking-[0.2em]">{sharedDelta}</span>
-        ) : null}
-      </div>
-      {synonymItems.length > 0 ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {synonymItems.map((item) => (
-            <article
-              key={`${item.word}-${item.semanticDiff}-${item.usage}`}
-              className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold">{item.word}</h3>
-                {item.delta && item.delta !== sharedDelta ? (
-                  <span className="pill-warm text-[11px] uppercase tracking-[0.2em]">
-                    {item.delta}
-                  </span>
-                ) : null}
-              </div>
-              <dl className="mt-4 space-y-3 text-sm leading-7 text-[var(--color-ink-soft)]">
-                {item.semanticDiff ? (
-                  <div>
-                    <dt className="font-semibold text-[var(--color-ink)]">核心差异</dt>
-                    <dd>{item.semanticDiff}</dd>
-                  </div>
-                ) : null}
-                {item.usage ? (
-                  <div>
-                    <dt className="font-semibold text-[var(--color-ink)]">方式特点</dt>
-                    <dd>{item.usage}</dd>
-                  </div>
-                ) : null}
-                {item.object ? (
-                  <div>
-                    <dt className="font-semibold text-[var(--color-ink)]">常见对象</dt>
-                    <dd>{item.object}</dd>
-                  </div>
-                ) : null}
-                {item.tone ? (
-                  <div>
-                    <dt className="font-semibold text-[var(--color-ink)]">情感色彩</dt>
-                    <dd>{item.tone}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            </article>
-          ))}
+        ) : undefined
+      }
+    >
+      {resolvedSynonymItems.length > 0 ? (
+        <div className="space-y-4">
+          {sharedDelta ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-[1rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+              <span className="pill text-[11px] uppercase tracking-[0.2em]">{sharedDelta}</span>
+              <span>共享差异标签</span>
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)]">
+            <table className="min-w-[760px] w-full border-collapse text-left text-sm">
+              <thead className="bg-[rgba(255,255,255,0.55)] text-xs uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">词</th>
+                  <th className="px-4 py-3 font-semibold">核心差异</th>
+                  <th className="px-4 py-3 font-semibold">方式特点</th>
+                  <th className="px-4 py-3 font-semibold">常见对象</th>
+                  <th className="px-4 py-3 font-semibold">情感色彩</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resolvedSynonymItems.map((item) => (
+                  <tr
+                    key={`${item.word}-${item.semanticDiff}-${item.usage}`}
+                    className="border-t border-[var(--color-border)] align-top"
+                  >
+                    <td className="px-4 py-4">
+                      <div className="space-y-2">
+                        {item.href ? (
+                          <Link
+                            href={item.href as Route}
+                            className="font-semibold text-[var(--color-ink)] underline-offset-4 transition hover:text-[var(--color-accent)] hover:underline"
+                          >
+                            {item.word}
+                          </Link>
+                        ) : (
+                          <span className="font-semibold text-[var(--color-ink)]">{item.word}</span>
+                        )}
+                        {item.delta && item.delta !== sharedDelta ? (
+                          <div>
+                            <span className="pill-warm text-[11px] uppercase tracking-[0.2em]">
+                              {item.delta}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 leading-7 text-[var(--color-ink-soft)]">
+                      {item.semanticDiff || "—"}
+                    </td>
+                    <td className="px-4 py-4 leading-7 text-[var(--color-ink-soft)]">
+                      {item.usage || "—"}
+                    </td>
+                    <td className="px-4 py-4 leading-7 text-[var(--color-ink-soft)]">
+                      {item.object || "—"}
+                    </td>
+                    <td className="px-4 py-4 leading-7 text-[var(--color-ink-soft)]">
+                      {item.tone || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div
-          className="prose-obsidian mt-4 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
           dangerouslySetInnerHTML={{ __html: fallbackHtml ?? "" }}
         />
       )}
-    </section>
+    </CollapsiblePanel>
   );
 }

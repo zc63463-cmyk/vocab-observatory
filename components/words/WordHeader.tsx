@@ -16,7 +16,6 @@ function getMetadataValue(word: PublicWordDetail, key: string) {
 export function WordHeader({ word }: { word: PublicWordDetail }) {
   const semanticField = getMetadataValue(word, "semantic_field");
   const wordFrequency = getMetadataValue(word, "word_freq");
-  const prototype = word.prototype_text ?? getMetadataValue(word, "prototype");
   const semanticFieldHref = semanticField
     ? createCollectionNotePath(createCollectionNoteSlug("semantic_field", semanticField))
     : null;
@@ -39,10 +38,7 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
 
         <div className="flex max-w-md flex-wrap gap-2">
           {semanticField && semanticFieldHref ? (
-            <Link
-              href={semanticFieldHref as Route}
-              className="transition hover:opacity-85"
-            >
+            <Link href={semanticFieldHref as Route} className="transition hover:opacity-85">
               <Badge>{semanticField}</Badge>
             </Link>
           ) : null}
@@ -52,15 +48,6 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
           ))}
         </div>
       </div>
-
-      {prototype ? (
-        <div className="mt-8 rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
-            原型义
-          </p>
-          <p className="mt-2 text-lg leading-8">{prototype}</p>
-        </div>
-      ) : null}
     </section>
   );
 }

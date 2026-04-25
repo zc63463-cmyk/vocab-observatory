@@ -1,27 +1,55 @@
-import type { AntonymItem } from "@/lib/structured-word";
+import Link from "next/link";
+import type { Route } from "next";
+import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
+import type { ResolvedAntonymItem } from "@/lib/words";
+
+function getSummary(items: ResolvedAntonymItem[], hasFallbackHtml: boolean) {
+  if (items.length === 0) {
+    return hasFallbackHtml ? "按正文回退展示" : "暂无反义词";
+  }
+
+  const preview = items
+    .slice(0, 2)
+    .map((item) => item.word)
+    .join(" / ");
+
+  return `共 ${items.length} 条 · ${preview}`;
+}
 
 export function WordAntonyms({
-  antonymItems,
+  resolvedAntonymItems,
   fallbackHtml,
 }: {
-  antonymItems: AntonymItem[];
+  resolvedAntonymItems: ResolvedAntonymItem[];
   fallbackHtml?: string | null;
 }) {
-  if (antonymItems.length === 0 && !fallbackHtml) {
+  if (resolvedAntonymItems.length === 0 && !fallbackHtml) {
     return null;
   }
 
   return (
-    <section className="panel rounded-[1.75rem] p-6">
-      <h2 className="section-title text-2xl font-semibold">反义词</h2>
-      {antonymItems.length > 0 ? (
-        <div className="mt-4 grid gap-3">
-          {antonymItems.map((item) => (
+    <CollapsiblePanel
+      title="反义词"
+      defaultOpen={false}
+      summary={getSummary(resolvedAntonymItems, Boolean(fallbackHtml))}
+    >
+      {resolvedAntonymItems.length > 0 ? (
+        <div className="grid gap-3">
+          {resolvedAntonymItems.map((item) => (
             <div
               key={`${item.word}-${item.note ?? ""}`}
               className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
             >
-              <p className="font-semibold">{item.word}</p>
+              {item.href ? (
+                <Link
+                  href={item.href as Route}
+                  className="font-semibold text-[var(--color-ink)] underline-offset-4 transition hover:text-[var(--color-accent)] hover:underline"
+                >
+                  {item.word}
+                </Link>
+              ) : (
+                <p className="font-semibold">{item.word}</p>
+              )}
               {item.note ? (
                 <p className="mt-2 text-sm leading-7 text-[var(--color-ink-soft)]">{item.note}</p>
               ) : null}
@@ -30,10 +58,10 @@ export function WordAntonyms({
         </div>
       ) : (
         <div
-          className="prose-obsidian mt-4 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
           dangerouslySetInnerHTML={{ __html: fallbackHtml ?? "" }}
         />
       )}
-    </section>
+    </CollapsiblePanel>
   );
 }

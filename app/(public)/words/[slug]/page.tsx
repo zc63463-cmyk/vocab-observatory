@@ -1,12 +1,15 @@
 import { notFound } from "next/navigation";
+import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { OwnerWordSidebar } from "@/components/words/OwnerWordSidebar";
 import { WordAntonyms } from "@/components/words/WordAntonyms";
+import { WordCollocations } from "@/components/words/WordCollocations";
+import { WordCorpus } from "@/components/words/WordCorpus";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
-import { WordExamples } from "@/components/words/WordExamples";
 import { WordHeader } from "@/components/words/WordHeader";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
-import { getPublicWordBySlug } from "@/lib/words";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
+import { excerpt } from "@/lib/utils";
+import { getPublicWordBySlug } from "@/lib/words";
 
 export default async function WordDetailPage({
   params,
@@ -28,6 +31,9 @@ export default async function WordDetailPage({
     );
   }
 
+  const legacyExamples = result.word.examples as unknown as ParsedExample[];
+  const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
@@ -46,28 +52,31 @@ export default async function WordDetailPage({
           </section>
         ) : null}
 
-        <WordExamples
-          collocations={result.word.collocations}
-          corpusItems={result.word.corpus_items}
-          legacyExamples={result.word.examples as unknown as ParsedExample[]}
-        />
+        <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
+        <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
 
         <WordSynonyms
-          synonymItems={result.word.synonym_items}
+          resolvedSynonymItems={result.word.resolved_synonym_items}
           fallbackHtml={result.word.synonym_html}
         />
         <WordAntonyms
-          antonymItems={result.word.antonym_items}
+          resolvedAntonymItems={result.word.resolved_antonym_items}
           fallbackHtml={result.word.antonym_html}
         />
 
-        <section className="panel rounded-[1.75rem] p-6">
-          <h2 className="section-title text-2xl font-semibold">词条正文</h2>
-          <div
-            className="prose-obsidian mt-4"
-            dangerouslySetInnerHTML={{ __html: result.word.body_html }}
-          />
-        </section>
+        {result.word.body_md.trim() ? (
+          <CollapsiblePanel
+            title="词条正文"
+            defaultOpen={false}
+            summary={bodySummary}
+            subtitle="结构化区块优先展示；展开后查看完整原始笔记。"
+          >
+            <div
+              className="prose-obsidian"
+              dangerouslySetInnerHTML={{ __html: result.word.body_html }}
+            />
+          </CollapsiblePanel>
+        ) : null}
       </div>
 
       <aside className="space-y-6">

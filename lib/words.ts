@@ -13,7 +13,7 @@ import {
   type CorpusItem,
   type SynonymItem,
 } from "@/lib/structured-word";
-import { escapePostgrestLike } from "@/lib/utils";
+import { escapePostgrestLike, slugifyLabel } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
 
 const WORD_SELECT =
@@ -60,6 +60,8 @@ export interface PublicWordDetail extends PublicWordSummary {
   examples: Json;
   pos: string | null;
   prototype_text: string | null;
+  resolved_antonym_items: ResolvedAntonymItem[];
+  resolved_synonym_items: ResolvedSynonymItem[];
   source_path: string;
   synonym_items: SynonymItem[];
   tags: Array<{ label: string; slug: string }>;
@@ -70,6 +72,14 @@ export interface CachedPublicWordDetail extends PublicWordDetail {
   body_html: string;
   definition_html: string;
   synonym_html: string;
+}
+
+export interface ResolvedSynonymItem extends SynonymItem {
+  href: string | null;
+}
+
+export interface ResolvedAntonymItem extends AntonymItem {
+  href: string | null;
 }
 
 export interface WordQueryFilters {
@@ -261,6 +271,35 @@ export function serializeOwnerWordProgress(progress: {
   };
 }
 
+export function resolveWordHref(label: string, availableSlugs: Set<string>) {
+  const slug = slugifyLabel(label);
+  if (!slug || !availableSlugs.has(slug)) {
+    return null;
+  }
+
+  return `/words/${slug}`;
+}
+
+export function resolveSynonymItems(
+  items: SynonymItem[],
+  availableSlugs: Set<string>,
+): ResolvedSynonymItem[] {
+  return items.map((item) => ({
+    ...item,
+    href: resolveWordHref(item.word, availableSlugs),
+  }));
+}
+
+export function resolveAntonymItems(
+  items: AntonymItem[],
+  availableSlugs: Set<string>,
+): ResolvedAntonymItem[] {
+  return items.map((item) => ({
+    ...item,
+    href: resolveWordHref(item.word, availableSlugs),
+  }));
+}
+
 function withStructuredFallback(
   word: Record<string, Json | string | null>,
 ): Omit<PublicWordDetail, "progress" | "tags"> {
@@ -283,6 +322,8 @@ function withStructuredFallback(
       (word.prototype_text as string | null) ??
       getWordMetadataString((word.metadata as Json) ?? {}, "prototype") ??
       structuredDefaults.prototypeText,
+    resolved_antonym_items: [],
+    resolved_synonym_items: [],
     short_definition: (word.short_definition as string | null) ?? null,
     slug: String(word.slug),
     source_path: String(word.source_path ?? ""),
@@ -371,6 +412,7 @@ const getCachedPublicWordDetailRecord = unstable_cache(
     }
 
     const publicWord = withStructuredFallback(word);
+    const availableSlugs = new Set((await getCachedPublicWordRows())?.map((entry) => entry.slug) ?? []);
     const synonymSection = getSection(publicWord.body_md, "同义词辨析");
     const antonymSection = getSection(publicWord.body_md, "反义词");
     const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = await Promise.all([
@@ -388,6 +430,8 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       body_html: bodyHtml,
       definition_html: definitionHtml,
       progress: null,
+      resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items, availableSlugs),
+      resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items, availableSlugs),
       synonym_html: synonymHtml,
       tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
         (row) => row.tags,
