@@ -117,11 +117,16 @@ export async function syncGitHubWords(
     );
 
     const now = new Date().toISOString();
-    let includeStructuredFields = true;
-    let upsertableWords: Database["public"]["Tables"]["words"]["Insert"][] = [
+    const syncableWords = [
       ...plan.create,
       ...plan.update,
-    ].map((word) => createWordUpsertPayload(word, now, includeStructuredFields));
+      // Re-upsert unchanged source files so parser/schema upgrades can backfill derived fields.
+      ...plan.unchanged,
+    ];
+    let includeStructuredFields = true;
+    let upsertableWords: Database["public"]["Tables"]["words"]["Insert"][] = syncableWords.map(
+      (word) => createWordUpsertPayload(word, now, includeStructuredFields),
+    );
 
     let upsertChunks = chunkArray(upsertableWords, 100);
     for (let chunkIndex = 0; chunkIndex < upsertChunks.length; chunkIndex += 1) {
@@ -136,7 +141,7 @@ export async function syncGitHubWords(
 
       if (isStructuredWordColumnsMissing(error) && includeStructuredFields) {
         includeStructuredFields = false;
-        upsertableWords = [...plan.create, ...plan.update].map((word) =>
+        upsertableWords = syncableWords.map((word) =>
           createWordUpsertPayload(word, now, false),
         );
         upsertChunks = chunkArray(upsertableWords, 100);
