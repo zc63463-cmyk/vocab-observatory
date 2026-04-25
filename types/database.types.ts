@@ -6,6 +6,19 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+/**
+ * Type-safe cast from a structured object to Json for Supabase inserts.
+ * Supabase's generated Json type uses index signatures that don't accept
+ * concrete interfaces. This function provides a single, audited boundary
+ * for the necessary cast — replacing scattered `as unknown as Json` escapes.
+ *
+ * IMPORTANT: Only use this with data that is genuinely JSON-serializable
+ * (plain objects, arrays, primitives — no functions, Dates, undefined, etc.).
+ */
+export function asJson(value: unknown): Json {
+  return value as Json;
+}
+
 export type ReviewRating = "again" | "hard" | "good" | "easy";
 
 export interface Database {

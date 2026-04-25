@@ -21,7 +21,8 @@ import {
   type ExistingSyncRef,
   type ExistingWordRef,
 } from "@/lib/sync/import-plan";
-import type { Database } from "@/types/database.types";
+import type { Database, Json } from "@/types/database.types";
+import { asJson } from "@/types/database.types";
 import { chunkArray, slugifyLabel } from "@/lib/utils";
 
 type AdminClient = SupabaseClient<Database>;
@@ -69,7 +70,7 @@ function createWordUpsertPayload(
       ? castStructuredWordJson(word).corpus_items
       : undefined,
     definition_md: word.definitionMd,
-    examples: word.examples as unknown as Database["public"]["Tables"]["words"]["Insert"]["examples"],
+    examples: asJson(word.examples),
     ipa: word.ipa,
     is_deleted: false,
     is_published: true,

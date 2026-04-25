@@ -1,4 +1,5 @@
 import type { Json } from "@/types/database.types";
+import { asJson } from "@/types/database.types";
 
 export interface CoreDefinition {
   partOfSpeech: string;
@@ -83,11 +84,11 @@ export function isStructuredWordColumnsMissing(
 
 export function castStructuredWordJson(fields: StructuredWordFields) {
   return {
-    antonym_items: fields.antonymItems as unknown as Json,
-    collocations: fields.collocations as unknown as Json,
-    core_definitions: fields.coreDefinitions as unknown as Json,
-    corpus_items: fields.corpusItems as unknown as Json,
+    antonym_items: asJson(fields.antonymItems),
+    collocations: asJson(fields.collocations),
+    core_definitions: asJson(fields.coreDefinitions),
+    corpus_items: asJson(fields.corpusItems),
     prototype_text: fields.prototypeText,
-    synonym_items: fields.synonymItems as unknown as Json,
+    synonym_items: asJson(fields.synonymItems),
   };
 }

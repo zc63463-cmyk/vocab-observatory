@@ -116,6 +116,7 @@ async function WordDetailContent({
     );
   }
 
+  // examples is stored as Json but is actually ParsedExample[] at runtime
   const legacyExamples = result.word.examples as unknown as ParsedExample[];
   const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
 

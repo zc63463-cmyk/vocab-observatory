@@ -6,7 +6,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 const protectedPrefixes = ["/review", "/dashboard", "/notes"];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   if (!hasSupabasePublicEnv()) {
     return NextResponse.next();
   }

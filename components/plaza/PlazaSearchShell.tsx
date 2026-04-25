@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -69,6 +70,21 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
     readResponse: readPlazaResponse,
   });
 
+  // Stable callbacks
+  const onQueryChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value),
+    [setFilter],
+  );
+  const onKindChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = normalizePlazaFilters({
+        kind: event.target.value as PlazaFilterKind,
+      }).kind;
+      setFilter("kind", value);
+    },
+    [setFilter],
+  );
+
   const hasActiveFilters = result.filters.kind !== "all" || result.filters.q.length > 0;
 
   return (
@@ -99,7 +115,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
             <input
               type="search"
               value={activeFilters.q}
-              onChange={(event) => setFilter("q", event.target.value)}
+              onChange={onQueryChange}
               placeholder="搜索词根词缀、语义场、摘要..."
               className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
@@ -108,12 +124,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
           <div className="grid gap-3 md:max-w-xs">
             <select
               value={activeFilters.kind}
-              onChange={(event) => {
-                const value = normalizePlazaFilters({
-                  kind: event.target.value as PlazaFilterKind,
-                }).kind;
-                setFilter("kind", value);
-              }}
+              onChange={onKindChange}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="all">全部类型</option>

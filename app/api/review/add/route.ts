@@ -4,6 +4,7 @@ import { requireOwnerApiSession } from "@/lib/request-auth";
 import { addToReviewSchema } from "@/lib/validation/schemas";
 import { serializeOwnerWordProgress } from "@/lib/words";
 import type { Json } from "@/types/database.types";
+import { asJson } from "@/types/database.types";
 
 export async function POST(request: NextRequest) {
   const ownerSession = await requireOwnerApiSession();
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
         desired_retention: 0.9,
         due_at: now,
         schedule_algo: "fsrs",
-        scheduler_payload: initialPayload as unknown as Json,
+        scheduler_payload: asJson(initialPayload),
         state: "new",
         updated_at: now,
         user_id: ownerSession.user!.id,

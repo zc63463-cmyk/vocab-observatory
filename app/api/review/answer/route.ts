@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { applyReviewAnswer } from "@/lib/review/fsrs-adapter";
+import type { StoredSchedulerCard } from "@/lib/review/types";
 import { incrementSessionCardsSeen } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { reviewAnswerSchema } from "@/lib/validation/schemas";
 import type { Database, Json } from "@/types/database.types";
+import { asJson } from "@/types/database.types";
 
 export async function POST(request: NextRequest) {
   const ownerSession = await requireOwnerApiSession();
@@ -34,7 +36,8 @@ export async function POST(request: NextRequest) {
     throw progressError;
   }
 
-  const progress = progressData as unknown as {
+  // Supabase returns a flat row with a nested join — define the shape we actually selected
+  interface ProgressWithContentHash {
     again_count: number;
     easy_count: number;
     good_count: number;
@@ -42,14 +45,16 @@ export async function POST(request: NextRequest) {
     id: string;
     lapse_count: number;
     review_count: number;
-    scheduler_payload: unknown;
+    scheduler_payload: Json;
     word_id: string;
     words: { content_hash: string };
-  };
+  }
+
+  const progress = progressData as ProgressWithContentHash;
 
   const now = new Date();
   const scheduling = applyReviewAnswer(
-    progress.scheduler_payload as never,
+    progress.scheduler_payload as StoredSchedulerCard | null,
     parsed.data.rating,
     now,
   );
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
     last_reviewed_at: nowIso,
     retrievability: scheduling.retrievability,
     review_count: progress.review_count + 1,
-    scheduler_payload: scheduling.nextPayload as unknown as Json,
+    scheduler_payload: asJson(scheduling.nextPayload),
     stability: scheduling.stability,
     state: scheduling.state,
     updated_at: nowIso,

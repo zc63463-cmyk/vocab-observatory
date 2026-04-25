@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -125,6 +125,29 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     };
   }, []);
 
+  // Stable callbacks to avoid re-creating on every render
+  const onQueryChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value),
+    [setFilter],
+  );
+  const onSemanticChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => setFilter("semantic", event.target.value),
+    [setFilter],
+  );
+  const onFreqChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => setFilter("freq", event.target.value),
+    [setFilter],
+  );
+  const onReviewChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = normalizeWordFilters({
+        review: event.target.value as ReviewFilter,
+      }).review;
+      setFilter("review", value);
+    },
+    [setFilter],
+  );
+
   return (
     <div className="space-y-8">
       <section className="panel-strong rounded-[2rem] p-8">
@@ -141,7 +164,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             <input
               type="search"
               value={activeFilters.q}
-              onChange={(event) => setFilter("q", event.target.value)}
+              onChange={onQueryChange}
               placeholder="搜索单词、释义、语义场..."
               className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
@@ -150,7 +173,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
           <div className="grid gap-3 md:grid-cols-3">
             <select
               value={activeFilters.semantic}
-              onChange={(event) => setFilter("semantic", event.target.value)}
+              onChange={onSemanticChange}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部语义场</option>
@@ -163,7 +186,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
 
             <select
               value={activeFilters.freq}
-              onChange={(event) => setFilter("freq", event.target.value)}
+              onChange={onFreqChange}
               className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部词频</option>
@@ -177,12 +200,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             {result.isOwner ? (
               <select
                 value={activeFilters.review}
-                onChange={(event) => {
-                  const value = normalizeWordFilters({
-                    review: event.target.value as ReviewFilter,
-                  }).review;
-                  setFilter("review", value);
-                }}
+                onChange={onReviewChange}
                 className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
               >
                 <option value="all">全部词条</option>

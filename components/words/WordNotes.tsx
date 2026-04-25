@@ -5,6 +5,7 @@ import {
   startTransition,
   useDeferredValue,
   useEffect,
+  useReducer,
   useState,
 } from "react";
 import { normalizeObsidianMarkdown } from "@/lib/markdown";
@@ -29,6 +30,67 @@ async function renderMarkdownOnClient(text: string): Promise<string> {
   return sanitizeHtmlSync(raw);
 }
 
+// ── Reducer: consolidate 9 useState into a single state object ──
+
+interface WordNotesState {
+  content: string;
+  history: NoteRevision[];
+  lastSavedContent: string;
+  previewHtml: string;
+  restoringVersion: number | null;
+  saveState: "error" | "idle" | "saved" | "saving";
+  updatedAt: string | null;
+  version: number;
+  view: "edit" | "preview";
+}
+
+type WordNotesAction =
+  | { payload: string; type: "SET_CONTENT" }
+  | { payload: NoteRevision[]; type: "SET_HISTORY" }
+  | { type: "MARK_SAVED"; updatedAt: string | null; version: number }
+  | { payload: string; type: "SET_PREVIEW_HTML" }
+  | { payload: number | null; type: "SET_RESTORING_VERSION" }
+  | { payload: WordNotesState["saveState"]; type: "SET_SAVE_STATE" }
+  | { payload: WordNotesState["view"]; type: "SET_VIEW" }
+  | { payload: { content: string; updatedAt: string | null; version: number }; type: "RESTORE_REVISION" };
+
+function wordNotesReducer(state: WordNotesState, action: WordNotesAction): WordNotesState {
+  switch (action.type) {
+    case "SET_CONTENT":
+      return { ...state, content: action.payload };
+    case "SET_HISTORY":
+      return { ...state, history: action.payload };
+    case "MARK_SAVED":
+      return {
+        ...state,
+        lastSavedContent: state.content,
+        saveState: "saved",
+        updatedAt: action.updatedAt,
+        version: action.version,
+      };
+    case "SET_PREVIEW_HTML":
+      return { ...state, previewHtml: action.payload };
+    case "SET_RESTORING_VERSION":
+      return { ...state, restoringVersion: action.payload };
+    case "SET_SAVE_STATE":
+      return { ...state, saveState: action.payload };
+    case "SET_VIEW":
+      return { ...state, view: action.payload };
+    case "RESTORE_REVISION":
+      return {
+        ...state,
+        content: action.payload.content,
+        lastSavedContent: action.payload.content,
+        saveState: "saved",
+        updatedAt: action.payload.updatedAt,
+        version: action.payload.version,
+        view: "edit",
+      };
+    default:
+      return state;
+  }
+}
+
 export function WordNotes({
   initialContent,
   initialHistory,
@@ -42,33 +104,33 @@ export function WordNotes({
   initialVersion: number;
   wordId: string;
 }) {
-  const [content, setContent] = useState(initialContent);
-  const [history, setHistory] = useState<NoteRevision[]>(initialHistory);
-  const [lastSavedContent, setLastSavedContent] = useState(initialContent);
-  const [saveState, setSaveState] = useState<"idle" | "saved" | "saving" | "error">(
-    "idle",
-  );
-  const [updatedAt, setUpdatedAt] = useState<string | null>(initialUpdatedAt);
-  const [version, setVersion] = useState(initialVersion);
-  const [view, setView] = useState<"edit" | "preview">("edit");
-  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
-  const deferredContent = useDeferredValue(content);
+  const [state, dispatch] = useReducer(wordNotesReducer, {
+    content: initialContent,
+    history: initialHistory,
+    lastSavedContent: initialContent,
+    previewHtml: "",
+    restoringVersion: null,
+    saveState: "idle",
+    updatedAt: initialUpdatedAt,
+    version: initialVersion,
+    view: "edit",
+  });
+
+  const deferredContent = useDeferredValue(state.content);
 
   // Lazy-render markdown only when preview mode is active — keeps `marked` out of the main bundle
-  const [previewHtml, setPreviewHtml] = useState("");
-
   useEffect(() => {
-    if (view !== "preview") return;
+    if (state.view !== "preview") return;
 
     let cancelled = false;
     void renderMarkdownOnClient(normalizeObsidianMarkdown(deferredContent)).then((html) => {
-      if (!cancelled) setPreviewHtml(html);
+      if (!cancelled) dispatch({ payload: html, type: "SET_PREVIEW_HTML" });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [deferredContent, view]);
+  }, [deferredContent, state.view]);
 
   const loadHistory = useCallback(async () => {
     const response = await fetch(`/api/notes/${wordId}/history`);
@@ -79,22 +141,22 @@ export function WordNotes({
     if (!response.ok) {
       throw new Error(payload.error ?? "加载历史失败");
     }
-    setHistory(payload.revisions ?? []);
+    dispatch({ payload: payload.revisions ?? [], type: "SET_HISTORY" });
   }, [wordId]);
 
   const persist = useCallback(async (force = false) => {
-    if (!force && content === lastSavedContent) {
+    if (!force && state.content === state.lastSavedContent) {
       return;
     }
 
-    setSaveState("saving");
+    dispatch({ payload: "saving", type: "SET_SAVE_STATE" });
     try {
       const response = await fetch(`/api/notes/${wordId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ contentMd: content }),
+        body: JSON.stringify({ contentMd: state.content }),
       });
       const payload = (await response.json()) as {
         error?: string;
@@ -105,19 +167,20 @@ export function WordNotes({
         throw new Error(payload.error ?? "保存失败");
       }
 
-      setLastSavedContent(content);
-      setUpdatedAt(payload.updatedAt ?? null);
-      setVersion(payload.version ?? version);
-      setSaveState("saved");
+      dispatch({
+        type: "MARK_SAVED",
+        updatedAt: payload.updatedAt ?? null,
+        version: payload.version ?? state.version,
+      });
       await loadHistory();
     } catch {
-      setSaveState("error");
+      dispatch({ payload: "error", type: "SET_SAVE_STATE" });
     }
-  }, [content, lastSavedContent, loadHistory, version, wordId]);
+  }, [state.content, state.lastSavedContent, state.version, loadHistory, wordId]);
 
   const restoreRevision = useCallback(
     async (revisionId: string, revisionVersion: number) => {
-      setRestoringVersion(revisionVersion);
+      dispatch({ payload: revisionVersion, type: "SET_RESTORING_VERSION" });
       try {
         const response = await fetch(`/api/notes/${wordId}/restore`, {
           method: "POST",
@@ -137,24 +200,26 @@ export function WordNotes({
           throw new Error(payload.error ?? "恢复失败");
         }
 
-        setContent(payload.contentMd ?? "");
-        setLastSavedContent(payload.contentMd ?? "");
-        setUpdatedAt(payload.updatedAt ?? null);
-        setVersion(payload.version ?? version);
-        setSaveState("saved");
-        setView("edit");
+        dispatch({
+          type: "RESTORE_REVISION",
+          payload: {
+            content: payload.contentMd ?? "",
+            updatedAt: payload.updatedAt ?? null,
+            version: payload.version ?? state.version,
+          },
+        });
         await loadHistory();
       } catch {
-        setSaveState("error");
+        dispatch({ payload: "error", type: "SET_SAVE_STATE" });
       } finally {
-        setRestoringVersion(null);
+        dispatch({ payload: null, type: "SET_RESTORING_VERSION" });
       }
     },
-    [loadHistory, version, wordId],
+    [loadHistory, state.version, wordId],
   );
 
   useEffect(() => {
-    if (content === lastSavedContent) {
+    if (state.content === state.lastSavedContent) {
       return;
     }
 
@@ -167,7 +232,7 @@ export function WordNotes({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [content, lastSavedContent, persist]);
+  }, [state.content, state.lastSavedContent, persist]);
 
   return (
     <section className="panel rounded-[1.75rem] p-6">
@@ -175,11 +240,11 @@ export function WordNotes({
         <div>
           <h2 className="section-title text-2xl font-semibold">个人笔记</h2>
           <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
-            {saveState === "saving"
+            {state.saveState === "saving"
               ? "保存中..."
-              : saveState === "saved"
-                ? `已保存 · 版本 ${version}`
-                : saveState === "error"
+              : state.saveState === "saved"
+                ? `已保存 · 版本 ${state.version}`
+                : state.saveState === "error"
                   ? "自动保存失败，请手动重试"
                   : "编辑后会自动保存"}
           </p>
@@ -196,9 +261,9 @@ export function WordNotes({
       <div className="mt-4 flex gap-3">
         <button
           type="button"
-          onClick={() => setView("edit")}
+          onClick={() => dispatch({ payload: "edit", type: "SET_VIEW" })}
           className={`rounded-full px-4 py-2 text-sm font-semibold ${
-            view === "edit"
+            state.view === "edit"
               ? "bg-[var(--color-accent)] text-white"
               : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
           }`}
@@ -207,9 +272,9 @@ export function WordNotes({
         </button>
         <button
           type="button"
-          onClick={() => setView("preview")}
+          onClick={() => dispatch({ payload: "preview", type: "SET_VIEW" })}
           className={`rounded-full px-4 py-2 text-sm font-semibold ${
-            view === "preview"
+            state.view === "preview"
               ? "bg-[var(--color-accent)] text-white"
               : "border border-[var(--color-border)] text-[var(--color-ink-soft)]"
           }`}
@@ -218,10 +283,10 @@ export function WordNotes({
         </button>
       </div>
 
-      {view === "edit" ? (
+      {state.view === "edit" ? (
         <textarea
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
+          value={state.content}
+          onChange={(event) => dispatch({ payload: event.target.value, type: "SET_CONTENT" })}
           rows={10}
           className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
           placeholder="记录你的例句、误区、联想和复习提示。"
@@ -229,21 +294,21 @@ export function WordNotes({
       ) : (
         <div
           className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] p-4"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
+          dangerouslySetInnerHTML={{ __html: state.previewHtml }}
         />
       )}
 
       <div className="mt-5 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
-        <p>当前版本：{version}</p>
-        <p>最后保存：{formatDateTime(updatedAt)}</p>
+        <p>当前版本：{state.version}</p>
+        <p>最后保存：{formatDateTime(state.updatedAt)}</p>
       </div>
 
-      {history.length > 0 ? (
+      {state.history.length > 0 ? (
         <div className="mt-5 space-y-3">
           <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
             最近版本快照
           </h3>
-          {history.map((revision) => (
+          {state.history.map((revision) => (
             <div
               key={revision.id}
               className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
@@ -260,13 +325,13 @@ export function WordNotes({
               <div className="mt-3">
                 <button
                   type="button"
-                  disabled={restoringVersion !== null || revision.version === version}
+                  disabled={state.restoringVersion !== null || revision.version === state.version}
                   onClick={() => void restoreRevision(revision.id, revision.version)}
                   className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {revision.version === version
+                  {revision.version === state.version
                     ? "当前版本"
-                    : restoringVersion === revision.version
+                    : state.restoringVersion === revision.version
                       ? "恢复中..."
                       : "恢复此版本"}
                 </button>
