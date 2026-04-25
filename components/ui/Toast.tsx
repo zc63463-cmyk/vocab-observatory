@@ -6,6 +6,8 @@ import {
   useContext,
   useEffect,
   useReducer,
+  useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { X, CheckCircle, AlertCircle, Info } from "lucide-react";
@@ -75,12 +77,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, tone: ToastTone = "info") => {
       const id = `toast-${++toastCounter}`;
       dispatch({ payload: { id, message, tone }, type: "ADD" });
-      // auto-dismiss after 3.5s
-      window.setTimeout(() => {
-        removeToast(id);
-      }, 3500);
     },
-    [removeToast],
+    [],
   );
 
   return (
@@ -104,7 +102,7 @@ function ToastContainer({
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3"
+      className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2.5"
       aria-live="polite"
       aria-label="通知"
     >
@@ -115,7 +113,7 @@ function ToastContainer({
   );
 }
 
-/* ─── Single Toast ─── */
+/* ─── Single Toast with animations ─── */
 
 function ToastItem({
   toast,
@@ -124,21 +122,64 @@ function ToastItem({
   toast: Toast;
   onDismiss: (id: string) => void;
 }) {
-  // auto-dismiss timer
+  const [visible, setVisible] = useState(false);
+  const [exiting, setExiting] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Enter animation
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      onDismiss(toast.id);
+    // Small delay for mount + animate in
+    const enterTimer = requestAnimationFrame(() =>
+      setVisible(true),
+    );
+    return () => cancelAnimationFrame(enterTimer);
+  }, []);
+
+  // Auto-dismiss
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setExiting(true);
+      // Wait for exit animation then remove
+      timerRef.current = setTimeout(() => {
+        onDismiss(toast.id);
+      }, 280);
     }, 3500);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [toast.id, onDismiss]);
 
+  // Manual dismiss with exit animation
+  function handleDismiss() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!exiting && visible) {
+      setExiting(true);
+      setTimeout(() => onDismiss(toast.id), 280);
+    }
+  }
+
   const toneStyles: Record<ToastTone, string> = {
-    success: "border-[rgba(15,111,98,0.24)] bg-[var(--color-surface-muted)]",
-    error: "border-[rgba(178,87,47,0.24)] bg-[var(--color-surface-muted-warm)]",
-    info: "border-[var(--color-border)] bg-[var(--color-surface-soft)]",
+    success:
+      "border-l-[3px] border-l-[var(--color-accent)] bg-[var(--color-panel-strong)]",
+    error:
+      "border-l-[3px] border-l-[var(--color-accent-2)] bg-[var(--color-panel-strong)]",
+    info:
+      "border-l-[3px] border-l-[var(--color-border-strong)] bg-[var(--color-panel-strong)]",
   };
 
-  const Icon = toast.tone === "success" ? CheckCircle : toast.tone === "error" ? AlertCircle : Info;
+  const iconBg: Record<ToastTone, string> = {
+    success: "bg-[rgba(15,111,98,0.1)]",
+    error: "bg-[rgba(178,87,47,0.1)]",
+    info: "bg-[var(--color-surface-muted)]",
+  };
+
+  const Icon =
+    toast.tone === "success"
+      ? CheckCircle
+      : toast.tone === "error"
+        ? AlertCircle
+        : Info;
   const iconColor =
     toast.tone === "success"
       ? "text-[var(--color-accent)]"
@@ -148,18 +189,28 @@ function ToastItem({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-lg backdrop-blur-xl transition-all duration-300 ${toneStyles[toast.tone]}`}
+      className={`flex items-center gap-3 rounded-2xl border border-[var(--color-border)] px-4 py-3 shadow-xl shadow-black/[0.06] backdrop-blur-xl transition-all duration-280 ease-out ${
+        visible && !exiting
+          ? "opacity-100 translate-x-0 scale-100"
+          : exiting
+            ? "opacity-0 translate-x-full -rotate-1 scale-95"
+            : "opacity-0 translate-x-full scale-95"
+      } ${toneStyles[toast.tone]}`}
       role="status"
     >
-      <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-      <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-ink)]">{toast.message}</p>
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg[toast.tone]}`}>
+        <Icon className={`h-4 w-4 ${iconColor}`} />
+      </div>
+      <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-ink)] leading-snug">
+        {toast.message}
+      </p>
       <button
         type="button"
-        onClick={() => onDismiss(toast.id)}
-        className="shrink-0 rounded-full p-1 transition hover:bg-[var(--color-surface-glass-hover)]"
+        onClick={handleDismiss}
+        className="shrink-0 rounded-full p-1 transition-colors hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.9]"
         aria-label="关闭通知"
       >
-        <X className="h-3 w-3 text-[var(--color-ink-soft)]" />
+        <X className="h-3.5 w-3.5 text-[var(--color-ink-soft)] opacity-60" />
       </button>
     </div>
   );

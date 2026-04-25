@@ -1,5 +1,12 @@
+import "../skeleton.css";
+
 function SkeletonLine({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-full bg-[var(--color-surface-muted)] ${className}`} />;
+  return (
+    <div
+      className={`skeleton-shimmer rounded-full ${className}`}
+      style={{ minHeight: "1em" }}
+    />
+  );
 }
 
 export default function WordDetailLoading() {

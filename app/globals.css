@@ -268,3 +268,39 @@ button {
   background: var(--color-pill-warm-bg);
   color: var(--color-pill-warm-text);
 }
+
+/* ─── Global interaction enhancements ─── */
+
+/* Smooth link transitions */
+a {
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+/* Button press feedback — subtle scale on active */
+button {
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.15s ease;
+}
+
+/* Focus visible ring for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Smooth selection */
+::selection {
+  background: var(--color-selection);
+  transition: background-color 0.1s ease;
+}
+
+/* Custom duration used by Toast animations */
+.duration-\[280ms\] {
+  transition-duration: 280ms;
+}

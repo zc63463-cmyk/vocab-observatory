@@ -1,5 +1,12 @@
+import "../skeleton.css";
+
 function SkeletonLine({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-full bg-[var(--color-surface-muted)] ${className}`} />;
+  return (
+    <div
+      className={`skeleton-shimmer rounded-full ${className}`}
+      style={{ minHeight: "1em" }}
+    />
+  );
 }
 
 export default function PlazaDetailLoading() {
@@ -25,7 +32,7 @@ export default function PlazaDetailLoading() {
       </section>
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, index) => (
+        {Array.from({ length: 3 }).map((_, index) => (
           <section key={index} className="panel rounded-[1.75rem] p-6">
             <SkeletonLine className="h-10 w-1/2" />
             <SkeletonLine className="mt-4 h-4 w-1/3" />
