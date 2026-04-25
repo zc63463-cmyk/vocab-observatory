@@ -5,6 +5,7 @@ import { env, hasSupabasePublicEnv } from "@/lib/env";
 
 const navItems: Array<{ href: Route; label: string }> = [
   { href: "/words", label: "词条库" },
+  { href: "/plaza", label: "词汇广场" },
   { href: "/review", label: "复习" },
   { href: "/dashboard", label: "仪表盘" },
   { href: "/notes", label: "笔记" },

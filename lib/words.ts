@@ -48,6 +48,8 @@ export interface PublicWordSummary {
   updated_at: string;
 }
 
+export type PublicWordIndexEntry = Omit<PublicWordSummary, "progress">;
+
 export interface PublicWordDetail extends PublicWordSummary {
   antonym_items: AntonymItem[];
   body_md: string;
@@ -77,16 +79,16 @@ export interface WordQueryFilters {
   semantic?: string;
 }
 
-type BarePublicWordSummary = Omit<PublicWordSummary, "progress">;
+type BarePublicWordSummary = PublicWordIndexEntry;
 
 function compactPublicMetadata(metadata: Json) {
   return {
-    semantic_field: getMetadataString(metadata, "semantic_field"),
-    word_freq: getMetadataString(metadata, "word_freq"),
+    semantic_field: getWordMetadataString(metadata, "semantic_field"),
+    word_freq: getWordMetadataString(metadata, "word_freq"),
   } satisfies Json;
 }
 
-function getMetadataString(metadata: Json, key: string) {
+export function getWordMetadataString(metadata: Json, key: string) {
   if (
     typeof metadata === "object" &&
     metadata &&
@@ -230,7 +232,7 @@ function matchesQuery(word: BarePublicWordSummary, query: string) {
     word.lemma,
     word.title,
     word.short_definition ?? "",
-    getMetadataString(word.metadata, "semantic_field") ?? "",
+    getWordMetadataString(word.metadata, "semantic_field") ?? "",
   ]
     .join(" ")
     .toLowerCase();
@@ -279,7 +281,7 @@ function withStructuredFallback(
     pos: (word.pos as string | null) ?? null,
     prototype_text:
       (word.prototype_text as string | null) ??
-      getMetadataString((word.metadata as Json) ?? {}, "prototype") ??
+      getWordMetadataString((word.metadata as Json) ?? {}, "prototype") ??
       structuredDefaults.prototypeText,
     short_definition: (word.short_definition as string | null) ?? null,
     slug: String(word.slug),
@@ -447,14 +449,14 @@ export async function getPublicWords(filters?: WordQueryFilters) {
   const semanticFields = [
     ...new Set(
       safeWords
-        .map((word) => getMetadataString(word.metadata, "semantic_field"))
+        .map((word) => getWordMetadataString(word.metadata, "semantic_field"))
         .filter((value): value is string => Boolean(value)),
     ),
   ].sort((left, right) => left.localeCompare(right));
   const frequencies = [
     ...new Set(
       safeWords
-        .map((word) => getMetadataString(word.metadata, "word_freq"))
+        .map((word) => getWordMetadataString(word.metadata, "word_freq"))
         .filter((value): value is string => Boolean(value)),
     ),
   ].sort((left, right) => left.localeCompare(right));
@@ -466,14 +468,14 @@ export async function getPublicWords(filters?: WordQueryFilters) {
 
     if (
       normalizedFilters.semantic &&
-      getMetadataString(word.metadata, "semantic_field") !== normalizedFilters.semantic
+      getWordMetadataString(word.metadata, "semantic_field") !== normalizedFilters.semantic
     ) {
       return false;
     }
 
     if (
       normalizedFilters.freq &&
-      getMetadataString(word.metadata, "word_freq") !== normalizedFilters.freq
+      getWordMetadataString(word.metadata, "word_freq") !== normalizedFilters.freq
     ) {
       return false;
     }
@@ -527,4 +529,12 @@ export async function getPublicWordsCount() {
 
   const rows = await getCachedPublicWordRows();
   return rows?.length ?? 0;
+}
+
+export async function getAllPublicWordIndexEntries(): Promise<PublicWordIndexEntry[]> {
+  if (!hasSupabasePublicEnv()) {
+    return [];
+  }
+
+  return (await getCachedPublicWordRows()) ?? [];
 }

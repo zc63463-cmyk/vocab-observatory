@@ -1,4 +1,7 @@
+import Link from "next/link";
+import type { Route } from "next";
 import { Badge } from "@/components/ui/Badge";
+import { createCollectionNoteSlug } from "@/lib/collection-notes";
 import type { PublicWordDetail } from "@/lib/words";
 
 function getMetadataValue(word: PublicWordDetail, key: string) {
@@ -14,6 +17,9 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
   const semanticField = getMetadataValue(word, "semantic_field");
   const wordFrequency = getMetadataValue(word, "word_freq");
   const prototype = word.prototype_text ?? getMetadataValue(word, "prototype");
+  const semanticFieldHref = semanticField
+    ? `/plaza/${createCollectionNoteSlug("semantic_field", semanticField)}`
+    : null;
 
   return (
     <section className="panel-strong rounded-[2rem] p-8">
@@ -32,7 +38,14 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
         </div>
 
         <div className="flex max-w-md flex-wrap gap-2">
-          {semanticField ? <Badge>{semanticField}</Badge> : null}
+          {semanticField && semanticFieldHref ? (
+            <Link
+              href={semanticFieldHref as Route}
+              className="transition hover:opacity-85"
+            >
+              <Badge>{semanticField}</Badge>
+            </Link>
+          ) : null}
           {wordFrequency ? <Badge tone="warm">{wordFrequency}</Badge> : null}
           {word.tags.map((tag) => (
             <Badge key={tag.slug}>{tag.label}</Badge>

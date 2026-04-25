@@ -134,6 +134,17 @@ function normalizeFrontmatterValue(value: string) {
   return trimmed;
 }
 
+function parseFrontmatterDate(value: Json) {
+  if (typeof value === "string" || value instanceof Date) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+
+  return null;
+}
+
 function parseLooseFrontmatter(markdown: string) {
   if (!markdown.startsWith("---\n")) {
     return {
@@ -484,6 +495,7 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
   const title = extractTitle(content, rawTitle);
   const lemma = title.trim();
   const slug = slugifyLabel(lemma);
+  const sourceUpdatedAt = parseFrontmatterDate(data.date);
   const definitionMd = getSection(content, "核心释义");
   const shortDefinition = definitionMd ? excerpt(definitionMd, 120) : null;
   const tags = unique(
@@ -541,7 +553,7 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
     lemma,
     metadata: {
       ...castStructuredWordJson(structuredFields),
-      date: typeof data.date === "string" ? data.date : null,
+      date: sourceUpdatedAt,
       extension_dim:
         typeof data.extension_dim === "string" ? data.extension_dim : null,
       mastery: typeof data.mastery === "string" ? data.mastery : null,
@@ -559,10 +571,7 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
     shortDefinition,
     slug,
     sourcePath,
-    sourceUpdatedAt:
-      typeof data.date === "string" && !Number.isNaN(new Date(data.date).getTime())
-        ? new Date(data.date).toISOString()
-        : null,
+    sourceUpdatedAt,
     synonymItems: structuredFields.synonymItems,
     tags,
     title,

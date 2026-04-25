@@ -77,6 +77,48 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["import_runs"]["Insert"]>;
         Relationships: [];
       };
+      collection_notes: {
+        Row: {
+          body_md: string;
+          content_hash: string;
+          created_at: string;
+          id: string;
+          is_deleted: boolean;
+          is_published: boolean;
+          kind: string;
+          metadata: Json;
+          related_word_slugs: string[];
+          slug: string;
+          source_path: string;
+          source_updated_at: string | null;
+          summary: string | null;
+          synced_at: string;
+          tags: string[];
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          body_md: string;
+          content_hash: string;
+          created_at?: string;
+          id?: string;
+          is_deleted?: boolean;
+          is_published?: boolean;
+          kind: string;
+          metadata?: Json;
+          related_word_slugs?: string[];
+          slug: string;
+          source_path: string;
+          source_updated_at?: string | null;
+          summary?: string | null;
+          synced_at?: string;
+          tags?: string[];
+          title: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["collection_notes"]["Insert"]>;
+        Relationships: [];
+      };
       note_revisions: {
         Row: {
           content_md: string;

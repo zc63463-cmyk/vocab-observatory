@@ -58,6 +58,12 @@ export default async function HomePage() {
               >
                 查看公开词条 -&gt;
               </Link>
+              <Link
+                href="/plaza"
+                className="mt-3 inline-flex text-sm font-semibold text-[var(--color-accent)]"
+              >
+                浏览词汇广场 -&gt;
+              </Link>
             </div>
           </div>
         </div>

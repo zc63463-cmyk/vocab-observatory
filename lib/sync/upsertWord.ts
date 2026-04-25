@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  isCollectionNotesRelationMissing,
+  type ParsedCollectionNote,
+} from "@/lib/collection-notes";
 import { env } from "@/lib/env";
 import {
   completeImportRun,
@@ -11,13 +15,21 @@ import {
   isStructuredWordColumnsMissing,
 } from "@/lib/structured-word";
 import { importWordsFromGitHubArchive } from "@/lib/sync/github-source";
-import { planWordSync, type ExistingWordRef } from "@/lib/sync/import-plan";
+import {
+  planEntitySync,
+  planWordSync,
+  type ExistingSyncRef,
+  type ExistingWordRef,
+} from "@/lib/sync/import-plan";
 import type { Database } from "@/types/database.types";
 import { chunkArray, slugifyLabel } from "@/lib/utils";
 
 type AdminClient = SupabaseClient<Database>;
+type ImportedWords = Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["words"];
+type ImportedCollections =
+  Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["collectionNotes"];
 
-function tagRecordsFromWords(words: Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["words"]) {
+function tagRecordsFromWords(words: ImportedWords) {
   const tagMap = new Map<string, { label: string; slug: string }>();
 
   for (const word of words) {
@@ -36,7 +48,7 @@ function tagRecordsFromWords(words: Awaited<ReturnType<typeof importWordsFromGit
 }
 
 function createWordUpsertPayload(
-  word: Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["words"][number],
+  word: ImportedWords[number],
   now: string,
   includeStructuredFields: boolean,
 ): Database["public"]["Tables"]["words"]["Insert"] {
@@ -81,6 +93,29 @@ function createWordUpsertPayload(
   };
 }
 
+function createCollectionNoteUpsertPayload(
+  note: ParsedCollectionNote,
+  now: string,
+): Database["public"]["Tables"]["collection_notes"]["Insert"] {
+  return {
+    body_md: note.bodyMd,
+    content_hash: note.contentHash,
+    is_deleted: false,
+    is_published: true,
+    kind: note.kind,
+    metadata: note.metadata,
+    related_word_slugs: note.relatedWordSlugs,
+    slug: note.slug,
+    source_path: note.sourcePath,
+    source_updated_at: note.sourceUpdatedAt,
+    summary: note.summary,
+    synced_at: now,
+    tags: note.tags,
+    title: note.title,
+    updated_at: now,
+  };
+}
+
 export async function syncGitHubWords(
   admin: AdminClient,
   options?: { triggerType?: string },
@@ -91,6 +126,7 @@ export async function syncGitHubWords(
 
   try {
     const imported = await importWordsFromGitHubArchive();
+    const incomingCollectionNotes = imported.collectionNotes;
     const incomingWords = imported.words;
     importErrors.push(...imported.errors);
 
@@ -103,16 +139,41 @@ export async function syncGitHubWords(
       throw existingError;
     }
 
+    let collectionNotesAvailable = true;
+    const { data: existingCollectionRows, error: existingCollectionError } = await admin
+      .from("collection_notes")
+      .select("slug, source_path, content_hash, is_deleted");
+
+    if (isCollectionNotesRelationMissing(existingCollectionError)) {
+      collectionNotesAvailable = false;
+    } else if (existingCollectionError) {
+      throw existingCollectionError;
+    }
+
     const plan = planWordSync(
       (existingRows ?? []) as ExistingWordRef[],
       incomingWords,
     );
+    const collectionPlan = collectionNotesAvailable
+      ? planEntitySync(
+          (existingCollectionRows ?? []) as ExistingSyncRef[],
+          incomingCollectionNotes,
+        )
+      : {
+          create: [] as ImportedCollections,
+          softDelete: [] as ExistingSyncRef[],
+          unchanged: [] as ImportedCollections,
+          update: [] as ImportedCollections,
+        };
     const failedSourcePaths = new Set(
       importErrors
         .map((entry) => entry.sourcePath)
         .filter((value): value is string => Boolean(value)),
     );
     plan.softDelete = plan.softDelete.filter(
+      (row) => !failedSourcePaths.has(row.source_path),
+    );
+    collectionPlan.softDelete = collectionPlan.softDelete.filter(
       (row) => !failedSourcePaths.has(row.source_path),
     );
 
@@ -154,6 +215,34 @@ export async function syncGitHubWords(
       }
     }
 
+    const syncableCollectionNotes = [
+      ...collectionPlan.create,
+      ...collectionPlan.update,
+      ...collectionPlan.unchanged,
+    ];
+
+    for (const chunk of chunkArray(
+      syncableCollectionNotes.map((note) => createCollectionNoteUpsertPayload(note, now)),
+      100,
+    )) {
+      if (chunk.length === 0 || !collectionNotesAvailable) {
+        continue;
+      }
+
+      const { error } = await admin.from("collection_notes").upsert(chunk, {
+        onConflict: "slug",
+      });
+
+      if (isCollectionNotesRelationMissing(error)) {
+        collectionNotesAvailable = false;
+        continue;
+      }
+
+      if (error) {
+        throw error;
+      }
+    }
+
     const softDeletePaths = plan.softDelete.map((row) => row.source_path);
     for (const chunk of chunkArray(softDeletePaths, 100)) {
       if (chunk.length === 0) {
@@ -168,6 +257,31 @@ export async function syncGitHubWords(
           updated_at: now,
         })
         .in("source_path", chunk);
+
+      if (error) {
+        throw error;
+      }
+    }
+
+    const collectionSoftDeletePaths = collectionPlan.softDelete.map((row) => row.source_path);
+    for (const chunk of chunkArray(collectionSoftDeletePaths, 100)) {
+      if (chunk.length === 0 || !collectionNotesAvailable) {
+        continue;
+      }
+
+      const { error } = await admin
+        .from("collection_notes")
+        .update({
+          is_deleted: true,
+          is_published: false,
+          updated_at: now,
+        })
+        .in("source_path", chunk);
+
+      if (isCollectionNotesRelationMissing(error)) {
+        collectionNotesAvailable = false;
+        continue;
+      }
 
       if (error) {
         throw error;
@@ -261,6 +375,17 @@ export async function syncGitHubWords(
       soft_deleted_count: plan.softDelete.length,
       status: importErrors.length > 0 ? "completed_with_errors" : "completed",
       summary: {
+        collection_notes: collectionNotesAvailable
+          ? {
+              created: collectionPlan.create.length,
+              imported: incomingCollectionNotes.length,
+              soft_deleted: collectionPlan.softDelete.length,
+              unchanged: collectionPlan.unchanged.length,
+              updated: collectionPlan.update.length,
+            }
+          : {
+              available: false,
+            },
         failed_source_paths: [...failedSourcePaths],
         zip_root: imported.zipRoot,
       },
@@ -272,6 +397,9 @@ export async function syncGitHubWords(
 
     return {
       created: plan.create.length,
+      collectionNotesCreated: collectionNotesAvailable ? collectionPlan.create.length : 0,
+      collectionNotesImported: collectionNotesAvailable ? incomingCollectionNotes.length : 0,
+      collectionNotesUpdated: collectionNotesAvailable ? collectionPlan.update.length : 0,
       errorCount: importErrors.length,
       imported: incomingWords.length,
       latestRunId: importRun?.id ?? null,

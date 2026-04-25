@@ -1,26 +1,38 @@
 import type { ParsedWord } from "@/lib/sync/parseMarkdown";
 
-export interface ExistingWordRef {
+export interface ExistingSyncRef {
   content_hash: string;
   is_deleted: boolean;
   slug: string;
   source_path: string;
 }
 
-export interface WordSyncPlan {
-  create: ParsedWord[];
-  softDelete: ExistingWordRef[];
-  unchanged: ParsedWord[];
-  update: ParsedWord[];
+interface ParsedSyncEntity {
+  contentHash: string;
+  slug: string;
+  sourcePath: string;
 }
 
-export function planWordSync(existing: ExistingWordRef[], incoming: ParsedWord[]): WordSyncPlan {
+export interface EntitySyncPlan<T extends ParsedSyncEntity> {
+  create: T[];
+  softDelete: ExistingSyncRef[];
+  unchanged: T[];
+  update: T[];
+}
+
+export type ExistingWordRef = ExistingSyncRef;
+export type WordSyncPlan = EntitySyncPlan<ParsedWord>;
+
+export function planEntitySync<T extends ParsedSyncEntity>(
+  existing: ExistingSyncRef[],
+  incoming: T[],
+): EntitySyncPlan<T> {
   const bySlug = new Map(existing.map((item) => [item.slug, item]));
   const bySourcePath = new Map(existing.map((item) => [item.source_path, item]));
   const matchedSourcePaths = new Set<string>();
-  const create: ParsedWord[] = [];
-  const update: ParsedWord[] = [];
-  const unchanged: ParsedWord[] = [];
+  const create: T[] = [];
+  const update: T[] = [];
+  const unchanged: T[] = [];
 
   for (const word of incoming) {
     const matched = bySlug.get(word.slug) ?? bySourcePath.get(word.sourcePath);
@@ -55,4 +67,8 @@ export function planWordSync(existing: ExistingWordRef[], incoming: ParsedWord[]
     unchanged,
     update,
   };
+}
+
+export function planWordSync(existing: ExistingWordRef[], incoming: ParsedWord[]): WordSyncPlan {
+  return planEntitySync(existing, incoming);
 }
