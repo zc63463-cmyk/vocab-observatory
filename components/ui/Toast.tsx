@@ -124,7 +124,7 @@ function ToastItem({
 }) {
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Enter animation
   useEffect(() => {
