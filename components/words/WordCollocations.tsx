@@ -58,7 +58,7 @@ export function WordCollocations({
           ? collocations.map((item, index) => (
               <div
                 key={`${item.phrase}-${index}`}
-                className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
               >
                 <p className="font-semibold">{item.phrase}</p>
                 {item.gloss ? (
@@ -67,7 +67,7 @@ export function WordCollocations({
                   </p>
                 ) : null}
                 {item.examples.length > 0 ? (
-                  <div className="mt-3 space-y-2 rounded-[1rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] p-3">
+                  <div className="mt-3 space-y-2 rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-surface-glass)] p-3">
                     {item.examples.map((example, exampleIndex) => (
                       <div key={`${item.phrase}-example-${exampleIndex}`} className="space-y-1">
                         <p className="text-sm leading-7">{example.text}</p>
@@ -85,7 +85,7 @@ export function WordCollocations({
           : fallbackItems.map((item, index) => (
               <div
                 key={`${item.phrase}-${index}`}
-                className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
               >
                 <p className="font-semibold">{item.phrase}</p>
                 {item.note ? (

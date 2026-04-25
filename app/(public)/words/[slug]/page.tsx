@@ -60,23 +60,23 @@ function WordDetailFallback() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
         <section className="panel-strong rounded-[2rem] p-8">
-          <div className="h-4 w-20 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-          <div className="mt-4 h-14 w-48 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-          <div className="mt-4 h-5 w-40 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+          <div className="h-4 w-20 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+          <div className="mt-4 h-14 w-48 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+          <div className="mt-4 h-5 w-40 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
         </section>
         {Array.from({ length: 4 }).map((_, index) => (
           <section key={index} className="panel rounded-[1.75rem] p-6">
-            <div className="h-8 w-36 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-            <div className="mt-5 h-4 w-full animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-            <div className="mt-3 h-4 w-5/6 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+            <div className="h-8 w-36 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+            <div className="mt-5 h-4 w-full animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+            <div className="mt-3 h-4 w-5/6 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
           </section>
         ))}
       </div>
       <aside className="space-y-6">
         {Array.from({ length: 2 }).map((_, index) => (
           <section key={index} className="panel rounded-[1.75rem] p-6">
-            <div className="h-8 w-32 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-            <div className="mt-5 h-10 w-full animate-pulse rounded-2xl bg-[rgba(15,111,98,0.08)]" />
+            <div className="h-8 w-32 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+            <div className="mt-5 h-10 w-full animate-pulse rounded-2xl bg-[var(--color-surface-muted)]" />
           </section>
         ))}
       </aside>

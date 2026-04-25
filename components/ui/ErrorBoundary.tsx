@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               页面渲染时遇到了一个错误，这不影响其他页面的使用。你可以尝试刷新页面，或者返回首页。
             </p>
             {process.env.NODE_ENV === "development" ? (
-              <pre className="mt-4 max-h-40 overflow-auto rounded-xl bg-[rgba(178,87,47,0.06)] p-4 text-left text-xs text-[var(--color-accent-2)]">
+              <pre className="mt-4 max-h-40 overflow-auto rounded-xl bg-[var(--color-surface-muted-warm)] p-4 text-left text-xs text-[var(--color-accent-2)]">
                 {this.state.error.message}
               </pre>
             ) : null}
@@ -55,7 +55,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <button
                 type="button"
                 onClick={() => this.setState({ error: null })}
-                className="rounded-full border border-[var(--color-border)] px-6 py-3 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
+                className="rounded-full border border-[var(--color-border)] px-6 py-3 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)]"
               >
                 重试
               </button>

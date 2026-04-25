@@ -53,15 +53,15 @@ export function WordSynonyms({
       {resolvedSynonymItems.length > 0 ? (
         <div className="space-y-4">
           {sharedDelta ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-[1rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+            <div className="flex flex-wrap items-center gap-2 rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
               <span className="pill text-[11px] uppercase tracking-[0.2em]">{sharedDelta}</span>
               <span>共享差异标签</span>
             </div>
           ) : null}
 
-          <div className="overflow-x-auto rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)]">
+          <div className="overflow-x-auto rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
             <table className="min-w-[760px] w-full border-collapse text-left text-sm">
-              <thead className="bg-[rgba(255,255,255,0.55)] text-xs uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+              <thead className="bg-[var(--color-surface-glass)] text-xs uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
                 <tr>
                   <th className="px-4 py-3 font-semibold">词</th>
                   <th className="px-4 py-3 font-semibold">核心差异</th>
@@ -117,7 +117,7 @@ export function WordSynonyms({
         </div>
       ) : (
         <div
-          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-5"
           dangerouslySetInnerHTML={{ __html: fallbackHtml ?? "" }}
         />
       )}

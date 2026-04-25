@@ -70,12 +70,12 @@ function readJson<T>(url: string, signal?: AbortSignal) {
 
 function LoadingCard() {
   return (
-    <div className="animate-pulse rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.48)] p-5">
-      <div className="h-4 w-24 rounded-full bg-[rgba(15,111,98,0.12)]" />
-      <div className="mt-4 h-10 rounded-2xl bg-[rgba(15,111,98,0.08)]" />
+    <div className="animate-pulse rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
+      <div className="h-4 w-24 rounded-full bg-[var(--color-surface-muted)]" />
+      <div className="mt-4 h-10 rounded-2xl bg-[var(--color-surface-muted)]" />
       <div className="mt-4 space-y-2">
-        <div className="h-3 rounded-full bg-[rgba(15,111,98,0.08)]" />
-        <div className="h-3 rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="h-3 rounded-full bg-[var(--color-surface-muted)]" />
+        <div className="h-3 rounded-full bg-[var(--color-surface-muted)]" />
       </div>
     </div>
   );
@@ -236,7 +236,7 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
         <p>登录 owner 账号后，你可以在这里保存个人笔记，并把词条加入复习。</p>
         <Link
           href={nextHref as Route}
-          className="mt-4 inline-flex rounded-full border border-[rgba(15,111,98,0.2)] bg-[rgba(15,111,98,0.08)] px-4 py-2 font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
+          className="mt-4 inline-flex rounded-full border border-[rgba(15,111,98,0.2)] bg-[var(--color-surface-muted)] px-4 py-2 font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
         >
           Owner 登录
         </Link>

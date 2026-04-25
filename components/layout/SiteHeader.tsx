@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { HeaderAuthStatus } from "@/components/layout/HeaderAuthStatus";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { env, hasSupabasePublicEnv } from "@/lib/env";
 
 const navItems: Array<{ href: Route; label: string }> = [
@@ -13,11 +15,11 @@ const navItems: Array<{ href: Route; label: string }> = [
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[rgba(246,241,231,0.72)] backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-[var(--color-header-border-b)] bg-[var(--color-header-bg)] backdrop-blur-xl transition-colors duration-300">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <Link href="/" className="group flex items-center gap-3">
-            <div className="soft-grid flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)]">
+            <div className="soft-grid flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-glass)]">
               <span className="section-title text-lg font-semibold text-[var(--color-accent)]">
                 词
               </span>
@@ -36,7 +38,7 @@ export function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-full px-4 py-2 text-sm font-medium text-[var(--color-ink-soft)] transition hover:bg-[rgba(255,255,255,0.5)] hover:text-[var(--color-ink)]"
+              className="rounded-full px-4 py-2 text-sm font-medium text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)]"
             >
               {item.label}
             </Link>
@@ -44,21 +46,23 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           {hasSupabasePublicEnv() ? (
             <HeaderAuthStatus />
           ) : (
             <Link
               href="/auth/login"
-              className="rounded-full border border-[rgba(15,111,98,0.2)] bg-[rgba(15,111,98,0.08)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
+              className="hidden rounded-full border border-[rgba(15,111,98,0.2)] bg-[var(--color-surface-muted)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)] sm:inline-flex"
             >
               配置 Supabase
             </Link>
           )}
+          <MobileNav items={navItems} />
         </div>
       </div>
 
       {!env.ownerEmail ? (
-        <div className="border-t border-[var(--color-border)] bg-[rgba(178,87,47,0.08)] px-4 py-2 text-center text-xs text-[var(--color-accent-2)]">
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-muted-warm)] px-4 py-2 text-center text-xs text-[var(--color-accent-2)]">
           尚未配置 `OWNER_EMAIL`，登录与受保护页面会保持不可用。
         </div>
       ) : null}

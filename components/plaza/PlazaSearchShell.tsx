@@ -104,7 +104,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
           <Badge tone="warm">公开浏览</Badge>
           <Link
             href="/words"
-            className="inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(255,255,255,0.5)]"
+            className="inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-surface-glass-hover)]"
           >
             返回词条库
           </Link>
@@ -117,7 +117,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
               value={activeFilters.q}
               onChange={onQueryChange}
               placeholder="搜索词根词缀、语义场、摘要..."
-              className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
           </div>
 
@@ -125,7 +125,7 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
             <select
               value={activeFilters.kind}
               onChange={onKindChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="all">全部类型</option>
               <option value="root_affix">词根词缀</option>

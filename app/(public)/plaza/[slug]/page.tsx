@@ -71,28 +71,28 @@ function PlazaDetailFallback() {
   return (
     <div className="space-y-6">
       <section className="panel-strong rounded-[2rem] p-8">
-        <div className="h-4 w-32 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="h-4 w-32 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
         <div className="mt-5 flex flex-wrap gap-2">
-          <div className="h-6 w-20 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-          <div className="h-6 w-28 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+          <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+          <div className="h-6 w-28 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
         </div>
-        <div className="mt-5 h-14 w-64 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-        <div className="mt-4 h-5 w-96 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="mt-5 h-14 w-64 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+        <div className="mt-4 h-5 w-96 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
       </section>
       <section className="panel rounded-[1.75rem] p-6">
-        <div className="h-8 w-36 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-        <div className="mt-5 h-4 w-full animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-        <div className="mt-3 h-4 w-5/6 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-        <div className="mt-3 h-4 w-4/6 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="h-8 w-36 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+        <div className="mt-5 h-4 w-full animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+        <div className="mt-3 h-4 w-5/6 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+        <div className="mt-3 h-4 w-4/6 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
       </section>
       <section className="space-y-4">
-        <div className="h-8 w-32 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+        <div className="h-8 w-32 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 3 }).map((_, index) => (
             <div key={index} className="panel rounded-[1.75rem] p-6">
-              <div className="h-5 w-24 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-              <div className="mt-4 h-10 w-40 animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
-              <div className="mt-3 h-4 w-full animate-pulse rounded-full bg-[rgba(15,111,98,0.08)]" />
+              <div className="h-5 w-24 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+              <div className="mt-4 h-10 w-40 animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
+              <div className="mt-3 h-4 w-full animate-pulse rounded-full bg-[var(--color-surface-muted)]" />
             </div>
           ))}
         </div>

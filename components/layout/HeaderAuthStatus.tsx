@@ -66,7 +66,7 @@ export function HeaderAuthStatus() {
   if (authState === "owner" && user) {
     return (
       <>
-        <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] px-4 py-2 sm:flex">
+        <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-2 sm:flex">
           <Badge>Owner active</Badge>
           <div className="text-right">
             <p className="text-sm font-semibold">{user.email}</p>
@@ -77,7 +77,7 @@ export function HeaderAuthStatus() {
           type="button"
           disabled={pending}
           onClick={handleSignOut}
-          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.5)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {pending ? "Signing out..." : "Sign out"}
         </button>
@@ -88,7 +88,7 @@ export function HeaderAuthStatus() {
   return (
     <Link
       href="/auth/login"
-      className="rounded-full border border-[rgba(15,111,98,0.2)] bg-[rgba(15,111,98,0.08)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
+      className="rounded-full border border-[rgba(15,111,98,0.2)] bg-[var(--color-surface-muted)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
     >
       {authState === "checking" ? "Owner" : "Owner login"}
     </Link>

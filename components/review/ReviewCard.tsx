@@ -29,7 +29,7 @@ export function ReviewCard({ item }: { item: ReviewQueueItem }) {
       <h1 className="section-title mt-6 text-5xl font-semibold">{item.lemma}</h1>
       {item.ipa ? <p className="mt-3 text-lg text-[var(--color-ink-soft)]">{item.ipa}</p> : null}
 
-      <div className="mt-8 rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.5)] p-5">
+      <div className="mt-8 rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-glass-hover)] p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
           核心释义
         </p>

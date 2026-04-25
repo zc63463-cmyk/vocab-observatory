@@ -54,7 +54,7 @@ export function WordCorpus({
         {displayItems.map((item, index) => (
           <div
             key={`${item.text}-${index}`}
-            className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+            className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
           >
             <p className="font-semibold">{item.text}</p>
             {item.note ? (

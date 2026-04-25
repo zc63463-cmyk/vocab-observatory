@@ -166,7 +166,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               value={activeFilters.q}
               onChange={onQueryChange}
               placeholder="搜索单词、释义、语义场..."
-              className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
             />
           </div>
 
@@ -174,7 +174,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             <select
               value={activeFilters.semantic}
               onChange={onSemanticChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部语义场</option>
               {result.filterOptions.semanticFields.map((value) => (
@@ -187,7 +187,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             <select
               value={activeFilters.freq}
               onChange={onFreqChange}
-              className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
             >
               <option value="">全部词频</option>
               {result.filterOptions.frequencies.map((value) => (
@@ -201,7 +201,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               <select
                 value={activeFilters.review}
                 onChange={onReviewChange}
-                className="rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
               >
                 <option value="all">全部词条</option>
                 <option value="tracked">已加入复习</option>
@@ -209,7 +209,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                 <option value="untracked">未加入复习</option>
               </select>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[rgba(255,255,255,0.42)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+              <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
                 Owner 登录后可按复习状态筛选
               </div>
             )}

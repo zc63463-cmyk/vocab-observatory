@@ -1,5 +1,5 @@
 function SkeletonBlock({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-[1.5rem] bg-[rgba(15,111,98,0.08)] ${className}`} />;
+  return <div className={`animate-pulse rounded-[1.5rem] bg-[var(--color-surface-muted)] ${className}`} />;
 }
 
 export default function PublicLoading() {

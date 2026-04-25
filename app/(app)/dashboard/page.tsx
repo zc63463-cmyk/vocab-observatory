@@ -61,7 +61,7 @@ export default async function DashboardPage() {
               </div>
 
               {summary.activeSession ? (
-                <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+                <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">
                   <p>当前会话开始于：{formatDateTime(summary.activeSession.started_at)}</p>
                   <p>当前会话已完成：{summary.activeSession.cards_seen}</p>
                   <p>行为遗忘率（30天 Again 占比）：{(summary.forgettingRate30d * 100).toFixed(0)}%</p>
@@ -106,7 +106,7 @@ export default async function DashboardPage() {
                     <MetricCard label="Updated" value={summary.importOverview.latestRun.updated_count} />
                     <MetricCard label="Errors" value={summary.importOverview.latestRun.error_count} tone="warm" />
                   </div>
-                  <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+                  <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">
                     <p>开始时间：{formatDateTime(summary.importOverview.latestRun.started_at)}</p>
                     <p>结束时间：{formatDateTime(summary.importOverview.latestRun.finished_at)}</p>
                     <p>有效导入：{summary.importOverview.latestRun.imported_count}</p>
@@ -118,7 +118,7 @@ export default async function DashboardPage() {
                       {summary.importOverview.recentErrors.map((entry) => (
                         <div
                           key={entry.id}
-                          className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                          className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
                         >
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
                             {entry.error_stage}
@@ -146,7 +146,7 @@ export default async function DashboardPage() {
                       <span>{formatDate(item.date)}</span>
                       <span>{item.count}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-[rgba(15,111,98,0.08)]">
+                    <div className="h-2 rounded-full bg-[var(--color-surface-muted)]">
                       <div
                         className="h-2 rounded-full bg-[var(--color-accent)]"
                         style={{ width: `${(item.count / maxReviewVolume7d) * 100}%` }}
@@ -164,7 +164,7 @@ export default async function DashboardPage() {
                   {distributionEntries.map((entry) => (
                     <div
                       key={entry.label}
-                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
                         {entry.label}
@@ -190,7 +190,7 @@ export default async function DashboardPage() {
                       <span>{formatDate(item.date)}</span>
                       <span>{item.count}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-[rgba(178,87,47,0.08)]">
+                    <div className="h-2 rounded-full bg-[var(--color-surface-muted-warm)]">
                       <div
                         className="h-2 rounded-full bg-[var(--color-accent-2)]"
                         style={{ width: `${(item.count / maxReviewVolume30d) * 100}%` }}
@@ -213,7 +213,7 @@ export default async function DashboardPage() {
                     summary.weakestSemanticFields.map((field) => (
                       <div
                         key={field.name}
-                        className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                        className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
                       >
                         <div className="flex items-center justify-between gap-4">
                           <p className="font-semibold">{field.name}</p>
@@ -247,7 +247,7 @@ export default async function DashboardPage() {
                   summary.recentLogs.map((log, index) => (
                     <div
                       key={`${log.reviewed_at}-${index}`}
-                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
                     >
                       <div className="flex items-center justify-between gap-4">
                         {log.words ? (
@@ -294,7 +294,7 @@ export default async function DashboardPage() {
                   summary.notes.map((note, index) => (
                     <div
                       key={`${note.updated_at}-${index}`}
-                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+                      className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
                     >
                       {note.words ? (
                         <Link

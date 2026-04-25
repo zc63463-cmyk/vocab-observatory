@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* ─── Light theme (default) ─── */
 :root {
   --color-canvas: #f6f1e7;
   --color-canvas-deep: #e9dec9;
@@ -12,6 +13,103 @@
   --color-accent: #0f6f62;
   --color-accent-2: #b2572f;
   --color-highlight: #f3dca2;
+
+  /* semantic tokens */
+  --color-surface-glass: rgba(255, 255, 255, 0.55);
+  --color-surface-glass-hover: rgba(255, 255, 255, 0.5);
+  --color-surface-input: rgba(255, 255, 255, 0.72);
+  --color-surface-soft: rgba(255, 255, 255, 0.45);
+  --color-surface-soft-deep: rgba(255, 255, 255, 0.48);
+  --color-surface-muted: rgba(15, 111, 98, 0.08);
+  --color-surface-muted-warm: rgba(178, 87, 47, 0.08);
+
+  /* pill */
+  --color-pill-bg: rgba(15, 111, 98, 0.08);
+  --color-pill-border: rgba(15, 111, 98, 0.16);
+  --color-pill-text: #0c534a;
+  --color-pill-warm-bg: rgba(178, 87, 47, 0.08);
+  --color-pill-warm-border: rgba(178, 87, 47, 0.16);
+  --color-pill-warm-text: #8a4525;
+
+  /* shadows */
+  --shadow-panel: 0 16px 44px rgba(71, 50, 20, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --shadow-panel-strong: 0 18px 52px rgba(71, 50, 20, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* body bg */
+  --bg-body: linear-gradient(180deg, #f9f4ea 0%, #f6f1e7 38%, #efe6d7 100%);
+  --bg-body-radial-1: radial-gradient(circle at top left, rgba(243, 220, 162, 0.75), transparent 32%);
+  --bg-body-radial-2: radial-gradient(circle at 88% 10%, rgba(15, 111, 98, 0.14), transparent 20%);
+  --bg-ambient-1: linear-gradient(110deg, rgba(15, 111, 98, 0.08), transparent 30%);
+  --bg-ambient-2: linear-gradient(290deg, rgba(178, 87, 47, 0.1), transparent 25%);
+  --bg-ambient-mask: radial-gradient(circle at center, black 55%, transparent 92%);
+
+  /* selection */
+  --color-selection: rgba(178, 87, 47, 0.22);
+
+  /* header bg */
+  --color-header-bg: rgba(246, 241, 231, 0.72);
+  --color-header-border-b: var(--color-border);
+
+  /* grid */
+  --color-grid: rgba(103, 77, 44, 0.08);
+
+  /* prose */
+  --color-code-bg: rgba(35, 26, 18, 0.08);
+  --color-blockquote-border: rgba(15, 111, 98, 0.28);
+  --color-blockquote-bg: rgba(255, 255, 255, 0.44);
+  --color-thead-bg: rgba(15, 111, 98, 0.08);
+}
+
+/* ─── Dark theme ─── */
+[data-theme="dark"] {
+  --color-canvas: #1a1714;
+  --color-canvas-deep: #141210;
+  --color-panel: rgba(40, 36, 30, 0.85);
+  --color-panel-strong: rgba(48, 43, 36, 0.95);
+  --color-border: rgba(196, 178, 148, 0.14);
+  --color-border-strong: rgba(196, 178, 148, 0.24);
+  --color-ink: #e8e0d4;
+  --color-ink-soft: rgba(232, 224, 212, 0.68);
+  --color-accent: #3ec9b4;
+  --color-accent-2: #e09060;
+  --color-highlight: rgba(243, 220, 162, 0.2);
+
+  --color-surface-glass: rgba(60, 54, 44, 0.6);
+  --color-surface-glass-hover: rgba(70, 63, 52, 0.6);
+  --color-surface-input: rgba(50, 45, 38, 0.8);
+  --color-surface-soft: rgba(50, 45, 38, 0.6);
+  --color-surface-soft-deep: rgba(55, 49, 42, 0.7);
+  --color-surface-muted: rgba(62, 201, 180, 0.1);
+  --color-surface-muted-warm: rgba(224, 144, 96, 0.1);
+
+  --color-pill-bg: rgba(62, 201, 180, 0.12);
+  --color-pill-border: rgba(62, 201, 180, 0.2);
+  --color-pill-text: #3ec9b4;
+  --color-pill-warm-bg: rgba(224, 144, 96, 0.12);
+  --color-pill-warm-border: rgba(224, 144, 96, 0.2);
+  --color-pill-warm-text: #e09060;
+
+  --shadow-panel: 0 16px 44px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-panel-strong: 0 18px 52px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --bg-body: linear-gradient(180deg, #1e1b17 0%, #1a1714 38%, #151310 100%);
+  --bg-body-radial-1: radial-gradient(circle at top left, rgba(243, 220, 162, 0.12), transparent 32%);
+  --bg-body-radial-2: radial-gradient(circle at 88% 10%, rgba(62, 201, 180, 0.06), transparent 20%);
+  --bg-ambient-1: linear-gradient(110deg, rgba(62, 201, 180, 0.05), transparent 30%);
+  --bg-ambient-2: linear-gradient(290deg, rgba(224, 144, 96, 0.06), transparent 25%);
+  --bg-ambient-mask: radial-gradient(circle at center, black 55%, transparent 92%);
+
+  --color-selection: rgba(224, 144, 96, 0.3);
+
+  --color-header-bg: rgba(26, 23, 20, 0.82);
+  --color-header-border-b: var(--color-border);
+
+  --color-grid: rgba(196, 178, 148, 0.06);
+
+  --color-code-bg: rgba(232, 224, 212, 0.1);
+  --color-blockquote-border: rgba(62, 201, 180, 0.24);
+  --color-blockquote-bg: rgba(255, 255, 255, 0.04);
+  --color-thead-bg: rgba(62, 201, 180, 0.08);
 }
 
 @theme inline {
@@ -31,11 +129,12 @@ html {
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(243, 220, 162, 0.75), transparent 32%),
-    radial-gradient(circle at 88% 10%, rgba(15, 111, 98, 0.14), transparent 20%),
-    linear-gradient(180deg, #f9f4ea 0%, #f6f1e7 38%, #efe6d7 100%);
+    var(--bg-body-radial-1),
+    var(--bg-body-radial-2),
+    var(--bg-body);
   color: var(--color-ink);
   font-family: var(--font-body), sans-serif;
+  transition: background 0.3s ease, color 0.2s ease;
 }
 
 a {
@@ -48,7 +147,7 @@ button {
 }
 
 ::selection {
-  background: rgba(178, 87, 47, 0.22);
+  background: var(--color-selection);
 }
 
 .ambient-bg {
@@ -56,27 +155,26 @@ button {
   position: fixed;
   inset: 0;
   background:
-    linear-gradient(110deg, rgba(15, 111, 98, 0.08), transparent 30%),
-    linear-gradient(290deg, rgba(178, 87, 47, 0.1), transparent 25%);
-  mask-image: radial-gradient(circle at center, black 55%, transparent 92%);
+    var(--bg-ambient-1),
+    var(--bg-ambient-2);
+  mask-image: var(--bg-ambient-mask);
+  transition: background 0.3s ease;
 }
 
 .panel {
   border: 1px solid var(--color-border);
   background: var(--color-panel);
   backdrop-filter: blur(12px);
-  box-shadow:
-    0 16px 44px rgba(71, 50, 20, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  box-shadow: var(--shadow-panel);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .panel-strong {
   border: 1px solid var(--color-border-strong);
   background: var(--color-panel-strong);
   backdrop-filter: blur(18px);
-  box-shadow:
-    0 18px 52px rgba(71, 50, 20, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: var(--shadow-panel-strong);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .section-title {
@@ -111,15 +209,15 @@ button {
 }
 
 .prose-obsidian blockquote {
-  border-left: 3px solid rgba(15, 111, 98, 0.28);
+  border-left: 3px solid var(--color-blockquote-border);
   margin: 1.25rem 0;
   padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.44);
+  background: var(--color-blockquote-bg);
   border-radius: 0.85rem;
 }
 
 .prose-obsidian code {
-  background: rgba(35, 26, 18, 0.08);
+  background: var(--color-code-bg);
   border-radius: 0.4rem;
   padding: 0.15rem 0.35rem;
   font-size: 0.9em;
@@ -135,13 +233,13 @@ button {
 
 .prose-obsidian th,
 .prose-obsidian td {
-  border: 1px solid rgba(103, 77, 44, 0.16);
+  border: 1px solid var(--color-border);
   padding: 0.75rem;
   text-align: left;
 }
 
 .prose-obsidian thead {
-  background: rgba(15, 111, 98, 0.08);
+  background: var(--color-thead-bg);
 }
 
 .prose-obsidian mark {
@@ -153,20 +251,20 @@ button {
 
 .soft-grid {
   background-image:
-    linear-gradient(rgba(103, 77, 44, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(103, 77, 44, 0.08) 1px, transparent 1px);
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
   background-size: 20px 20px;
   background-position: center;
 }
 
 .pill {
-  border: 1px solid rgba(15, 111, 98, 0.16);
-  background: rgba(15, 111, 98, 0.08);
-  color: #0c534a;
+  border: 1px solid var(--color-pill-border);
+  background: var(--color-pill-bg);
+  color: var(--color-pill-text);
 }
 
 .pill-warm {
-  border: 1px solid rgba(178, 87, 47, 0.16);
-  background: rgba(178, 87, 47, 0.08);
-  color: #8a4525;
+  border: 1px solid var(--color-pill-warm-border);
+  background: var(--color-pill-warm-bg);
+  color: var(--color-pill-warm-text);
 }

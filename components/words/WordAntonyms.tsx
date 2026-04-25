@@ -38,7 +38,7 @@ export function WordAntonyms({
           {resolvedAntonymItems.map((item) => (
             <div
               key={`${item.word}-${item.note ?? ""}`}
-              className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+              className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
             >
               {item.href ? (
                 <Link
@@ -58,7 +58,7 @@ export function WordAntonyms({
         </div>
       ) : (
         <div
-          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+          className="prose-obsidian rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-5"
           dangerouslySetInnerHTML={{ __html: fallbackHtml ?? "" }}
         />
       )}

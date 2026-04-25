@@ -252,7 +252,7 @@ export function WordNotes({
         <button
           type="button"
           onClick={() => void persist(true)}
-          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
+          className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)]"
         >
           立即保存
         </button>
@@ -288,17 +288,17 @@ export function WordNotes({
           value={state.content}
           onChange={(event) => dispatch({ payload: event.target.value, type: "SET_CONTENT" })}
           rows={10}
-          className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
+          className="mt-4 w-full rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-input)] p-4 text-sm leading-7 outline-none transition focus:border-[var(--color-accent)]"
           placeholder="记录你的例句、误区、联想和复习提示。"
         />
       ) : (
         <div
-          className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] p-4"
+          className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-glass)] p-4"
           dangerouslySetInnerHTML={{ __html: state.previewHtml }}
         />
       )}
 
-      <div className="mt-5 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4 text-sm text-[var(--color-ink-soft)]">
+      <div className="mt-5 rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">
         <p>当前版本：{state.version}</p>
         <p>最后保存：{formatDateTime(state.updatedAt)}</p>
       </div>
@@ -311,7 +311,7 @@ export function WordNotes({
           {state.history.map((revision) => (
             <div
               key={revision.id}
-              className="rounded-[1.2rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-4"
+              className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4"
             >
               <div className="flex items-center justify-between gap-4">
                 <p className="text-sm font-semibold">Version {revision.version}</p>
@@ -327,7 +327,7 @@ export function WordNotes({
                   type="button"
                   disabled={state.restoringVersion !== null || revision.version === state.version}
                   onClick={() => void restoreRevision(revision.id, revision.version)}
-                  className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {revision.version === state.version
                     ? "当前版本"

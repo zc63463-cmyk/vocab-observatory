@@ -1,5 +1,5 @@
 function SkeletonLine({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-full bg-[rgba(15,111,98,0.08)] ${className}`} />;
+  return <div className={`animate-pulse rounded-full bg-[var(--color-surface-muted)] ${className}`} />;
 }
 
 export default function WordDetailLoading() {

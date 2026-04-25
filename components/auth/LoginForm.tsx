@@ -74,7 +74,7 @@ export function LoginForm({
           type="email"
           name="email"
           placeholder="owner@example.com"
-          className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+          className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
         />
       </label>
 
@@ -87,12 +87,12 @@ export function LoginForm({
       </button>
 
       {error ? (
-        <p className="mt-4 rounded-2xl bg-[rgba(178,87,47,0.1)] px-4 py-3 text-sm text-[var(--color-accent-2)]">
+        <p className="mt-4 rounded-2xl bg-[var(--color-surface-muted-warm)] px-4 py-3 text-sm text-[var(--color-accent-2)]">
           {error}
         </p>
       ) : null}
       {success ? (
-        <p className="mt-4 rounded-2xl bg-[rgba(15,111,98,0.1)] px-4 py-3 text-sm text-[var(--color-accent)]">
+        <p className="mt-4 rounded-2xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-accent)]">
           {success}
         </p>
       ) : null}

@@ -5,6 +5,7 @@ import { MetricCard } from "@/components/ui/MetricCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RatingButtons } from "@/components/review/RatingButtons";
 import { ReviewCard } from "@/components/review/ReviewCard";
+import { useToast } from "@/components/ui/Toast";
 import { formatDateTime } from "@/lib/utils";
 import type {
   ReviewQueueItem,
@@ -25,6 +26,7 @@ export function ReviewQueue() {
   const [pending, setPending] = useState(false);
   const [session, setSession] = useState<ReviewSessionSummary | null>(null);
   const [stats, setStats] = useState<ReviewQueueStats | null>(null);
+  const { addToast } = useToast();
 
   async function fetchQueue(): Promise<QueueResponse> {
     const response = await fetch("/api/review/queue");
@@ -136,12 +138,12 @@ export function ReviewQueue() {
         const nextItems = items.slice(1);
         setItems(nextItems);
         updateStatsAfterRemoval(current, true);
-        setMessage(`已记录 ${rating.toUpperCase()}。`);
+        addToast(`已记录 ${rating.toUpperCase()}`, "success");
         if (nextItems.length === 0) {
           await loadQueue(false);
         }
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "提交评分失败");
+        addToast(error instanceof Error ? error.message : "提交评分失败", "error");
       } finally {
         setPending(false);
       }
@@ -173,9 +175,9 @@ export function ReviewQueue() {
         }
 
         setItems([...items.slice(1), current]);
-        setMessage("已跳过，当前卡片已移到队尾。");
+        addToast("已跳过，当前卡片已移到队尾", "info");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "跳过失败");
+        addToast(error instanceof Error ? error.message : "跳过失败", "error");
       } finally {
         setPending(false);
       }
@@ -209,12 +211,12 @@ export function ReviewQueue() {
         const nextItems = items.slice(1);
         setItems(nextItems);
         updateStatsAfterRemoval(current, false);
-        setMessage("已暂停该词条，直到你手动恢复复习。");
+        addToast("已暂停该词条，直到你手动恢复复习", "info");
         if (nextItems.length === 0) {
           await loadQueue(false);
         }
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "暂停失败");
+        addToast(error instanceof Error ? error.message : "暂停失败", "error");
       } finally {
         setPending(false);
       }
@@ -270,7 +272,7 @@ export function ReviewQueue() {
             type="button"
             disabled={pending}
             onClick={handleSkip}
-            className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-soft)] disabled:cursor-not-allowed disabled:opacity-70"
           >
             跳过到队尾
           </button>
@@ -278,13 +280,12 @@ export function ReviewQueue() {
             type="button"
             disabled={pending}
             onClick={handleSuspend}
-            className="rounded-full border border-[rgba(178,87,47,0.2)] bg-[rgba(178,87,47,0.08)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-2)] transition hover:bg-[rgba(178,87,47,0.14)] disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-full border border-[rgba(178,87,47,0.2)] bg-[var(--color-surface-muted-warm)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-2)] transition hover:bg-[rgba(178,87,47,0.14)] disabled:cursor-not-allowed disabled:opacity-70"
           >
             暂停复习
           </button>
         </div>
       </div>
-      {message ? <p className="text-sm text-[var(--color-ink-soft)]">{message}</p> : null}
     </div>
   );
 }

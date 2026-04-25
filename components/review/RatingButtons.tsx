@@ -1,7 +1,7 @@
 const ratings = [
   { key: "again", label: "Again", className: "bg-[rgba(178,87,47,0.12)] text-[var(--color-accent-2)]" },
   { key: "hard", label: "Hard", className: "bg-[rgba(243,220,162,0.55)] text-[var(--color-ink)]" },
-  { key: "good", label: "Good", className: "bg-[rgba(15,111,98,0.12)] text-[var(--color-accent)]" },
+  { key: "good", label: "Good", className: "bg-[var(--color-surface-muted)] text-[var(--color-accent)]" },
   { key: "easy", label: "Easy", className: "bg-[rgba(15,111,98,0.2)] text-[var(--color-accent)]" },
 ] as const;
 

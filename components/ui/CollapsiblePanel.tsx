@@ -44,7 +44,7 @@ export function CollapsiblePanel({
 
         <span
           className={cn(
-            "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] transition",
+            "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] transition",
             open && "rotate-180",
           )}
         >

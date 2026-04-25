@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 import { formatDateTime } from "@/lib/utils";
 import type { OwnerWordProgressSummary } from "@/lib/words";
 
@@ -13,9 +14,9 @@ export function AddToReviewButton({
   initialProgress: OwnerWordProgressSummary | null;
   wordId: string;
 }) {
-  const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState(initialProgress);
+  const { addToast } = useToast();
   const dueNow = progress?.is_due ?? false;
   const isSuspended = progress?.state === "suspended";
 
@@ -35,9 +36,9 @@ export function AddToReviewButton({
           throw new Error(payload.error ?? "添加失败");
         }
         setProgress(payload.progress ?? null);
-        setMessage("已加入复习队列。");
+        addToast("已加入复习队列", "success");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "添加失败");
+        addToast(error instanceof Error ? error.message : "添加失败", "error");
       } finally {
         setPending(false);
       }
@@ -64,9 +65,9 @@ export function AddToReviewButton({
           throw new Error(payload.error ?? "恢复失败");
         }
         setProgress(payload.progress ?? null);
-        setMessage("该词条已恢复复习。");
+        addToast("该词条已恢复复习", "success");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "恢复失败");
+        addToast(error instanceof Error ? error.message : "恢复失败", "error");
       } finally {
         setPending(false);
       }
@@ -75,7 +76,7 @@ export function AddToReviewButton({
 
   if (progress) {
     return (
-      <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.48)] p-5">
+      <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
@@ -113,20 +114,18 @@ export function AddToReviewButton({
           ) : (
             <Link
               href="/review"
-              className="inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.45)]"
+              className="inline-flex rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)]"
             >
               {dueNow ? "进入今日复习" : "查看复习队列"}
             </Link>
           )}
         </div>
-
-        {message ? <p className="mt-3 text-sm text-[var(--color-ink-soft)]">{message}</p> : null}
       </div>
     );
   }
 
   return (
-    <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.48)] p-5">
+    <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
       <button
         type="button"
         disabled={pending}
@@ -135,7 +134,6 @@ export function AddToReviewButton({
       >
         {pending ? "处理中..." : "加入复习"}
       </button>
-      {message ? <p className="mt-3 text-sm text-[var(--color-ink-soft)]">{message}</p> : null}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export function WordDefinitions({
           {definitions.map((definition) => (
             <div
               key={`${definition.partOfSpeech}-${definition.senses.join("-")}`}
-              className="rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+              className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-5"
             >
               <div className="flex items-center gap-3">
                 <Badge>{definition.partOfSpeech}</Badge>
@@ -38,7 +38,7 @@ export function WordDefinitions({
         </div>
       ) : (
         <div
-          className="prose-obsidian mt-4 rounded-[1.25rem] border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] p-5"
+          className="prose-obsidian mt-4 rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-5"
           dangerouslySetInnerHTML={{ __html: fallbackHtml ?? "" }}
         />
       )}

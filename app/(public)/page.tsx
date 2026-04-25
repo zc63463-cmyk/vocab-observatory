@@ -41,7 +41,7 @@ export default async function HomePage() {
                 type="search"
                 name="q"
                 placeholder="搜索单词、释义、语义场..."
-                className="w-full rounded-2xl border border-[var(--color-border)] bg-[rgba(255,255,255,0.72)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
+                className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-input)] px-5 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"
               />
               <button className="rounded-2xl bg-[var(--color-accent)] px-6 py-4 text-sm font-semibold text-white transition hover:opacity-90">
                 搜索词条
