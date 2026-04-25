@@ -11,7 +11,7 @@ import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
-const STATIC_PLAZA_PARAM_LIMIT = 12;
+const STATIC_PLAZA_PARAM_LIMIT = 50;
 
 export async function generateMetadata({
   params,

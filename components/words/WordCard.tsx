@@ -21,6 +21,7 @@ export function WordCard({ word }: { word: PublicWordSummary }) {
   return (
     <Link
       href={`/words/${word.slug}`}
+      prefetch={true}
       className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition duration-200 hover:-translate-y-1 hover:border-[var(--color-border-strong)] hover:shadow-[0_22px_54px_rgba(71,50,20,0.14)]"
     >
       <div className="flex items-start justify-between gap-4">

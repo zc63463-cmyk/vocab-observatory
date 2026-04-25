@@ -15,7 +15,7 @@ import { getAllPublicWordIndexEntries, getPublicWordBySlug } from "@/lib/words";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
-const STATIC_WORD_PARAM_LIMIT = 12;
+const STATIC_WORD_PARAM_LIMIT = 200;
 
 export async function generateMetadata({
   params,
