@@ -89,6 +89,27 @@ function safeDecodeUriComponent(value: string) {
   return unique(variants);
 }
 
+export function getDirectCollectionNoteSlugValues(value: string) {
+  return unique(
+    safeDecodeUriComponent(value)
+      .flatMap((candidate) => {
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+          return [];
+        }
+
+        return [
+          trimmed,
+          trimmed.normalize("NFC"),
+          trimmed.normalize("NFKC"),
+          trimmed.normalize("NFC").toLowerCase(),
+          trimmed.normalize("NFKC").toLowerCase(),
+        ].filter(Boolean);
+      })
+      .filter((candidate): candidate is string => Boolean(candidate)),
+  );
+}
+
 export function normalizeCollectionNoteSlugValue(value: string) {
   return value
     .trim()
@@ -102,7 +123,7 @@ export function normalizeCollectionNoteSlugValue(value: string) {
 
 export function getCollectionNoteSlugLookupValues(value: string) {
   return unique(
-    safeDecodeUriComponent(value)
+    getDirectCollectionNoteSlugValues(value)
       .flatMap((candidate) => {
         const trimmed = candidate.trim();
         if (!trimmed) {

@@ -7,6 +7,7 @@ import {
 import {
   filterCollectionNotes,
   findCompatibleCollectionNote,
+  getCollectionNoteCanonicalPath,
   normalizePlazaFilters,
 } from "@/lib/plaza";
 
@@ -59,6 +60,18 @@ describe("plaza helpers", () => {
     expect(getCollectionNoteSlugLookupValues("root-ab-/abs-（离开）")).toContain(
       "root-ab-abs-离开",
     );
+  });
+
+  it("only redirects legacy slugs, not already-canonical encoded slugs", () => {
+    const matched = notes[0];
+
+    expect(getCollectionNoteCanonicalPath("root-ab-/abs-（离开）", matched)).toBe(
+      "/plaza/root-ab-abs-%E7%A6%BB%E5%BC%80",
+    );
+    expect(
+      getCollectionNoteCanonicalPath("root-ab-abs-%E7%A6%BB%E5%BC%80", matched),
+    ).toBeNull();
+    expect(getCollectionNoteCanonicalPath("root-ab-abs-离开", matched)).toBeNull();
   });
 
   it("filters plaza notes by q and kind", () => {

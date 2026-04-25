@@ -3,6 +3,7 @@ import { hasSupabasePublicEnv } from "@/lib/env";
 import {
   createCollectionNotePath,
   createCollectionNoteSlug,
+  getDirectCollectionNoteSlugValues,
   getCollectionNoteKindLabel,
   getCollectionNoteSlugLookupValues,
   isCollectionNotesRelationMissing,
@@ -181,6 +182,25 @@ export function findCompatibleCollectionNote(
       return false;
     }) ?? null
   );
+}
+
+export function getCollectionNoteCanonicalPath(
+  requestedSlug: string,
+  matchedNote: Pick<PublicCollectionNoteSummary, "kind" | "slug" | "title">,
+) {
+  const directValues = new Set(getDirectCollectionNoteSlugValues(requestedSlug));
+  const canonicalSlug = matchedNote.slug;
+
+  if (directValues.has(canonicalSlug)) {
+    return null;
+  }
+
+  const titleDerivedSlug = createCollectionNoteSlug(matchedNote.kind, matchedNote.title);
+  if (directValues.has(titleDerivedSlug)) {
+    return null;
+  }
+
+  return createCollectionNotePath(canonicalSlug);
 }
 
 async function getRelatedWords(note: PublicCollectionNoteSummary) {
@@ -417,8 +437,7 @@ export async function getPublicCollectionNoteBySlug(slug: string) {
 
   return {
     available: true,
-    canonicalPath:
-      matchedNote.slug !== slug ? createCollectionNotePath(matchedNote.slug) : null,
+    canonicalPath: getCollectionNoteCanonicalPath(slug, matchedNote),
     configured: true,
     note: canonicalDetail.note,
   };
