@@ -86,4 +86,126 @@ tags: []
     });
     expect(word.warnings).toHaveLength(0);
   });
+
+  it("parses unbolded parts of speech in core definitions", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "acquire"
+tags: []
+---
+
+# acquire
+
+## 核心释义
+
+v. ①==**获得；取得**==；②学到；养成；
+n. ①习得；②获得物；
+
+> [!tip] 原型义
+> **原型义**：通过努力获得某物
+`,
+      "Wiki/L0_words/acquire.md",
+    );
+
+    expect(word.pos).toBe("v");
+    expect(word.coreDefinitions).toEqual([
+      {
+        partOfSpeech: "v",
+        senses: ["获得；取得", "学到；养成"],
+      },
+      {
+        partOfSpeech: "n",
+        senses: ["习得", "获得物"],
+      },
+    ]);
+    expect(word.warnings).toHaveLength(0);
+  });
+
+  it("cleans corpus text and preserves gloss plus trailing note", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "ability"
+tags: []
+---
+
+# ability
+
+## 核心释义
+
+**n.** ①能力；
+
+## 真题/语料关联
+
+> [!example]- 语料
+> - "the ability to communicate effectively"（有效沟通的能力）——考研写作和阅读中极高频搭配
+`,
+      "Wiki/L0_words/ability.md",
+    );
+
+    expect(word.corpusItems).toEqual([
+      {
+        text: "the ability to communicate effectively",
+        note: "有效沟通的能力；考研写作和阅读中极高频搭配",
+      },
+    ]);
+  });
+
+  it("keeps antonym notes intact when the note itself contains colons", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "ability"
+tags: []
+---
+
+# ability
+
+## 核心释义
+
+**n.** ①能力；
+
+## 反义词
+
+> [!note]- 反义词
+> - [[inability]]：无能，无力（ability 的精确反义：有能力↔无能力）
+`,
+      "Wiki/L0_words/ability.md",
+    );
+
+    expect(word.antonymItems).toEqual([
+      {
+        word: "inability",
+        note: "无能，无力（ability 的精确反义：有能力↔无能力）",
+      },
+    ]);
+  });
+
+  it("parses combined parts of speech such as v./n. and n./num.", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "forecast"
+tags: []
+---
+
+# forecast
+
+## 核心释义
+
+**v./n.** ①==**预测，预报**==；②预示；
+**n./num.** ①==**十亿**==；②（英式旧用法）万亿；
+`,
+      "Wiki/L0_words/forecast.md",
+    );
+
+    expect(word.pos).toBe("v./n");
+    expect(word.coreDefinitions).toEqual([
+      {
+        partOfSpeech: "v./n",
+        senses: ["预测，预报", "预示"],
+      },
+      {
+        partOfSpeech: "n./num",
+        senses: ["十亿", "（英式旧用法）万亿"],
+      },
+    ]);
+  });
 });

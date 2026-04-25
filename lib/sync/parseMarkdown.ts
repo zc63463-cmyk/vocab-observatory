@@ -52,6 +52,14 @@ function stripFormatting(value: string) {
     .trim();
 }
 
+function trimTrailingSensePunctuation(value: string) {
+  return value.replace(/[；;]+$/g, "").trim();
+}
+
+function normalizePartOfSpeech(value: string) {
+  return value.trim().replace(/\.$/, "");
+}
+
 function extractTitle(body: string, fallbackTitle?: string) {
   return matchFirst(body, /^#\s+(.+)$/m) ?? fallbackTitle ?? "untitled";
 }
@@ -61,7 +69,20 @@ function extractIpa(body: string) {
 }
 
 function extractPrimaryPos(definitionMd: string) {
-  return matchFirst(definitionMd, /\*\*([a-z.]+)\.\*\*/i);
+  const boldMatch = matchFirst(
+    definitionMd,
+    /\*\*([a-z]+\.?(?:\/[a-z]+\.?)*)\*\*/i,
+  );
+  if (boldMatch) {
+    return normalizePartOfSpeech(boldMatch);
+  }
+
+  const plainMatch = matchFirst(
+    definitionMd,
+    /^([a-z]+\.?(?:\/[a-z]+\.?)*)\s+/im,
+  );
+
+  return plainMatch ? normalizePartOfSpeech(plainMatch) : null;
 }
 
 function extractSectionBulletLines(section: string) {
@@ -172,23 +193,36 @@ function parseCoreDefinitions(section: string) {
     .split("\n")
     .map((line) => line.replace(/^>\s?/, "").trim())
     .filter(Boolean)
-    .filter((line) => line.startsWith("**"));
+    .filter((line) =>
+      /^(?:\*\*)?[a-z]+\.?(?:\/[a-z]+\.?)*(?:\*\*)?\s+/i.test(
+        line,
+      ),
+    );
 
   const parsed = lines
     .map((line) => {
-      const match = /^\*\*([^*]+?)\.\*\*\s*(.+)$/.exec(line);
+      const match =
+        /^(?:\*\*)?([a-z]+\.?(?:\/[a-z]+\.?)*)(?:\*\*)?\s+(.+)$/i.exec(
+          line,
+        );
       if (!match) {
         return null;
       }
 
       const [, rawPartOfSpeech, rawSenses] = match;
-      const senseMatches = [...rawSenses.matchAll(/[①②③④⑤⑥⑦⑧⑨⑩]\s*([^；;]+)/g)];
+      const senseMatches = [
+        ...rawSenses.matchAll(
+          /([①②③④⑤⑥⑦⑧⑨⑩])\s*([\s\S]*?)(?=(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)|$)/g,
+        ),
+      ];
       const senses =
         senseMatches.length > 0
-          ? senseMatches.map((item) => stripFormatting(item[1]))
+          ? senseMatches
+              .map((item) => trimTrailingSensePunctuation(stripFormatting(item[2])))
+              .filter(Boolean)
           : rawSenses
               .split(/[；;]/)
-              .map(stripFormatting)
+              .map((sense) => trimTrailingSensePunctuation(stripFormatting(sense)))
               .filter(Boolean);
 
       if (senses.length === 0) {
@@ -196,7 +230,7 @@ function parseCoreDefinitions(section: string) {
       }
 
       return {
-        partOfSpeech: stripFormatting(rawPartOfSpeech),
+        partOfSpeech: normalizePartOfSpeech(stripFormatting(rawPartOfSpeech)),
         senses,
       } satisfies CoreDefinition;
     })
@@ -236,10 +270,17 @@ function parseCollocations(section: string) {
 
 function parseCorpusItems(section: string) {
   return extractSectionBulletLines(section).map((line) => {
-    const [text, note] = line.split(/——|—/, 2);
+    const [rawText, trailingNote] = line.split(/——|—/, 2);
+    const quotedMatch = /^["“]?(.+?)["”]?[（(]([^()（）]+)[）)]$/.exec(rawText.trim());
+    const text = quotedMatch ? stripFormatting(quotedMatch[1]) : stripFormatting(rawText);
+    const noteParts = [
+      quotedMatch ? stripFormatting(quotedMatch[2]) : null,
+      trailingNote ? stripFormatting(trailingNote) : null,
+    ].filter((value): value is string => Boolean(value));
+
     return {
-      note: note ? stripFormatting(note) : null,
-      text: stripFormatting(text),
+      note: noteParts.length > 0 ? noteParts.join("；") : null,
+      text,
     } satisfies CorpusItem;
   });
 }
@@ -308,7 +349,10 @@ function parseSynonymItems(section: string) {
 
 function parseAntonymItems(section: string) {
   return extractSectionBulletLines(section).map((line) => {
-    const [word, note] = line.split(/[：:]/, 2);
+    const match = /^(.+?)[：:]\s*(.+)$/.exec(line);
+    const word = match ? match[1] : line;
+    const note = match ? match[2] : null;
+
     return {
       note: note ? stripFormatting(note) : null,
       word: stripFormatting(word),
