@@ -1,4 +1,3 @@
-import type { Json } from "@/types/database.types";
 import { asJson } from "@/types/database.types";
 
 export interface CoreDefinition {

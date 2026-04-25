@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";

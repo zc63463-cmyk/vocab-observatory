@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 
@@ -10,36 +9,50 @@ interface CompletionCelebrationProps {
   className?: string;
 }
 
-/** Simple CSS-based confetti burst (no heavy canvas library) */
+interface ConfettiParticle {
+  color: string;
+  delay: number;
+  duration: number;
+  id: number;
+  rotate: number;
+  x: number;
+  xOffset: number;
+  yOffset: number;
+}
+
+const CONFETTI_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+const CONFETTI_PARTICLES: ConfettiParticle[] = Array.from({ length: 30 }, (_, i) => ({
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  delay: (i % 10) * 0.05,
+  duration: 1.5 + (i % 6) * 0.18,
+  id: i,
+  rotate: 180 + (i % 8) * 72,
+  x: (i * 17) % 100,
+  xOffset: ((i * 29) % 200) - 100,
+  yOffset: -200 - (i % 7) * 18,
+}));
+
 function ConfettiBurst() {
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; color: string; delay: number; duration: number }>>([]);
-
-  useEffect(() => {
-    const colors = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
-    const items = Array.from({ length: 30 }, (_, i) => ({
-      color: colors[i % colors.length],
-      delay: Math.random() * 0.5,
-      duration: 1.5 + Math.random() * 1.5,
-      id: i,
-      x: Math.random() * 100,
-    }));
-    setParticles(items);
-  }, []);
-
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      {particles.map((p) => (
+      {CONFETTI_PARTICLES.map((particle) => (
         <motion.div
-          key={p.id}
+          key={particle.id}
           className="absolute h-2 w-2 rounded-sm"
           style={{
-            backgroundColor: p.color,
-            left: `${p.x}%`,
+            backgroundColor: particle.color,
+            left: `${particle.x}%`,
             top: "40%",
           }}
           initial={{ opacity: 1, y: 0, scale: 1 }}
-          animate={{ opacity: 0, y: -200 - Math.random() * 100, x: (Math.random() - 0.5) * 200, rotate: Math.random() * 720, scale: 0.3 }}
-          transition={{ duration: p.duration, delay: p.delay, ease: "easeOut" }}
+          animate={{
+            opacity: 0,
+            rotate: particle.rotate,
+            scale: 0.3,
+            x: particle.xOffset,
+            y: particle.yOffset,
+          }}
+          transition={{ duration: particle.duration, delay: particle.delay, ease: "easeOut" }}
         />
       ))}
     </div>
@@ -71,12 +84,15 @@ export function CompletionCelebration({
         </motion.div>
 
         <h2 className="section-title mt-6 text-3xl font-semibold">
-          今日复习已全部完成！
+          今日复习已全部完成
         </h2>
 
         <p className="mt-4 text-base text-[var(--color-ink-soft)]">
-          本次会话共复习了 <span className="font-semibold text-[var(--color-ink)]">{sessionCardsSeen}</span> 张卡片，
-          累计完成 <span className="font-semibold text-[var(--color-ink)]">{completedCount}</span> 个词条的评分。
+          本次会话共复习了{" "}
+          <span className="font-semibold text-[var(--color-ink)]">{sessionCardsSeen}</span>{" "}
+          张卡片，累计完成{" "}
+          <span className="font-semibold text-[var(--color-ink)]">{completedCount}</span>{" "}
+          个词条的评分。
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">

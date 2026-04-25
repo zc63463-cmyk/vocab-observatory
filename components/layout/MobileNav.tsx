@@ -11,7 +11,7 @@ import {
   Repeat,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /* ── Icon mapping ── */
 const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -30,16 +30,22 @@ export function MobileNav({ items }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
   const touchStartX = useRef(0);
   const touchCurrentX = useRef(0);
   const pathname = usePathname();
+  const previousPathnameRef = useRef(pathname);
 
   const close = useCallback(() => {
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current);
+    }
     setClosing(true);
     // Wait for animation to finish before unmounting
-    setTimeout(() => {
+    closeTimeoutRef.current = window.setTimeout(() => {
       setOpen(false);
       setClosing(false);
+      closeTimeoutRef.current = null;
     }, 280);
   }, []);
 
@@ -75,9 +81,32 @@ export function MobileNav({ items }: MobileNavProps) {
 
   /* ── Close on route change ── */
   useEffect(() => {
-    close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+    if (!open) {
+      previousPathnameRef.current = pathname;
+      return;
+    }
+
+    if (previousPathnameRef.current === pathname) {
+      return;
+    }
+
+    previousPathnameRef.current = pathname;
+    const routeChangeTimer = window.setTimeout(() => {
+      close();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(routeChangeTimer);
+    };
+  }, [close, open, pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        window.clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   /* ── Swipe-to-close gesture ── */
   function handleTouchStart(e: React.TouchEvent) {
@@ -263,10 +292,32 @@ export function MobileNav({ items }: MobileNavProps) {
 
 /* ── Inline theme toggle for drawer ── */
 type Theme = "light" | "dark" | "system";
+const THEMES: Theme[] = ["light", "dark", "system"];
+
+function subscribeToMount() {
+  return () => {};
+}
+
+function getClientMounted() {
+  return true;
+}
+
+function getServerMounted() {
+  return false;
+}
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function readStoredTheme(): Theme {
+  if (typeof window === "undefined") {
+    return "system";
+  }
+
+  const stored = localStorage.getItem("theme");
+  return THEMES.includes(stored as Theme) ? (stored as Theme) : "system";
 }
 
 function applyTheme(theme: Theme) {
@@ -275,16 +326,12 @@ function applyTheme(theme: Theme) {
 }
 
 function MobileThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored && ["light", "dark", "system"].includes(stored)) {
-      setTheme(stored);
-    }
-  }, []);
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
+  const mounted = useSyncExternalStore(
+    subscribeToMount,
+    getClientMounted,
+    getServerMounted,
+  );
 
   function cycleTheme() {
     const next: Record<Theme, Theme> = { light: "dark", dark: "system", system: "light" };

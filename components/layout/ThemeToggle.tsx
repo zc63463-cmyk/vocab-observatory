@@ -1,15 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
 import { springs } from "@/components/motion";
 
 type Theme = "light" | "dark" | "system";
+const THEMES: Theme[] = ["light", "dark", "system"];
+
+function subscribeToMount() {
+  return () => {};
+}
+
+function getClientMounted() {
+  return true;
+}
+
+function getServerMounted() {
+  return false;
+}
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function readStoredTheme(): Theme {
+  if (typeof window === "undefined") {
+    return "system";
+  }
+
+  const stored = localStorage.getItem("theme");
+  return THEMES.includes(stored as Theme) ? (stored as Theme) : "system";
 }
 
 function applyTheme(theme: Theme) {
@@ -18,22 +40,15 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
-  const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
+  const mounted = useSyncExternalStore(
+    subscribeToMount,
+    getClientMounted,
+    getServerMounted,
+  );
 
   useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored && ["light", "dark", "system"].includes(stored)) {
-      setTheme(stored);
-      applyTheme(stored);
-    } else {
-      applyTheme("system");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
+    applyTheme(theme);
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     function handleChange() {
@@ -41,9 +56,10 @@ export function ThemeToggle() {
         applyTheme("system");
       }
     }
+
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme, mounted]);
+  }, [theme]);
 
   function cycleTheme() {
     const next: Record<Theme, Theme> = { light: "dark", dark: "system", system: "light" };
@@ -65,12 +81,9 @@ export function ThemeToggle() {
     );
   }
 
-  const label = theme === "light" ? "浅色模式" : theme === "dark" ? "暗色模式" : "跟随系统";
-
-  // Pick the icon key for AnimatePresence
-  const iconKey = theme === "system"
-    ? `system-${getSystemTheme()}`
-    : theme;
+  const label = theme === "light" ? "Light mode" : theme === "dark" ? "Dark mode" : "System theme";
+  const systemTheme = getSystemTheme();
+  const iconKey = theme === "system" ? `system-${systemTheme}` : theme;
 
   return (
     <motion.button
@@ -115,7 +128,7 @@ export function ThemeToggle() {
               transition={{ type: "spring", ...springs.snappy }}
               className="absolute inset-0"
             >
-              {getSystemTheme() === "dark" ? (
+              {systemTheme === "dark" ? (
                 <Moon className="h-4 w-4 text-[var(--color-accent)]" />
               ) : (
                 <Sun className="h-4 w-4 text-[var(--color-accent-2)]" />

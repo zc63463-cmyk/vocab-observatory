@@ -31,7 +31,7 @@ export function ReviewQueue() {
   const [stats, setStats] = useState<ReviewQueueStats | null>(null);
   const { addToast } = useToast();
 
-  async function fetchQueue(): Promise<QueueResponse> {
+  const fetchQueue = useCallback(async (): Promise<QueueResponse> => {
     const response = await fetch("/api/review/queue");
     const payload = (await response.json()) as QueueResponse & { error?: string };
     if (!response.ok) {
@@ -43,9 +43,9 @@ export function ReviewQueue() {
       session: payload.session ?? null,
       stats: payload.stats ?? null,
     };
-  }
+  }, []);
 
-  async function loadQueue(showLoader = true) {
+  const loadQueue = useCallback(async (showLoader = true) => {
     if (showLoader) {
       setLoading(true);
     }
@@ -60,35 +60,17 @@ export function ReviewQueue() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [fetchQueue]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const queue = await fetchQueue();
-        if (!cancelled) {
-          setItems(queue.items);
-          setSession(queue.session);
-          setStats(queue.stats);
-          setMessage("");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setMessage(error instanceof Error ? error.message : "加载复习队列失败");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
+    const initialLoadTimer = window.setTimeout(() => {
+      void loadQueue();
+    }, 0);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(initialLoadTimer);
     };
-  }, []);
+  }, [loadQueue]);
 
   function updateStatsAfterRemoval(item: ReviewQueueItem, incrementCompleted = false) {
     setStats((current) =>
@@ -151,7 +133,7 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }, [items, session, pending]);
+  }, [addToast, items, loadQueue, pending, session]);
 
   const handleSkip = useCallback(() => {
     const current = items[0];
@@ -185,7 +167,7 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }, [items, session, pending]);
+  }, [addToast, items, pending, session]);
 
   const handleSuspend = useCallback(() => {
     const current = items[0];
@@ -224,7 +206,7 @@ export function ReviewQueue() {
         setPending(false);
       }
     });
-  }, [items, session, pending]);
+  }, [addToast, items, loadQueue, pending, session]);
 
   // ── Keyboard shortcuts ──
   useEffect(() => {
@@ -289,6 +271,12 @@ export function ReviewQueue() {
           <MetricCard label="剩余" value={remainingCount} tone="warm" />
         </div>
 
+        {message ? (
+          <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-muted-warm)] px-4 py-3 text-sm text-[var(--color-accent-2)]">
+            {message}
+          </div>
+        ) : null}
+
         {isQueueDone ? (
           <CompletionCelebration
             completedCount={completedCount}
@@ -318,6 +306,12 @@ export function ReviewQueue() {
       {session ? (
         <div className="panel rounded-[1.75rem] p-5 text-sm text-[var(--color-ink-soft)]">
           当前会话开始于 {formatDateTime(session.started_at)}，已完成 {session.cards_seen} 张卡片。
+        </div>
+      ) : null}
+
+      {message ? (
+        <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-muted-warm)] px-4 py-3 text-sm text-[var(--color-accent-2)]">
+          {message}
         </div>
       ) : null}
 

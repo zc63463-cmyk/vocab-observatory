@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "./MotionWrapper";
 
 interface AnimatedCounterProps {
   target: number;
@@ -20,14 +21,14 @@ export function AnimatedCounter({
   const [display, setDisplay] = useState(0);
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number>(0);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
-    // Respect prefers-reduced-motion
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq.matches) {
-      setDisplay(target);
+    if (prefersReducedMotion) {
       return;
     }
+
+    startRef.current = null;
 
     function step(timestamp: number) {
       if (startRef.current === null) {
@@ -36,7 +37,6 @@ export function AnimatedCounter({
 
       const elapsed = timestamp - startRef.current;
       const progress = Math.min(elapsed / duration, 1);
-      // ease-out-cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       setDisplay(Math.round(eased * target));
 
@@ -52,7 +52,11 @@ export function AnimatedCounter({
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [target, duration]);
+  }, [duration, prefersReducedMotion, target]);
+
+  if (prefersReducedMotion) {
+    return <span className={className}>{target.toLocaleString()}</span>;
+  }
 
   return <span className={className}>{display.toLocaleString()}</span>;
 }

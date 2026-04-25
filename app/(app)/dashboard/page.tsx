@@ -5,7 +5,7 @@ import { MetricCard } from "@/components/ui/MetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
 import { getDashboardSummary } from "@/lib/dashboard";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 export default async function DashboardPage() {
   const summary = await getDashboardSummary();

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { Route } from "next";
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
@@ -70,14 +69,13 @@ function readWordsResponse(response: Response) {
 }
 
 export function WordsSearchShell({ initialResult }: { initialResult: PublicWordsResponse }) {
-  const [authState, setAuthState] = useState<AuthState>("checking");
+  const [, setAuthState] = useState<AuthState>("checking");
 
   const {
     activeFilters,
     fetchError,
     isUpdating,
     result,
-    searchParamsString,
     setFilter,
   } = useFilteredSearch<WordFilters, PublicWordsResponse>({
     areFiltersEqual: areWordFiltersEqual,

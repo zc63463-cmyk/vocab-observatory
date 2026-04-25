@@ -4,52 +4,26 @@ import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-/**
- * Generic filtered search hook — extracts the shared state-management pattern
- * used by both WordsSearchShell and PlazaSearchShell.
- *
- * Type parameters:
- *  F — the filter shape (e.g. WordFilters / PlazaFilters)
- *  R — the API response shape (e.g. PublicWordsResponse / PlazaOverviewResponse)
- */
-
 interface UseFilteredSearchConfig<F extends { q: string }, R> {
-  /** Parse raw search-params into the canonical filter object */
   normalizeFilters: (partial: Partial<F>) => F;
-  /** Equality check to avoid redundant navigations */
   areFiltersEqual: (left: F, right: F) => boolean;
-  /** Serialize filters into a relative URL path (used for router.replace) */
   buildHref: (pathname: string, filters: F) => string;
-  /** Parse the JSON response from the API */
   readResponse: (response: Response) => Promise<R & { error?: string }>;
-  /** Build the API endpoint href from filters */
   buildApiHref: (filters: F) => string;
-  /** The initial server-rendered result */
   initialResult: R;
-  /** Access the filters field from the result */
   getFiltersFromResult: (result: R) => F;
-  /** Access the filters field from the URL params */
   getFiltersFromSearchParams: (params: URLSearchParams) => Partial<F>;
-  /** Optional: whether to pass credentials (for authenticated endpoints) */
   credentials?: RequestCredentials;
-  /** Optional: skip the initial hydration fetch under certain conditions */
   shouldSkipInitialFetch?: (urlFilters: F, initialResult: R) => boolean;
 }
 
 export interface FilteredSearchState<F, R> {
-  /** Current API result */
   result: R;
-  /** The "active" filters — draft if user is typing, URL-synced otherwise */
   activeFilters: F;
-  /** The committed (debounced) query string */
   committedQ: string;
-  /** Whether a fetch or router transition is in progress */
   isUpdating: boolean;
-  /** Any fetch error message */
   fetchError: string | null;
-  /** Update a single filter key */
   setFilter: <K extends keyof F>(key: K, value: F[K]) => void;
-  /** The raw search-params string (for draft source tracking) */
   searchParamsString: string;
 }
 
@@ -59,29 +33,39 @@ export function useFilteredSearch<F extends { q: string }, R>(
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [stableConfig] = useState(() => ({
+    areFiltersEqual: config.areFiltersEqual,
+    buildApiHref: config.buildApiHref,
+    buildHref: config.buildHref,
+    credentials: config.credentials,
+    getFiltersFromResult: config.getFiltersFromResult,
+    getFiltersFromSearchParams: config.getFiltersFromSearchParams,
+    initialResult: config.initialResult,
+    normalizeFilters: config.normalizeFilters,
+    readResponse: config.readResponse,
+    shouldSkipInitialFetch: config.shouldSkipInitialFetch,
+  }));
 
-  const [result, setResult] = useState(config.initialResult);
-  const [draftFilters, setDraftFilters] = useState<F>(config.getFiltersFromResult(config.initialResult));
+  const initialFilters = stableConfig.getFiltersFromResult(stableConfig.initialResult);
+  const [result, setResult] = useState(stableConfig.initialResult);
+  const [draftFilters, setDraftFilters] = useState<F>(initialFilters);
   const [draftSourceKey, setDraftSourceKey] = useState(searchParams.toString());
-  const [debouncedQ, setDebouncedQ] = useState(config.getFiltersFromResult(config.initialResult).q as string);
+  const [debouncedQ, setDebouncedQ] = useState(initialFilters.q as string);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isRouting, startTransition] = useTransition();
 
-  const initialResultRef = useRef(config.initialResult);
+  const initialResultRef = useRef(stableConfig.initialResult);
   const hasHydratedFetchRef = useRef(false);
   const searchParamsString = searchParams.toString();
 
-  // ── Derive URL filters from search params ──
-  const urlFilters = useMemo(
-    () => {
-      const params = new URLSearchParams(searchParamsString);
-      return config.normalizeFilters(config.getFiltersFromSearchParams(params));
-    },
-    [searchParamsString],
-  );
+  const urlFilters = useMemo(() => {
+    const params = new URLSearchParams(searchParamsString);
+    return stableConfig.normalizeFilters(
+      stableConfig.getFiltersFromSearchParams(params),
+    );
+  }, [searchParamsString, stableConfig]);
 
-  // ── Active filters: draft while typing, URL-synced otherwise ──
   const activeFilters = useMemo(
     () => (draftSourceKey === searchParamsString ? draftFilters : urlFilters),
     [draftFilters, draftSourceKey, searchParamsString, urlFilters],
@@ -89,7 +73,6 @@ export function useFilteredSearch<F extends { q: string }, R>(
 
   const committedQ = draftSourceKey === searchParamsString ? debouncedQ : (activeFilters.q as string);
 
-  // ── Debounce the q filter ──
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedQ(activeFilters.q as string);
@@ -100,29 +83,26 @@ export function useFilteredSearch<F extends { q: string }, R>(
     };
   }, [activeFilters.q, draftSourceKey, searchParamsString]);
 
-  // ── Sync URL with committed filters ──
   useEffect(() => {
-    const nextFilters = config.normalizeFilters({
+    const nextFilters = stableConfig.normalizeFilters({
       ...activeFilters,
       q: committedQ,
     } as Partial<F>);
 
-    if (config.areFiltersEqual(nextFilters, urlFilters)) {
+    if (stableConfig.areFiltersEqual(nextFilters, urlFilters)) {
       return;
     }
 
     startTransition(() => {
-      router.replace(config.buildHref(pathname, nextFilters) as Route, { scroll: false });
+      router.replace(stableConfig.buildHref(pathname, nextFilters) as Route, { scroll: false });
     });
-  }, [activeFilters, committedQ, pathname, router, urlFilters]);
+  }, [activeFilters, committedQ, pathname, router, stableConfig, urlFilters]);
 
-  // ── Fetch data when URL filters change ──
   useEffect(() => {
-    // Skip initial hydration fetch when SSR result is still valid
-    if (config.shouldSkipInitialFetch) {
+    if (stableConfig.shouldSkipInitialFetch) {
       if (
         !hasHydratedFetchRef.current &&
-        config.shouldSkipInitialFetch(urlFilters, initialResultRef.current)
+        stableConfig.shouldSkipInitialFetch(urlFilters, initialResultRef.current)
       ) {
         hasHydratedFetchRef.current = true;
         return;
@@ -130,17 +110,17 @@ export function useFilteredSearch<F extends { q: string }, R>(
     }
 
     const controller = new AbortController();
-    const apiHref = config.buildApiHref(urlFilters);
+    const apiHref = stableConfig.buildApiHref(urlFilters);
 
     setIsFetching(true);
     setFetchError(null);
 
     void fetch(apiHref, {
-      credentials: config.credentials ?? "same-origin",
+      credentials: stableConfig.credentials ?? "same-origin",
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = await config.readResponse(response);
+        const payload = await stableConfig.readResponse(response);
 
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to load data.");
@@ -156,10 +136,12 @@ export function useFilteredSearch<F extends { q: string }, R>(
         hasHydratedFetchRef.current = true;
         setResult(payload);
 
-        const resultFilters = config.getFiltersFromResult(payload);
-        if (!config.areFiltersEqual(resultFilters, urlFilters)) {
+        const resultFilters = stableConfig.getFiltersFromResult(payload);
+        if (!stableConfig.areFiltersEqual(resultFilters, urlFilters)) {
           startTransition(() => {
-            router.replace(config.buildHref(pathname, resultFilters) as Route, { scroll: false });
+            router.replace(stableConfig.buildHref(pathname, resultFilters) as Route, {
+              scroll: false,
+            });
           });
         }
       })
@@ -179,9 +161,8 @@ export function useFilteredSearch<F extends { q: string }, R>(
     return () => {
       controller.abort();
     };
-  }, [pathname, router, urlFilters]);
+  }, [pathname, router, stableConfig, urlFilters]);
 
-  // ── Helper to update a single filter ──
   const setFilter = useMemo(() => {
     return <K extends keyof F>(key: K, value: F[K]) => {
       setDraftSourceKey(searchParamsString);
@@ -189,13 +170,11 @@ export function useFilteredSearch<F extends { q: string }, R>(
     };
   }, [searchParamsString]);
 
-  const isUpdating = isFetching || isRouting;
-
   return {
     activeFilters,
     committedQ,
     fetchError,
-    isUpdating,
+    isUpdating: isFetching || isRouting,
     result,
     searchParamsString,
     setFilter,

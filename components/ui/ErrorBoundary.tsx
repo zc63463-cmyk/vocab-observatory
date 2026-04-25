@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Component } from "react";
 import { Button } from "@/components/ui/Button";
 
@@ -13,8 +14,8 @@ interface ErrorBoundaryState {
 }
 
 /**
- * Global error boundary — catches client-side render errors to prevent white-screen crashes.
- * Provides a graceful fallback UI with a retry button.
+ * Global error boundary that catches client-side render errors
+ * and provides a graceful recovery UI.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -27,7 +28,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log to console in development; replace with error reporting service in production
     console.error("[ErrorBoundary]", error, errorInfo.componentStack);
   }
 
@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </p>
             <h2 className="section-title mt-3 text-3xl font-semibold">页面出了点问题</h2>
             <p className="mt-4 text-sm leading-7 text-[var(--color-ink-soft)]">
-              页面渲染时遇到了一个错误，这不影响其他页面的使用。你可以尝试刷新页面，或者返回首页。
+              页面渲染时遇到了一个错误。你可以重试当前视图，或者先返回首页继续使用其他页面。
             </p>
             {process.env.NODE_ENV === "development" ? (
               <pre className="mt-4 max-h-40 overflow-auto rounded-xl bg-[var(--color-surface-muted-warm)] p-4 text-left text-xs text-[var(--color-accent-2)]">
@@ -60,12 +60,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               >
                 重试
               </Button>
-              <a
+              <Link
                 href="/"
                 className="inline-flex rounded-full bg-[var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
               >
                 返回首页
-              </a>
+              </Link>
             </div>
           </div>
         </div>

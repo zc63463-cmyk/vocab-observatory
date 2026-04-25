@@ -3,7 +3,6 @@ import { buildInitialSchedulerPayload } from "@/lib/review/fsrs-adapter";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { addToReviewSchema } from "@/lib/validation/schemas";
 import { serializeOwnerWordProgress } from "@/lib/words";
-import type { Json } from "@/types/database.types";
 import { asJson } from "@/types/database.types";
 
 export async function POST(request: NextRequest) {

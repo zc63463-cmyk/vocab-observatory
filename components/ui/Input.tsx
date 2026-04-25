@@ -63,7 +63,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 
 // ── TextArea ─────────────────────────────────────────────────────────────────
 
-export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export type TextAreaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
   function TextArea({ className = "", ...rest }, ref) {

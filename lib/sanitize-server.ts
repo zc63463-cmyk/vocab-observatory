@@ -18,9 +18,6 @@ const DANGEROUS_TAGS = [
   "base", "meta", "link", "applet",
 ];
 
-/** Attributes that are always stripped (event handlers + dangerous URLs) */
-const DANGEROUS_ATTR_PATTERN = /^on/i;
-
 function stripDangerousTags(html: string): string {
   // Remove dangerous tags and their content
   for (const tag of DANGEROUS_TAGS) {

@@ -1,36 +1,39 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { springs, fadeSlideUp } from "./presets";
+
+function subscribeReducedMotion(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  mediaQuery.addEventListener("change", onStoreChange);
+  return () => mediaQuery.removeEventListener("change", onStoreChange);
+}
+
+function getReducedMotionSnapshot() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 /**
  * Respect the user's `prefers-reduced-motion` setting.
  * When active, all framer-motion animations are skipped (instant transitions).
  */
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-
-    function handler(e: MediaQueryListEvent) {
-      setReduced(e.matches);
-    }
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  return reduced;
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    () => false,
+  );
 }
 
 interface StaggerContainerProps {
   children: ReactNode;
   className?: string;
-  /** Delay between each child in seconds */
   stagger?: number;
-  /** Delay before first child starts */
   delayChildren?: number;
 }
 
@@ -105,13 +108,12 @@ export function PageTransition({ children, className }: PageTransitionProps) {
 
 interface PresenceSwitchProps {
   children: ReactNode;
-  /** Unique key to trigger transition on change */
   routeKey: string;
   className?: string;
 }
 
 /**
- * AnimatePresence wrapper for content switches (e.g. edit ↔ preview in WordNotes).
+ * AnimatePresence wrapper for content switches.
  * Uses `mode="wait"` so exit completes before enter begins.
  */
 export function PresenceSwitch({
