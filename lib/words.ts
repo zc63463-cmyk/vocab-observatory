@@ -491,18 +491,23 @@ const getCachedPublicWordRows = unstable_cache(
       return null;
     }
 
-    const { data, error } = await supabase
-      .from("words")
-      .select(WORD_SELECT)
-      .eq("is_published", true)
-      .eq("is_deleted", false)
-      .order("lemma");
+    try {
+      const { data, error } = await supabase
+        .from("words")
+        .select(WORD_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .order("lemma");
 
-    if (error) {
-      throw error;
+      if (error) {
+        throw error;
+      }
+
+      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+    } catch (err) {
+      console.error("[words] Failed to fetch public word index:", err);
+      return null;
     }
-
-    return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
   },
   ["public-word-rows"],
   {
@@ -518,93 +523,100 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       return null;
     }
 
-    let word: Record<string, Json | string | null> | null = null;
-    const structuredAttempt = await supabase
-      .from("words")
-      .select(WORD_DETAIL_STRUCTURED_SELECT)
-      .eq("slug", escapePostgrestLike(slug))
-      .eq("is_published", true)
-      .eq("is_deleted", false)
-      .maybeSingle();
-
-    if (isStructuredWordColumnsMissing(structuredAttempt.error)) {
-      const legacyAttempt = await supabase
+    try {
+      let word: Record<string, Json | string | null> | null = null;
+      const structuredAttempt = await supabase
         .from("words")
-        .select(WORD_DETAIL_LEGACY_SELECT)
+        .select(WORD_DETAIL_STRUCTURED_SELECT)
         .eq("slug", escapePostgrestLike(slug))
         .eq("is_published", true)
         .eq("is_deleted", false)
         .maybeSingle();
 
-      if (legacyAttempt.error) {
-        throw legacyAttempt.error;
+      if (isStructuredWordColumnsMissing(structuredAttempt.error)) {
+        const legacyAttempt = await supabase
+          .from("words")
+          .select(WORD_DETAIL_LEGACY_SELECT)
+          .eq("slug", escapePostgrestLike(slug))
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .maybeSingle();
+
+        if (legacyAttempt.error) {
+          throw legacyAttempt.error;
+        }
+
+        word = legacyAttempt.data as Record<string, Json | string | null> | null;
+      } else {
+        if (structuredAttempt.error) {
+          throw structuredAttempt.error;
+        }
+
+        word = structuredAttempt.data as Record<string, Json | string | null> | null;
       }
 
-      word = legacyAttempt.data as Record<string, Json | string | null> | null;
-    } else {
-      if (structuredAttempt.error) {
-        throw structuredAttempt.error;
+      if (!word) {
+        return null;
       }
 
-      word = structuredAttempt.data as Record<string, Json | string | null> | null;
-    }
+      const { data: tagRows, error: tagError } = await supabase
+        .from("word_tags")
+        .select("tags!inner(label, slug)")
+        .eq("word_id", word.id as string);
 
-    if (!word) {
+      if (tagError) {
+        throw tagError;
+      }
+
+      const publicWord = withStructuredFallback(word);
+      const availableSlugs = new Set(
+        ((await getCachedPublicWordRows()) ?? []).map((entry) => entry.slug),
+      );
+      const synonymSection = getSection(publicWord.body_md, "同义词辨析");
+      const antonymSection = getSection(publicWord.body_md, "反义词");
+      const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
+        renderObsidianMarkdown(publicWord.body_md),
+        publicWord.definition_md
+          ? renderObsidianMarkdown(publicWord.definition_md)
+          : Promise.resolve(""),
+        synonymSection ? renderObsidianMarkdown(synonymSection) : Promise.resolve(""),
+        antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
+      ]);
+
+      // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page)
+      let bodyHtml = rawBodyHtml;
+      let definitionHtml = rawDefinitionHtml;
+      let synonymHtml = rawSynonymHtml;
+      let antonymHtml = rawAntonymHtml;
+      try {
+        const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+        bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+        definitionHtml = sanitizeHtmlServer(rawDefinitionHtml);
+        synonymHtml = sanitizeHtmlServer(rawSynonymHtml);
+        antonymHtml = sanitizeHtmlServer(rawAntonymHtml);
+      } catch (sanitizeError) {
+        console.error("[words] HTML sanitization skipped:", sanitizeError);
+      }
+
+      return {
+        ...publicWord,
+        antonym_html: antonymHtml,
+        body_html: bodyHtml,
+        definition_html: definitionHtml,
+        progress: null,
+        resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items, availableSlugs),
+        resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items, availableSlugs),
+        synonym_html: synonymHtml,
+        tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
+          (row) => row.tags,
+        ),
+      } satisfies CachedPublicWordDetail;
+    } catch (err) {
+      // Graceful degradation during SSG: log the error but don't crash the build.
+      // The page will show a "word not found" shell; ISR will retry on revalidation.
+      console.error(`[words] Failed to fetch detail for slug "${slug}":`, err);
       return null;
     }
-
-    const { data: tagRows, error: tagError } = await supabase
-      .from("word_tags")
-      .select("tags!inner(label, slug)")
-      .eq("word_id", word.id as string);
-
-    if (tagError) {
-      throw tagError;
-    }
-
-    const publicWord = withStructuredFallback(word);
-    const availableSlugs = new Set(
-      ((await getCachedPublicWordRows()) ?? []).map((entry) => entry.slug),
-    );
-    const synonymSection = getSection(publicWord.body_md, "同义词辨析");
-    const antonymSection = getSection(publicWord.body_md, "反义词");
-    const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
-      renderObsidianMarkdown(publicWord.body_md),
-      publicWord.definition_md
-        ? renderObsidianMarkdown(publicWord.definition_md)
-        : Promise.resolve(""),
-      synonymSection ? renderObsidianMarkdown(synonymSection) : Promise.resolve(""),
-      antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
-    ]);
-
-    // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page)
-    let bodyHtml = rawBodyHtml;
-    let definitionHtml = rawDefinitionHtml;
-    let synonymHtml = rawSynonymHtml;
-    let antonymHtml = rawAntonymHtml;
-    try {
-      const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
-      bodyHtml = sanitizeHtmlServer(rawBodyHtml);
-      definitionHtml = sanitizeHtmlServer(rawDefinitionHtml);
-      synonymHtml = sanitizeHtmlServer(rawSynonymHtml);
-      antonymHtml = sanitizeHtmlServer(rawAntonymHtml);
-    } catch (sanitizeError) {
-      console.error("[words] HTML sanitization skipped:", sanitizeError);
-    }
-
-    return {
-      ...publicWord,
-      antonym_html: antonymHtml,
-      body_html: bodyHtml,
-      definition_html: definitionHtml,
-      progress: null,
-      resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items, availableSlugs),
-      resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items, availableSlugs),
-      synonym_html: synonymHtml,
-      tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
-        (row) => row.tags,
-      ),
-    } satisfies CachedPublicWordDetail;
   },
   ["public-word-detail"],
   {

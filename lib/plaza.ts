@@ -265,29 +265,37 @@ export const getCachedCollectionSummaries = unstable_cache(
       };
     }
 
-    const { data, error } = await supabase
-      .from("collection_notes")
-      .select(COLLECTION_NOTE_SELECT)
-      .eq("is_published", true)
-      .eq("is_deleted", false)
-      .order("kind")
-      .order("title");
+    try {
+      const { data, error } = await supabase
+        .from("collection_notes")
+        .select(COLLECTION_NOTE_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .order("kind")
+        .order("title");
 
-    if (isCollectionNotesRelationMissing(error)) {
+      if (isCollectionNotesRelationMissing(error)) {
+        return {
+          notes: [],
+          status: "missing_relation",
+        };
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      return {
+        notes: ((data ?? []) as CollectionNoteRow[]).map(toCachedSummary),
+        status: "ok",
+      };
+    } catch (err) {
+      console.error("[plaza] Failed to fetch collection summaries:", err);
       return {
         notes: [],
-        status: "missing_relation",
+        status: "missing_env",
       };
     }
-
-    if (error) {
-      throw error;
-    }
-
-    return {
-      notes: ((data ?? []) as CollectionNoteRow[]).map(toCachedSummary),
-      status: "ok",
-    };
   },
   ["public-collection-note-summaries"],
   {
@@ -306,57 +314,66 @@ const getCachedCollectionDetail = unstable_cache(
       };
     }
 
-    const { data, error } = await supabase
-      .from("collection_notes")
-      .select(`${COLLECTION_NOTE_SELECT}, body_md`)
-      .eq("slug", slug)
-      .eq("is_published", true)
-      .eq("is_deleted", false)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from("collection_notes")
+        .select(`${COLLECTION_NOTE_SELECT}, body_md`)
+        .eq("slug", slug)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .maybeSingle();
 
-    if (isCollectionNotesRelationMissing(error)) {
+      if (isCollectionNotesRelationMissing(error)) {
+        return {
+          note: null,
+          status: "missing_relation",
+        };
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        return {
+          note: null,
+          status: "ok",
+        };
+      }
+
+      const noteRow = data as CollectionNoteRow & { body_md: string };
+      const summary = toPublicSummary(toCachedSummary(noteRow));
+      const [rawBodyHtml, relatedWords] = await Promise.all([
+        renderObsidianMarkdown(noteRow.body_md),
+        getRelatedWords(summary),
+      ]);
+
+      // Sanitize rendered HTML to prevent XSS (defensive — never crash the page)
+      let bodyHtml = rawBodyHtml;
+      try {
+        const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+        bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+      } catch (sanitizeError) {
+        console.error("[plaza] HTML sanitization skipped:", sanitizeError);
+      }
+
       return {
-        note: null,
-        status: "missing_relation",
+        note: {
+          ...summary,
+          body_html: bodyHtml,
+          body_md: noteRow.body_md,
+          related_words: relatedWords,
+        },
+        status: "ok",
       };
-    }
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data) {
+    } catch (err) {
+      // Graceful degradation during SSG: log the error but don't crash the build.
+      console.error(`[plaza] Failed to fetch detail for slug "${slug}":`, err);
       return {
         note: null,
         status: "ok",
       };
     }
-
-    const noteRow = data as CollectionNoteRow & { body_md: string };
-    const summary = toPublicSummary(toCachedSummary(noteRow));
-    const [rawBodyHtml, relatedWords] = await Promise.all([
-      renderObsidianMarkdown(noteRow.body_md),
-      getRelatedWords(summary),
-    ]);
-
-    // Sanitize rendered HTML to prevent XSS (defensive — never crash the page)
-    let bodyHtml = rawBodyHtml;
-    try {
-      const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
-      bodyHtml = sanitizeHtmlServer(rawBodyHtml);
-    } catch (sanitizeError) {
-      console.error("[plaza] HTML sanitization skipped:", sanitizeError);
-    }
-
-    return {
-      note: {
-        ...summary,
-        body_html: bodyHtml,
-        body_md: noteRow.body_md,
-        related_words: relatedWords,
-      },
-      status: "ok",
-    };
   },
   ["public-collection-note-detail"],
   {
