@@ -1,15 +1,10 @@
 import { notFound } from "next/navigation";
-import { AddToReviewButton } from "@/components/words/AddToReviewButton";
+import { OwnerWordSidebar } from "@/components/words/OwnerWordSidebar";
 import { WordAntonyms } from "@/components/words/WordAntonyms";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordExamples } from "@/components/words/WordExamples";
 import { WordHeader } from "@/components/words/WordHeader";
-import { WordNotes } from "@/components/words/WordNotes";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
-import { getOwnerUser } from "@/lib/auth";
-import { getSection, renderObsidianMarkdown } from "@/lib/markdown";
-import { isNoteRevisionsRelationMissing } from "@/lib/notes";
-import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { getPublicWordBySlug } from "@/lib/words";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 
@@ -33,49 +28,13 @@ export default async function WordDetailPage({
     );
   }
 
-  const owner = await getOwnerUser();
-  const synonymSection = getSection(result.word.body_md, "同义词辨析");
-  const antonymSection = getSection(result.word.body_md, "反义词");
-  const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = await Promise.all([
-    renderObsidianMarkdown(result.word.body_md),
-    result.word.definition_md
-      ? renderObsidianMarkdown(result.word.definition_md)
-      : Promise.resolve(""),
-    synonymSection ? renderObsidianMarkdown(synonymSection) : Promise.resolve(""),
-    antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
-  ]);
-
-  let noteHistory: Array<{
-    content_md: string;
-    created_at: string;
-    id: string;
-    version: number;
-  }> = [];
-
-  if (owner) {
-    const supabase = await getServerSupabaseClientOrNull();
-    const { data, error } = await supabase!
-      .from("note_revisions")
-      .select("id, version, content_md, created_at")
-      .eq("word_id", result.word.id)
-      .eq("user_id", owner.id)
-      .order("version", { ascending: false })
-      .limit(8);
-
-    if (!isNoteRevisionsRelationMissing(error) && error) {
-      throw error;
-    }
-
-    noteHistory = data ?? [];
-  }
-
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
         <WordHeader word={result.word} />
         <WordDefinitions
           definitions={result.word.core_definitions}
-          fallbackHtml={definitionHtml}
+          fallbackHtml={result.word.definition_html}
         />
 
         {result.word.prototype_text ? (
@@ -95,42 +54,24 @@ export default async function WordDetailPage({
 
         <WordSynonyms
           synonymItems={result.word.synonym_items}
-          fallbackHtml={synonymHtml}
+          fallbackHtml={result.word.synonym_html}
         />
         <WordAntonyms
           antonymItems={result.word.antonym_items}
-          fallbackHtml={antonymHtml}
+          fallbackHtml={result.word.antonym_html}
         />
 
         <section className="panel rounded-[1.75rem] p-6">
           <h2 className="section-title text-2xl font-semibold">词条正文</h2>
           <div
             className="prose-obsidian mt-4"
-            dangerouslySetInnerHTML={{ __html: bodyHtml }}
+            dangerouslySetInnerHTML={{ __html: result.word.body_html }}
           />
         </section>
       </div>
 
       <aside className="space-y-6">
-        {owner ? (
-          <AddToReviewButton
-            wordId={result.word.id}
-            initialProgress={result.word.progress}
-          />
-        ) : null}
-        {owner ? (
-          <WordNotes
-            wordId={result.word.id}
-            initialContent={result.note?.content_md ?? ""}
-            initialHistory={noteHistory}
-            initialUpdatedAt={result.note?.updated_at ?? null}
-            initialVersion={result.note?.version ?? 0}
-          />
-        ) : (
-          <div className="panel rounded-[1.75rem] p-6 text-sm leading-7 text-[var(--color-ink-soft)]">
-            登录 owner 账号后，你可以在这里保存个人笔记并把词条加入复习。
-          </div>
-        )}
+        <OwnerWordSidebar wordId={result.word.id} />
       </aside>
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isOwnerEmail } from "@/lib/auth";
+import { getOwnerUser, isOwnerEmail } from "@/lib/auth";
 import { env, hasSupabaseAdminEnv, hasSupabasePublicEnv } from "@/lib/env";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 
@@ -17,11 +17,9 @@ export async function requireOwnerApiSession() {
   }
 
   const supabase = await getServerSupabaseClientOrNull();
-  const {
-    data: { user },
-  } = await supabase!.auth.getUser();
+  const user = await getOwnerUser();
 
-  if (!isOwnerEmail(user?.email)) {
+  if (!user || !isOwnerEmail(user.email)) {
     return {
       response: jsonError("Unauthorized.", 401),
       supabase,

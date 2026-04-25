@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database.types";
 import { hasSupabasePublicEnv, requireSupabasePublicEnv } from "@/lib/env";
@@ -25,10 +26,12 @@ export async function createServerSupabaseClient() {
   });
 }
 
+const getCachedServerSupabaseClient = cache(async () => createServerSupabaseClient());
+
 export async function getServerSupabaseClientOrNull() {
   if (!hasSupabasePublicEnv()) {
     return null;
   }
 
-  return createServerSupabaseClient();
+  return getCachedServerSupabaseClient();
 }

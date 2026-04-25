@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { reviewRejoinSchema } from "@/lib/validation/schemas";
+import { serializeOwnerWordProgress } from "@/lib/words";
 
 function restoreStateFromPayload(payload: unknown) {
   if (
@@ -77,13 +78,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    progress: {
-      due_at: data.due_at,
-      id: data.id,
-      is_due: Boolean(data.due_at && new Date(data.due_at).getTime() <= Date.now()),
-      last_reviewed_at: data.last_reviewed_at,
-      review_count: data.review_count,
-      state: data.state,
-    },
+    progress: serializeOwnerWordProgress(data),
   });
 }

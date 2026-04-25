@@ -1,9 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { signOutAction } from "@/app/actions";
-import { Badge } from "@/components/ui/Badge";
+import { HeaderAuthStatus } from "@/components/layout/HeaderAuthStatus";
 import { env, hasSupabasePublicEnv } from "@/lib/env";
-import { getOwnerUser } from "@/lib/auth";
 
 const navItems: Array<{ href: Route; label: string }> = [
   { href: "/words", label: "词条库" },
@@ -12,9 +10,7 @@ const navItems: Array<{ href: Route; label: string }> = [
   { href: "/notes", label: "笔记" },
 ];
 
-export async function SiteHeader() {
-  const owner = await getOwnerUser();
-
+export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[rgba(246,241,231,0.72)] backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -47,27 +43,14 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          {owner ? (
-            <>
-              <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[rgba(255,255,255,0.45)] px-4 py-2 sm:flex">
-                <Badge>Owner 已登录</Badge>
-                <div className="text-right">
-                  <p className="text-sm font-semibold">{owner.email}</p>
-                  <p className="text-xs text-[var(--color-ink-soft)]">Private study layer active</p>
-                </div>
-              </div>
-              <form action={signOutAction}>
-                <button className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-border-strong)] hover:bg-[rgba(255,255,255,0.5)]">
-                  退出
-                </button>
-              </form>
-            </>
+          {hasSupabasePublicEnv() ? (
+            <HeaderAuthStatus />
           ) : (
             <Link
               href="/auth/login"
               className="rounded-full border border-[rgba(15,111,98,0.2)] bg-[rgba(15,111,98,0.08)] px-4 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[rgba(15,111,98,0.14)]"
             >
-              {hasSupabasePublicEnv() ? "Owner 登录" : "配置 Supabase"}
+              配置 Supabase
             </Link>
           )}
         </div>

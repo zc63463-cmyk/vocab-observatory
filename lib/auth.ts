@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { env } from "@/lib/env";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
@@ -7,7 +8,7 @@ export function isOwnerEmail(email: string | null | undefined) {
   return Boolean(email && env.ownerEmail && email.toLowerCase() === env.ownerEmail);
 }
 
-export async function getOwnerUser() {
+export const getOwnerUser = cache(async () => {
   const supabase = await getServerSupabaseClientOrNull();
   if (!supabase) {
     return null;
@@ -22,7 +23,7 @@ export async function getOwnerUser() {
   }
 
   return user;
-}
+});
 
 export async function requireOwnerUser() {
   const user = await getOwnerUser();

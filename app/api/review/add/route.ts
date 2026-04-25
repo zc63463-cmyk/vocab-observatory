@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { buildInitialSchedulerPayload } from "@/lib/review/fsrs-adapter";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { addToReviewSchema } from "@/lib/validation/schemas";
+import { serializeOwnerWordProgress } from "@/lib/words";
 import type { Json } from "@/types/database.types";
 
 export async function POST(request: NextRequest) {
@@ -65,14 +66,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    progress: {
-      due_at: data.due_at,
-      id: data.id,
-      is_due: Boolean(data.due_at && new Date(data.due_at).getTime() <= Date.now()),
-      last_reviewed_at: data.last_reviewed_at,
-      review_count: data.review_count,
-      state: data.state,
-    },
+    progress: serializeOwnerWordProgress(data),
     progressId: data.id,
   });
 }

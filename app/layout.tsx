@@ -3,7 +3,6 @@ import { Fraunces, Manrope } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { GlobalAuthCodeHandler } from "@/components/auth/GlobalAuthCodeHandler";
-import { SiteHeader } from "@/components/layout/SiteHeader";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -40,10 +39,7 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <GlobalAuthCodeHandler />
           </Suspense>
-          <SiteHeader />
-          <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pb-16 pt-8 sm:px-6 lg:px-8">
-            {children}
-          </main>
+          {children}
         </div>
       </body>
     </html>
