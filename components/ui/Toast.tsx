@@ -10,7 +10,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { X, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { springs } from "@/components/motion";
 
 /* ─── Types ─── */
 
@@ -98,22 +100,22 @@ function ToastContainer({
   toasts: Toast[];
   onDismiss: (id: string) => void;
 }) {
-  if (toasts.length === 0) return null;
-
   return (
     <div
       className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2.5"
       aria-live="polite"
       aria-label="通知"
     >
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
-      ))}
+      <AnimatePresence initial={false}>
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
 
-/* ─── Single Toast with animations ─── */
+/* ─── Single Toast with framer-motion animations ─── */
 
 function ToastItem({
   toast,
@@ -122,27 +124,12 @@ function ToastItem({
   toast: Toast;
   onDismiss: (id: string) => void;
 }) {
-  const [visible, setVisible] = useState(false);
-  const [exiting, setExiting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Enter animation
-  useEffect(() => {
-    // Small delay for mount + animate in
-    const enterTimer = requestAnimationFrame(() =>
-      setVisible(true),
-    );
-    return () => cancelAnimationFrame(enterTimer);
-  }, []);
-
-  // Auto-dismiss
+  // Auto-dismiss after 3.5s — AnimatePresence handles exit animation
   useEffect(() => {
     timerRef.current = setTimeout(() => {
-      setExiting(true);
-      // Wait for exit animation then remove
-      timerRef.current = setTimeout(() => {
-        onDismiss(toast.id);
-      }, 280);
+      onDismiss(toast.id);
     }, 3500);
 
     return () => {
@@ -150,13 +137,9 @@ function ToastItem({
     };
   }, [toast.id, onDismiss]);
 
-  // Manual dismiss with exit animation
   function handleDismiss() {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (!exiting && visible) {
-      setExiting(true);
-      setTimeout(() => onDismiss(toast.id), 280);
-    }
+    onDismiss(toast.id);
   }
 
   const toneStyles: Record<ToastTone, string> = {
@@ -188,14 +171,13 @@ function ToastItem({
         : "text-[var(--color-ink-soft)]";
 
   return (
-    <div
-      className={`flex items-center gap-3 rounded-2xl border border-[var(--color-border)] px-4 py-3 shadow-xl shadow-black/[0.06] backdrop-blur-xl transition-all duration-280 ease-out ${
-        visible && !exiting
-          ? "opacity-100 translate-x-0 scale-100"
-          : exiting
-            ? "opacity-0 translate-x-full -rotate-1 scale-95"
-            : "opacity-0 translate-x-full scale-95"
-      } ${toneStyles[toast.tone]}`}
+    <motion.div
+      layout
+      initial={{ opacity: 0, x: 80, scale: 0.95 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 80, scale: 0.95, rotate: -1 }}
+      transition={{ type: "spring", ...springs.smooth }}
+      className={`flex items-center gap-3 rounded-2xl border border-[var(--color-border)] px-4 py-3 shadow-xl shadow-black/[0.06] backdrop-blur-xl ${toneStyles[toast.tone]}`}
       role="status"
     >
       <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg[toast.tone]}`}>
@@ -204,14 +186,15 @@ function ToastItem({
       <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-ink)] leading-snug">
         {toast.message}
       </p>
-      <button
+      <motion.button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 rounded-full p-1 transition-colors hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.9]"
+        className="shrink-0 rounded-full p-1 transition-colors hover:bg-[var(--color-surface-glass-hover)]"
+        whileTap={{ scale: 0.85 }}
         aria-label="关闭通知"
       >
         <X className="h-3.5 w-3.5 text-[var(--color-ink-soft)] opacity-60" />
-      </button>
-    </div>
+      </motion.button>
+    </motion.div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
+import { springs } from "@/components/motion";
 
 type Theme = "light" | "dark" | "system";
 
@@ -65,24 +67,63 @@ export function ThemeToggle() {
 
   const label = theme === "light" ? "浅色模式" : theme === "dark" ? "暗色模式" : "跟随系统";
 
+  // Pick the icon key for AnimatePresence
+  const iconKey = theme === "system"
+    ? `system-${getSystemTheme()}`
+    : theme;
+
   return (
-    <button
+    <motion.button
       type="button"
       onClick={cycleTheme}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)]"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)]"
       aria-label={label}
       title={label}
+      whileTap={{ scale: 0.85, rotate: 15 }}
+      transition={{ type: "spring", ...springs.bouncy }}
     >
-      {theme === "light" ? (
-        <Sun className="h-4 w-4 text-[var(--color-accent-2)]" />
-      ) : theme === "dark" ? (
-        <Moon className="h-4 w-4 text-[var(--color-accent)]" />
-      ) : (
-        <div className="relative h-4 w-4">
-          <Sun className="absolute h-4 w-4 rotate-0 scale-100 text-[var(--color-accent-2)] transition-all dark:rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 text-[var(--color-accent)] transition-all dark:rotate-0 dark:scale-100" />
-        </div>
-      )}
-    </button>
+      <div className="relative h-4 w-4">
+        <AnimatePresence mode="wait" initial={false}>
+          {theme === "light" ? (
+            <motion.div
+              key="sun"
+              initial={{ rotate: -90, scale: 0, opacity: 0 }}
+              animate={{ rotate: 0, scale: 1, opacity: 1 }}
+              exit={{ rotate: 90, scale: 0, opacity: 0 }}
+              transition={{ type: "spring", ...springs.snappy }}
+              className="absolute inset-0"
+            >
+              <Sun className="h-4 w-4 text-[var(--color-accent-2)]" />
+            </motion.div>
+          ) : theme === "dark" ? (
+            <motion.div
+              key="moon"
+              initial={{ rotate: -90, scale: 0, opacity: 0 }}
+              animate={{ rotate: 0, scale: 1, opacity: 1 }}
+              exit={{ rotate: 90, scale: 0, opacity: 0 }}
+              transition={{ type: "spring", ...springs.snappy }}
+              className="absolute inset-0"
+            >
+              <Moon className="h-4 w-4 text-[var(--color-accent)]" />
+            </motion.div>
+          ) : (
+            <motion.div
+              key={iconKey}
+              initial={{ rotate: -90, scale: 0, opacity: 0 }}
+              animate={{ rotate: 0, scale: 1, opacity: 1 }}
+              exit={{ rotate: 90, scale: 0, opacity: 0 }}
+              transition={{ type: "spring", ...springs.snappy }}
+              className="absolute inset-0"
+            >
+              {getSystemTheme() === "dark" ? (
+                <Moon className="h-4 w-4 text-[var(--color-accent)]" />
+              ) : (
+                <Sun className="h-4 w-4 text-[var(--color-accent-2)]" />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.button>
   );
 }

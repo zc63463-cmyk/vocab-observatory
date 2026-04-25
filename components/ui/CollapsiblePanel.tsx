@@ -2,7 +2,9 @@
 
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { springs } from "@/components/motion";
 
 export function CollapsiblePanel({
   badge,
@@ -42,24 +44,40 @@ export function CollapsiblePanel({
           ) : null}
         </div>
 
-        <span
+        <motion.span
           className={cn(
-            "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] transition",
-            open && "rotate-180",
+            "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)]",
           )}
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ type: "spring", ...springs.snappy }}
         >
           <ChevronDown className="h-4 w-4" />
-        </span>
+        </motion.span>
       </button>
 
-      <div
-        className={cn(
-          "grid overflow-hidden transition-all duration-300 ease-out",
-          open ? "mt-5 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0",
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+            animate={{
+              height: "auto",
+              opacity: 1,
+              marginTop: 20,
+              transition: { type: "spring", ...springs.smooth },
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              marginTop: 0,
+              transition: { duration: 0.2, ease: [0.7, 0, 0.84, 0] },
+            }}
+            className="overflow-hidden"
+          >
+            <div>{children}</div>
+          </motion.div>
         )}
-      >
-        <div className="overflow-hidden">{children}</div>
-      </div>
+      </AnimatePresence>
     </section>
   );
 }

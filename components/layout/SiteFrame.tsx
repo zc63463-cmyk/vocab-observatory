@@ -1,4 +1,5 @@
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { PageTransitionMain } from "@/components/motion/PageTransitionMain";
 
 export function SiteFrame({
   children,
@@ -8,9 +9,7 @@ export function SiteFrame({
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pb-16 pt-8 sm:px-6 lg:px-8">
-        {children}
-      </main>
+      <PageTransitionMain>{children}</PageTransitionMain>
     </>
   );
 }

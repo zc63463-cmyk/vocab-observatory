@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { TextArea } from "@/components/ui/Input";
+import { PresenceSwitch } from "@/components/motion";
 import { normalizeObsidianMarkdown } from "@/lib/markdown";
 import { sanitizeHtmlSync } from "@/lib/sanitize";
 import { excerpt, formatDateTime } from "@/lib/utils";
@@ -282,20 +283,22 @@ export function WordNotes({
         </Button>
       </div>
 
-      {state.view === "edit" ? (
-        <TextArea
-          value={state.content}
-          onChange={(event) => dispatch({ payload: event.target.value, type: "SET_CONTENT" })}
-          rows={10}
-          className="mt-4 w-full"
-          placeholder="记录你的例句、误区、联想和复习提示。"
-        />
-      ) : (
-        <div
-          className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-glass)] p-4"
-          dangerouslySetInnerHTML={{ __html: state.previewHtml }}
-        />
-      )}
+      <PresenceSwitch routeKey={state.view}>
+        {state.view === "edit" ? (
+          <TextArea
+            value={state.content}
+            onChange={(event) => dispatch({ payload: event.target.value, type: "SET_CONTENT" })}
+            rows={10}
+            className="mt-4 w-full"
+            placeholder="记录你的例句、误区、联想和复习提示。"
+          />
+        ) : (
+          <div
+            className="prose-obsidian mt-4 rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-glass)] p-4"
+            dangerouslySetInnerHTML={{ __html: state.previewHtml }}
+          />
+        )}
+      </PresenceSwitch>
 
       <div className="mt-5 rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">
         <p>当前版本：{state.version}</p>

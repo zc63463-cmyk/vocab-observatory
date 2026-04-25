@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
+import { WordCardShell } from "@/components/motion/WordCardShell";
 import { formatDateTime } from "@/lib/utils";
 import type { PublicWordSummary } from "@/lib/words";
 
@@ -19,11 +19,7 @@ export function WordCard({ word }: { word: PublicWordSummary }) {
   const isDue = word.progress?.is_due ?? false;
 
   return (
-    <Link
-      href={`/words/${word.slug}`}
-      prefetch={true}
-      className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition duration-200 hover:-translate-y-1 hover:border-[var(--color-border-strong)] hover:shadow-[0_22px_54px_rgba(71,50,20,0.14)]"
-    >
+    <WordCardShell href={`/words/${word.slug}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="section-title text-3xl font-semibold">{word.lemma}</p>
@@ -52,6 +48,6 @@ export function WordCard({ word }: { word: PublicWordSummary }) {
           下次复习：{formatDateTime(word.progress.due_at)}
         </p>
       ) : null}
-    </Link>
+    </WordCardShell>
   );
 }

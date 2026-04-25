@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { WordCard } from "@/components/words/WordCard";
+import { FeaturedWordsGrid } from "@/components/motion/FeaturedWordsGrid";
 import { getLandingSnapshot } from "@/lib/words";
 
 export const dynamic = "force-static";
@@ -107,11 +107,7 @@ export default async function HomePage() {
               : "当前尚未配置 Supabase，因此页面先以骨架模式运行。"}
           </div>
         ) : (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {snapshot.featuredWords.map((word) => (
-              <WordCard key={word.id} word={word} />
-            ))}
-          </div>
+          <FeaturedWordsGrid words={snapshot.featuredWords} />
         )}
       </section>
     </div>

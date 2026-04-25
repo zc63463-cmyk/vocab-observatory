@@ -5,6 +5,7 @@ import "./globals.css";
 import { GlobalAuthCodeHandler } from "@/components/auth/GlobalAuthCodeHandler";
 import { GlobalErrorBoundary } from "@/components/layout/GlobalErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
+import { ReducedMotionProvider } from "@/components/motion/ReducedMotionProvider";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -60,16 +61,18 @@ export default function RootLayout({
       </head>
       <body className="min-h-full bg-[var(--color-canvas)] text-[var(--color-ink)]">
         <div className="ambient-bg" />
-        <ToastProvider>
-          <GlobalErrorBoundary>
-            <div className="relative flex min-h-screen flex-col">
-              <Suspense fallback={null}>
-                <GlobalAuthCodeHandler />
-              </Suspense>
-              {children}
-            </div>
-          </GlobalErrorBoundary>
-        </ToastProvider>
+        <ReducedMotionProvider>
+          <ToastProvider>
+            <GlobalErrorBoundary>
+              <div className="relative flex min-h-screen flex-col">
+                <Suspense fallback={null}>
+                  <GlobalAuthCodeHandler />
+                </Suspense>
+                {children}
+              </div>
+            </GlobalErrorBoundary>
+          </ToastProvider>
+        </ReducedMotionProvider>
       </body>
     </html>
   );
