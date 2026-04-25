@@ -43,6 +43,7 @@ CRON_SECRET=
 - `supabase/migrations/0002_rls.sql`
 - `supabase/migrations/0003_import_tracking.sql`
 - `supabase/migrations/0004_note_revisions.sql`
+- `supabase/migrations/0005_word_structured_fields.sql`
 
 5. 启动开发环境
 

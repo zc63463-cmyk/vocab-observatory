@@ -292,9 +292,13 @@ export interface Database {
       words: {
         Row: {
           aliases: string[];
+          antonym_items: Json;
           body_md: string;
           cefr: string | null;
+          collocations: Json;
           content_hash: string;
+          core_definitions: Json;
+          corpus_items: Json;
           created_at: string;
           definition_md: string;
           examples: Json;
@@ -306,19 +310,25 @@ export interface Database {
           lemma: string;
           metadata: Json;
           pos: string | null;
+          prototype_text: string | null;
           short_definition: string | null;
           slug: string;
           source_path: string;
           source_updated_at: string | null;
+          synonym_items: Json;
           synced_at: string;
           title: string;
           updated_at: string;
         };
         Insert: {
           aliases?: string[];
+          antonym_items?: Json;
           body_md: string;
           cefr?: string | null;
+          collocations?: Json;
           content_hash: string;
+          core_definitions?: Json;
+          corpus_items?: Json;
           created_at?: string;
           definition_md: string;
           examples?: Json;
@@ -330,10 +340,12 @@ export interface Database {
           lemma: string;
           metadata?: Json;
           pos?: string | null;
+          prototype_text?: string | null;
           short_definition?: string | null;
           slug: string;
           source_path: string;
           source_updated_at?: string | null;
+          synonym_items?: Json;
           synced_at?: string;
           title: string;
           updated_at?: string;

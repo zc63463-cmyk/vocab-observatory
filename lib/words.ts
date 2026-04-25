@@ -2,11 +2,24 @@ import { cache } from "react";
 import { env, hasSupabasePublicEnv } from "@/lib/env";
 import { getOwnerUser } from "@/lib/auth";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
+import {
+  createEmptyStructuredWordFields,
+  isStructuredWordColumnsMissing,
+  type AntonymItem,
+  type CollocationItem,
+  type CoreDefinition,
+  type CorpusItem,
+  type SynonymItem,
+} from "@/lib/structured-word";
 import { escapePostgrestLike } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
 
 const WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
+const WORD_DETAIL_LEGACY_SELECT =
+  "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path";
+const WORD_DETAIL_STRUCTURED_SELECT =
+  `${WORD_DETAIL_LEGACY_SELECT}, core_definitions, prototype_text, collocations, corpus_items, synonym_items, antonym_items`;
 const DISPLAY_LIMIT = 120;
 
 export type ReviewFilter = "all" | "tracked" | "due" | "untracked";
@@ -33,11 +46,17 @@ export interface PublicWordSummary {
 }
 
 export interface PublicWordDetail extends PublicWordSummary {
+  antonym_items: AntonymItem[];
   body_md: string;
+  collocations: CollocationItem[];
+  core_definitions: CoreDefinition[];
+  corpus_items: CorpusItem[];
   definition_md: string;
   examples: Json;
   pos: string | null;
+  prototype_text: string | null;
   source_path: string;
+  synonym_items: SynonymItem[];
   tags: Array<{ label: string; slug: string }>;
 }
 
@@ -60,6 +79,73 @@ function getMetadataString(metadata: Json, key: string) {
   }
 
   return null;
+}
+
+function parseStructuredArray<T>(value: Json | undefined, guard: (item: unknown) => item is T) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const parsed: T[] = [];
+  for (const item of value) {
+    if (guard(item)) {
+      parsed.push(item);
+    }
+  }
+
+  return parsed;
+}
+
+function isCoreDefinition(value: unknown): value is CoreDefinition {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "partOfSpeech" in value &&
+    typeof value.partOfSpeech === "string" &&
+    "senses" in value &&
+    Array.isArray(value.senses)
+  );
+}
+
+function isCollocationItem(value: unknown): value is CollocationItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "phrase" in value &&
+    typeof value.phrase === "string" &&
+    "note" in value
+  );
+}
+
+function isCorpusItem(value: unknown): value is CorpusItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "text" in value &&
+    typeof value.text === "string" &&
+    "note" in value
+  );
+}
+
+function isSynonymItem(value: unknown): value is SynonymItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "word" in value &&
+    typeof value.word === "string" &&
+    "semanticDiff" in value &&
+    typeof value.semanticDiff === "string"
+  );
+}
+
+function isAntonymItem(value: unknown): value is AntonymItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "word" in value &&
+    typeof value.word === "string" &&
+    "note" in value
+  );
 }
 
 function normalizeFilters(filters?: WordQueryFilters) {
@@ -148,6 +234,37 @@ async function getAllPublicWordRows() {
   }
 
   return (data ?? []) as Array<Omit<PublicWordSummary, "progress">>;
+}
+
+function withStructuredFallback(
+  word: Record<string, Json | string | null>,
+): Omit<PublicWordDetail, "progress" | "tags"> {
+  const structuredDefaults = createEmptyStructuredWordFields();
+
+  return {
+    antonym_items: parseStructuredArray(word.antonym_items as Json, isAntonymItem),
+    body_md: String(word.body_md ?? ""),
+    collocations: parseStructuredArray(word.collocations as Json, isCollocationItem),
+    core_definitions: parseStructuredArray(word.core_definitions as Json, isCoreDefinition),
+    corpus_items: parseStructuredArray(word.corpus_items as Json, isCorpusItem),
+    definition_md: String(word.definition_md ?? ""),
+    examples: (word.examples as Json) ?? [],
+    id: String(word.id),
+    ipa: (word.ipa as string | null) ?? null,
+    lemma: String(word.lemma),
+    metadata: (word.metadata as Json) ?? {},
+    pos: (word.pos as string | null) ?? null,
+    prototype_text:
+      (word.prototype_text as string | null) ??
+      getMetadataString((word.metadata as Json) ?? {}, "prototype") ??
+      structuredDefaults.prototypeText,
+    short_definition: (word.short_definition as string | null) ?? null,
+    slug: String(word.slug),
+    source_path: String(word.source_path ?? ""),
+    synonym_items: parseStructuredArray(word.synonym_items as Json, isSynonymItem),
+    title: String(word.title),
+    updated_at: String(word.updated_at),
+  };
 }
 
 export const getLandingSnapshot = cache(async () => {
@@ -300,18 +417,35 @@ export async function getPublicWordBySlug(slug: string) {
     };
   }
 
-  const { data: word, error } = await supabase
+  let word: Record<string, Json | string | null> | null = null;
+  const structuredAttempt = await supabase
     .from("words")
-    .select(
-      "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path",
-    )
+    .select(WORD_DETAIL_STRUCTURED_SELECT)
     .eq("slug", escapePostgrestLike(slug))
     .eq("is_published", true)
     .eq("is_deleted", false)
     .maybeSingle();
 
-  if (error) {
-    throw error;
+  if (isStructuredWordColumnsMissing(structuredAttempt.error)) {
+    const legacyAttempt = await supabase
+      .from("words")
+      .select(WORD_DETAIL_LEGACY_SELECT)
+      .eq("slug", escapePostgrestLike(slug))
+      .eq("is_published", true)
+      .eq("is_deleted", false)
+      .maybeSingle();
+
+    if (legacyAttempt.error) {
+      throw legacyAttempt.error;
+    }
+
+    word = legacyAttempt.data as Record<string, Json | string | null> | null;
+  } else {
+    if (structuredAttempt.error) {
+      throw structuredAttempt.error;
+    }
+
+    word = structuredAttempt.data as Record<string, Json | string | null> | null;
   }
 
   if (!word) {
@@ -325,7 +459,7 @@ export async function getPublicWordBySlug(slug: string) {
   const { data: tagRows, error: tagError } = await supabase
     .from("word_tags")
     .select("tags!inner(label, slug)")
-    .eq("word_id", word.id);
+    .eq("word_id", word.id as string);
 
   if (tagError) {
     throw tagError;
@@ -342,13 +476,13 @@ export async function getPublicWordBySlug(slug: string) {
       supabase
         .from("notes")
         .select("content_md, updated_at, version")
-        .eq("word_id", word.id)
+        .eq("word_id", word.id as string)
         .maybeSingle(),
       supabase
         .from("user_word_progress")
         .select("id, due_at, review_count, state, last_reviewed_at")
         .eq("user_id", owner.id)
-        .eq("word_id", word.id)
+        .eq("word_id", word.id as string)
         .maybeSingle(),
     ]);
 
@@ -377,7 +511,7 @@ export async function getPublicWordBySlug(slug: string) {
     configured: true,
     note,
     word: {
-      ...(word as Omit<PublicWordDetail, "progress" | "tags">),
+      ...withStructuredFallback(word),
       progress,
       tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
         (row) => row.tags,

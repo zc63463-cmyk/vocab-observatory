@@ -42,7 +42,16 @@ export async function importWordsFromGitHubArchive(): Promise<ImportedGitHubRepo
     try {
       const markdown = await file.async("string");
       try {
-        words.push(parseWordMarkdown(markdown, sourcePath));
+        const parsed = parseWordMarkdown(markdown, sourcePath);
+        words.push(parsed);
+        if (parsed.warnings.length > 0) {
+          errors.push(
+            ...parsed.warnings.map((warning) => ({
+              ...warning,
+              sourcePath,
+            })),
+          );
+        }
       } catch (error) {
         errors.push({
           errorMessage: error instanceof Error ? error.message : "Failed to parse markdown file.",

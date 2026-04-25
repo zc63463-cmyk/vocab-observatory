@@ -6,6 +6,10 @@ import {
   insertImportErrors,
   type ImportFileError,
 } from "@/lib/imports";
+import {
+  castStructuredWordJson,
+  isStructuredWordColumnsMissing,
+} from "@/lib/structured-word";
 import { importWordsFromGitHubArchive } from "@/lib/sync/github-source";
 import { planWordSync, type ExistingWordRef } from "@/lib/sync/import-plan";
 import type { Database } from "@/types/database.types";
@@ -29,6 +33,52 @@ function tagRecordsFromWords(words: Awaited<ReturnType<typeof importWordsFromGit
   }
 
   return [...tagMap.values()];
+}
+
+function createWordUpsertPayload(
+  word: Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["words"][number],
+  now: string,
+  includeStructuredFields: boolean,
+): Database["public"]["Tables"]["words"]["Insert"] {
+  return {
+    aliases: word.aliases,
+    antonym_items: includeStructuredFields
+      ? castStructuredWordJson(word).antonym_items
+      : undefined,
+    body_md: word.bodyMd,
+    collocations: includeStructuredFields
+      ? castStructuredWordJson(word).collocations
+      : undefined,
+    content_hash: word.contentHash,
+    core_definitions: includeStructuredFields
+      ? castStructuredWordJson(word).core_definitions
+      : undefined,
+    corpus_items: includeStructuredFields
+      ? castStructuredWordJson(word).corpus_items
+      : undefined,
+    definition_md: word.definitionMd,
+    examples: word.examples as unknown as Database["public"]["Tables"]["words"]["Insert"]["examples"],
+    ipa: word.ipa,
+    is_deleted: false,
+    is_published: true,
+    lang_code: word.langCode,
+    lemma: word.lemma,
+    metadata: word.metadata,
+    pos: word.pos,
+    prototype_text: includeStructuredFields
+      ? castStructuredWordJson(word).prototype_text
+      : undefined,
+    short_definition: word.shortDefinition,
+    slug: word.slug,
+    source_path: word.sourcePath,
+    source_updated_at: word.sourceUpdatedAt,
+    synonym_items: includeStructuredFields
+      ? castStructuredWordJson(word).synonym_items
+      : undefined,
+    synced_at: now,
+    title: word.title,
+    updated_at: now,
+  };
 }
 
 export async function syncGitHubWords(
@@ -67,32 +117,15 @@ export async function syncGitHubWords(
     );
 
     const now = new Date().toISOString();
-    const upsertableWords: Database["public"]["Tables"]["words"]["Insert"][] = [
+    let includeStructuredFields = true;
+    let upsertableWords: Database["public"]["Tables"]["words"]["Insert"][] = [
       ...plan.create,
       ...plan.update,
-    ].map((word) => ({
-      aliases: word.aliases,
-      body_md: word.bodyMd,
-      content_hash: word.contentHash,
-      definition_md: word.definitionMd,
-      examples: word.examples as unknown as Database["public"]["Tables"]["words"]["Insert"]["examples"],
-      ipa: word.ipa,
-      is_deleted: false,
-      is_published: true,
-      lang_code: word.langCode,
-      lemma: word.lemma,
-      metadata: word.metadata,
-      pos: word.pos,
-      short_definition: word.shortDefinition,
-      slug: word.slug,
-      source_path: word.sourcePath,
-      source_updated_at: word.sourceUpdatedAt,
-      synced_at: now,
-      title: word.title,
-      updated_at: now,
-    }));
+    ].map((word) => createWordUpsertPayload(word, now, includeStructuredFields));
 
-    for (const chunk of chunkArray(upsertableWords, 100)) {
+    let upsertChunks = chunkArray(upsertableWords, 100);
+    for (let chunkIndex = 0; chunkIndex < upsertChunks.length; chunkIndex += 1) {
+      const chunk = upsertChunks[chunkIndex];
       if (chunk.length === 0) {
         continue;
       }
@@ -100,6 +133,16 @@ export async function syncGitHubWords(
       const { error } = await admin.from("words").upsert(chunk, {
         onConflict: "slug",
       });
+
+      if (isStructuredWordColumnsMissing(error) && includeStructuredFields) {
+        includeStructuredFields = false;
+        upsertableWords = [...plan.create, ...plan.update].map((word) =>
+          createWordUpsertPayload(word, now, false),
+        );
+        upsertChunks = chunkArray(upsertableWords, 100);
+        chunkIndex = -1;
+        continue;
+      }
 
       if (error) {
         throw error;

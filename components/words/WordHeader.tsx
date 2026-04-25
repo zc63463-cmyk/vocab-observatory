@@ -1,39 +1,33 @@
 import { Badge } from "@/components/ui/Badge";
 import type { PublicWordDetail } from "@/lib/words";
 
+function getMetadataValue(word: PublicWordDetail, key: string) {
+  return typeof word.metadata === "object" &&
+    word.metadata &&
+    !Array.isArray(word.metadata) &&
+    key in word.metadata
+    ? String(word.metadata[key])
+    : null;
+}
+
 export function WordHeader({ word }: { word: PublicWordDetail }) {
-  const semanticField =
-    typeof word.metadata === "object" &&
-    word.metadata &&
-    "semantic_field" in word.metadata
-      ? String(word.metadata.semantic_field)
-      : null;
-  const wordFrequency =
-    typeof word.metadata === "object" &&
-    word.metadata &&
-    "word_freq" in word.metadata
-      ? String(word.metadata.word_freq)
-      : null;
-  const prototype =
-    typeof word.metadata === "object" &&
-    word.metadata &&
-    "prototype" in word.metadata
-      ? String(word.metadata.prototype)
-      : null;
+  const semanticField = getMetadataValue(word, "semantic_field");
+  const wordFrequency = getMetadataValue(word, "word_freq");
+  const prototype = word.prototype_text ?? getMetadataValue(word, "prototype");
 
   return (
     <section className="panel-strong rounded-[2rem] p-8">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div className="max-w-3xl">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--color-ink-soft)]">
-            {word.pos ?? "词条"}
+            {word.pos ?? "Word"}
           </p>
           <h1 className="section-title mt-3 text-5xl font-semibold">{word.lemma}</h1>
           {word.ipa ? (
             <p className="mt-3 text-lg tracking-wide text-[var(--color-ink-soft)]">{word.ipa}</p>
           ) : null}
           <p className="mt-6 text-base leading-8 text-[var(--color-ink-soft)]">
-            {word.short_definition ?? "尚未解析核心释义。"}
+            {word.short_definition ?? "暂无摘要释义。"}
           </p>
         </div>
 
