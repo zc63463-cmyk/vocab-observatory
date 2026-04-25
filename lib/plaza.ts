@@ -339,9 +339,14 @@ const getCachedCollectionDetail = unstable_cache(
       getRelatedWords(summary),
     ]);
 
-    // Sanitize rendered HTML to prevent XSS
-    const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
-    const bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+    // Sanitize rendered HTML to prevent XSS (defensive — never crash the page)
+    let bodyHtml = rawBodyHtml;
+    try {
+      const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+      bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+    } catch (sanitizeError) {
+      console.error("[plaza] HTML sanitization skipped:", sanitizeError);
+    }
 
     return {
       note: {

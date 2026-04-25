@@ -577,14 +577,20 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
     ]);
 
-    // Sanitize all rendered HTML to prevent XSS
-    const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
-    const [bodyHtml, definitionHtml, synonymHtml, antonymHtml] = [
-      sanitizeHtmlServer(rawBodyHtml),
-      sanitizeHtmlServer(rawDefinitionHtml),
-      sanitizeHtmlServer(rawSynonymHtml),
-      sanitizeHtmlServer(rawAntonymHtml),
-    ];
+    // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page)
+    let bodyHtml = rawBodyHtml;
+    let definitionHtml = rawDefinitionHtml;
+    let synonymHtml = rawSynonymHtml;
+    let antonymHtml = rawAntonymHtml;
+    try {
+      const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+      bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+      definitionHtml = sanitizeHtmlServer(rawDefinitionHtml);
+      synonymHtml = sanitizeHtmlServer(rawSynonymHtml);
+      antonymHtml = sanitizeHtmlServer(rawAntonymHtml);
+    } catch (sanitizeError) {
+      console.error("[words] HTML sanitization skipped:", sanitizeError);
+    }
 
     return {
       ...publicWord,
