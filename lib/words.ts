@@ -2,7 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
 import { env, hasSupabasePublicEnv } from "@/lib/env";
 import { getSection, renderObsidianMarkdown } from "@/lib/markdown";
-import { getPublicSupabaseClientOrNull } from "@/lib/supabase/public";
+import {
+  getPublicSupabaseClientOrNull,
+  withTransientPublicReadRetry,
+} from "@/lib/supabase/public";
 import {
   createEmptyStructuredWordFields,
   isStructuredWordColumnsMissing,
@@ -732,18 +735,20 @@ const getCachedPublicWordRows = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("words")
-        .select(WORD_SELECT)
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .order("lemma");
+      return await withTransientPublicReadRetry("public word index", async () => {
+        const { data, error } = await supabase
+          .from("words")
+          .select(WORD_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("lemma");
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+      });
     } catch (err) {
       console.error("[words] Failed to fetch public word index:", err);
       return null;
@@ -764,19 +769,24 @@ const getCachedDefaultPublicWordRows = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("words")
-        .select(WORD_SELECT)
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .order("lemma")
-        .range(offset, offset + limit - 1);
+      return await withTransientPublicReadRetry(
+        `default public word rows offset=${offset} limit=${limit}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_SELECT)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("lemma")
+            .range(offset, offset + limit - 1);
 
-      if (error) {
-        throw error;
-      }
+          if (error) {
+            throw error;
+          }
 
-      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+          return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        },
+      );
     } catch (err) {
       console.error("[words] Failed to fetch default public word rows:", err);
       return null;
@@ -802,31 +812,36 @@ const getCachedFilteredPublicWordRows = unstable_cache(
     }
 
     try {
-      const query = applyDatabaseWordMetadataFilters(
-        supabase
-          .from("words")
-          .select(WORD_SELECT, { count: "exact" })
-          .eq("is_published", true)
-          .eq("is_deleted", false)
-          .order("lemma")
-          .range(offset, offset + limit - 1),
-        {
-          freq,
-          q: "",
-          review: "all",
-          semantic,
+      return await withTransientPublicReadRetry(
+        `filtered public word rows semantic=${semantic || "-"} freq=${freq || "-"} offset=${offset} limit=${limit}`,
+        async () => {
+          const query = applyDatabaseWordMetadataFilters(
+            supabase
+              .from("words")
+              .select(WORD_SELECT, { count: "exact" })
+              .eq("is_published", true)
+              .eq("is_deleted", false)
+              .order("lemma")
+              .range(offset, offset + limit - 1),
+            {
+              freq,
+              q: "",
+              review: "all",
+              semantic,
+            },
+          );
+          const { data, error, count } = await query;
+
+          if (error) {
+            throw error;
+          }
+
+          return {
+            rows: ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord),
+            total: count ?? 0,
+          };
         },
       );
-      const { data, error, count } = await query;
-
-      if (error) {
-        throw error;
-      }
-
-      return {
-        rows: ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord),
-        total: count ?? 0,
-      };
     } catch (err) {
       console.error("[words] Failed to fetch filtered public word rows:", err);
       return null;
@@ -850,26 +865,28 @@ const getCachedPublicWordFilterOptions = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("word_filter_facets")
-        .select("dimension, value, count, updated_at")
-        .gt("count", 0)
-        .order("value");
+      return await withTransientPublicReadRetry("public word filter options", async () => {
+        const { data, error } = await supabase
+          .from("word_filter_facets")
+          .select("dimension, value, count, updated_at")
+          .gt("count", 0)
+          .order("value");
 
-      if (isWordFilterFacetRelationMissing(error)) {
-        return await loadLegacyPublicWordFilterOptions(supabase);
-      }
+        if (isWordFilterFacetRelationMissing(error)) {
+          return await loadLegacyPublicWordFilterOptions(supabase);
+        }
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      const facetRows = (data ?? []) as BareWordFilterFacetRow[];
-      if (facetRows.length === 0) {
-        return await loadLegacyPublicWordFilterOptions(supabase);
-      }
+        const facetRows = (data ?? []) as BareWordFilterFacetRow[];
+        if (facetRows.length === 0) {
+          return await loadLegacyPublicWordFilterOptions(supabase);
+        }
 
-      return buildPublicWordFilterOptionsFromFacetRows(facetRows);
+        return buildPublicWordFilterOptionsFromFacetRows(facetRows);
+      });
     } catch (err) {
       console.error("[words] Failed to fetch public word filter options:", err);
       return {
@@ -893,18 +910,20 @@ const getCachedPublicWordSlugs = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("words")
-        .select(WORD_SLUG_SELECT)
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .order("lemma");
+      return await withTransientPublicReadRetry("public word slugs", async () => {
+        const { data, error } = await supabase
+          .from("words")
+          .select(WORD_SLUG_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("lemma");
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+        return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+      });
     } catch (err) {
       console.error("[words] Failed to fetch public word slugs:", err);
       return null;
@@ -925,19 +944,21 @@ const getCachedFeaturedWordRows = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("words")
-        .select(WORD_SELECT)
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .order("updated_at", { ascending: false })
-        .limit(FEATURED_WORD_LIMIT);
+      return await withTransientPublicReadRetry("featured public words", async () => {
+        const { data, error } = await supabase
+          .from("words")
+          .select(WORD_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("updated_at", { ascending: false })
+          .limit(FEATURED_WORD_LIMIT);
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+      });
     } catch (err) {
       console.error("[words] Failed to fetch featured public words:", err);
       return null;
@@ -958,17 +979,19 @@ const getCachedPublicWordsCountValue = unstable_cache(
     }
 
     try {
-      const { count, error } = await supabase
-        .from("words")
-        .select("*", { count: "exact", head: true })
-        .eq("is_published", true)
-        .eq("is_deleted", false);
+      return await withTransientPublicReadRetry("public word count", async () => {
+        const { count, error } = await supabase
+          .from("words")
+          .select("*", { count: "exact", head: true })
+          .eq("is_published", true)
+          .eq("is_deleted", false);
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      return count ?? 0;
+        return count ?? 0;
+      });
     } catch (err) {
       console.error("[words] Failed to fetch public word count:", err);
       return 0;
@@ -989,6 +1012,9 @@ const getCachedPublicWordDetailRecord = unstable_cache(
     }
 
     try {
+      return await withTransientPublicReadRetry(
+        `word detail slug "${slug}"`,
+        async () => {
       let word: Record<string, Json | string | null> | null = null;
       const structuredAttempt = await supabase
         .from("words")
@@ -1073,6 +1099,8 @@ const getCachedPublicWordDetailRecord = unstable_cache(
           (row) => row.tags,
         ),
       } satisfies CachedPublicWordDetail;
+        },
+      );
     } catch (err) {
       // Graceful degradation during SSG: log the error but don't crash the build.
       // The page will show a "word not found" shell; ISR will retry on revalidation.

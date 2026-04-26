@@ -36,7 +36,15 @@ function isJsonObject(
 }
 
 function formatDayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalDayKey(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return formatDayKey(date);
 }
 
 function addDays(date: Date, days: number) {
@@ -56,7 +64,7 @@ function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>, t
   }
 
   for (const log of logs) {
-    const key = log.reviewed_at.slice(0, 10);
+    const key = toLocalDayKey(log.reviewed_at);
     if (buckets.has(key)) {
       buckets.set(key, (buckets.get(key) ?? 0) + 1);
     }
@@ -175,7 +183,7 @@ export function buildRetentionGapSeries(
   }
 
   for (const log of reviewLogs) {
-    const key = log.reviewed_at.slice(0, 10);
+    const key = toLocalDayKey(log.reviewed_at);
     const bucket = buckets.get(key);
 
     if (!bucket) {
@@ -289,14 +297,14 @@ export function buildDailyForecastCalendar(
   for (const row of progressRows) {
     const dueAt = resolveForecastDueAt(row, normalizedRetention, now);
     if (!dueAt) continue;
-    const bucket = buckets.find((b) => b.date === dueAt.slice(0, 10));
+    const bucket = buckets.find((b) => b.date === toLocalDayKey(dueAt));
     if (bucket) bucket.dueCount += 1;
   }
 
   if (reviewLogs && reviewLogs.length > 0) {
     const countsByDay = new Map<string, number>();
     for (const log of reviewLogs) {
-      const key = log.reviewed_at.slice(0, 10);
+      const key = toLocalDayKey(log.reviewed_at);
       countsByDay.set(key, (countsByDay.get(key) ?? 0) + 1);
     }
     for (const bucket of buckets) {
@@ -530,7 +538,7 @@ export async function getDashboardSummary() {
 
   const streakDays = calculateStreak(
     new Set(((streakResult.data ?? []) as Array<{ reviewed_at: string }>).map((row) =>
-      row.reviewed_at.slice(0, 10),
+      toLocalDayKey(row.reviewed_at),
     )),
   );
 

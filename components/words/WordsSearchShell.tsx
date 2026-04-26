@@ -252,8 +252,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
   // Batch selection logic (depends on displayResult)
   const untrackedWords = useMemo(
     () => displayResult.words.filter((w) => !w.progress),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayResult.words.map((w) => w.id + (w.progress ? ":t" : ":u")).join(",")],
+    [displayResult.words],
   );
 
   const selectAllUntracked = useCallback(() => {

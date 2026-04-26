@@ -1,6 +1,10 @@
 import { State } from "ts-fsrs";
 import { describe, expect, it } from "vitest";
-import { buildRetentionForecast, buildRetentionGapSeries } from "@/lib/dashboard";
+import {
+  buildDailyForecastCalendar,
+  buildRetentionForecast,
+  buildRetentionGapSeries,
+} from "@/lib/dashboard";
 
 describe("dashboard retention helpers", () => {
   it("builds a daily gap series from observed misses and logged desired retention", () => {
@@ -108,6 +112,52 @@ describe("dashboard retention helpers", () => {
       due14d: 2,
       due7d: 2,
       dueNow: 1,
+    });
+  });
+
+  it("uses local day keys consistently for the daily forecast calendar", () => {
+    const now = new Date(2026, 4, 3, 10, 0, 0);
+    const calendar = buildDailyForecastCalendar(
+      [
+        {
+          desired_retention: 0.9,
+          due_at: new Date(2026, 4, 3, 0, 30, 0).toISOString(),
+          scheduler_payload: null,
+          state: "learning",
+        },
+        {
+          desired_retention: 0.9,
+          due_at: new Date(2026, 4, 4, 0, 30, 0).toISOString(),
+          scheduler_payload: null,
+          state: "learning",
+        },
+      ],
+      0.9,
+      3,
+      [
+        {
+          reviewed_at: new Date(2026, 4, 1, 23, 30, 0).toISOString(),
+        },
+      ],
+      now,
+    );
+
+    expect(calendar).toHaveLength(3);
+    expect(calendar[0]).toMatchObject({
+      actualReviewCount: null,
+      date: "2026-05-03",
+      dueCount: 1,
+      isToday: true,
+    });
+    expect(calendar[1]).toMatchObject({
+      date: "2026-05-04",
+      dueCount: 1,
+      isToday: false,
+    });
+    expect(calendar[2]).toMatchObject({
+      date: "2026-05-05",
+      dueCount: 0,
+      isToday: false,
     });
   });
 });

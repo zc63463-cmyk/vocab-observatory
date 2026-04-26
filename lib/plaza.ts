@@ -15,7 +15,10 @@ import {
 } from "@/lib/collection-notes";
 import { hasSupabasePublicEnv } from "@/lib/env";
 import { renderObsidianMarkdown } from "@/lib/markdown";
-import { getPublicSupabaseClientOrNull } from "@/lib/supabase/public";
+import {
+  getPublicSupabaseClientOrNull,
+  withTransientPublicReadRetry,
+} from "@/lib/supabase/public";
 import type { PublicWordIndexEntry } from "@/lib/words";
 import type { Database, Json } from "@/types/database.types";
 
@@ -293,29 +296,31 @@ export const getCachedCollectionSummaries = unstable_cache(
     }
 
     try {
-      const { data, error } = await supabase
-        .from("collection_notes")
-        .select(COLLECTION_NOTE_SELECT)
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .order("kind")
-        .order("title");
+      return await withTransientPublicReadRetry("public collection summaries", async () => {
+        const { data, error } = await supabase
+          .from("collection_notes")
+          .select(COLLECTION_NOTE_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("kind")
+          .order("title");
 
-      if (isCollectionNotesRelationMissing(error)) {
+        if (isCollectionNotesRelationMissing(error)) {
+          return {
+            notes: [],
+            status: "missing_relation",
+          } satisfies CachedCollectionSummariesResult;
+        }
+
+        if (error) {
+          throw error;
+        }
+
         return {
-          notes: [],
-          status: "missing_relation",
-        };
-      }
-
-      if (error) {
-        throw error;
-      }
-
-      return {
-        notes: ((data ?? []) as CollectionNoteRow[]).map(toCachedSummary),
-        status: "ok",
-      };
+          notes: ((data ?? []) as CollectionNoteRow[]).map(toCachedSummary),
+          status: "ok",
+        } satisfies CachedCollectionSummariesResult;
+      });
     } catch (err) {
       console.error("[plaza] Failed to fetch collection summaries:", err);
       return {
@@ -342,6 +347,9 @@ const getCachedCollectionDetail = unstable_cache(
     }
 
     try {
+      return await withTransientPublicReadRetry(
+        `plaza detail slug "${slug}"`,
+        async () => {
       const { data, error } = await supabase
         .from("collection_notes")
         .select(`${COLLECTION_NOTE_SELECT}, body_md`)
@@ -393,6 +401,8 @@ const getCachedCollectionDetail = unstable_cache(
         },
         status: "ok",
       };
+        },
+      );
     } catch (err) {
       // Graceful degradation during SSG: log the error but don't crash the build.
       console.error(`[plaza] Failed to fetch detail for slug "${slug}":`, err);

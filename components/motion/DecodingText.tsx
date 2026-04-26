@@ -34,13 +34,12 @@ export function DecodingText({
   scrambleChars = DEFAULT_SCRAMBLE_CHARS,
 }: DecodingTextProps) {
   const prefersReduced = useReducedMotion();
-  const [displayed, setDisplayed] = useState(prefersReduced ? text : "");
+  const [displayed, setDisplayed] = useState("");
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef(0);
 
   useEffect(() => {
     if (prefersReduced) {
-      setDisplayed(text);
       return;
     }
 
@@ -84,7 +83,7 @@ export function DecodingText({
 
   return (
     <span className={className} aria-label={text}>
-      {displayed}
+      {prefersReduced ? text : displayed}
     </span>
   );
 }
