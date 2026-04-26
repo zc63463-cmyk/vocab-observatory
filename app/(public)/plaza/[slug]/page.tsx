@@ -7,12 +7,16 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
 import { getCollectionNoteKindLabel } from "@/lib/collection-notes";
-import { getPublicCollectionNoteBySlug, getCachedCollectionSummaries } from "@/lib/plaza";
+import {
+  getPublicCollectionNoteBySlug,
+  getPublicCollectionNoteMetadataBySlug,
+  getStaticPublicCollectionSlugs,
+} from "@/lib/plaza";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
-const STATIC_PLAZA_PARAM_LIMIT = 50;
+const STATIC_PLAZA_PARAM_LIMIT = 12;
 
 export async function generateMetadata({
   params,
@@ -20,7 +24,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const result = await getPublicCollectionNoteBySlug(slug);
+  const result = await getPublicCollectionNoteMetadataBySlug(slug);
 
   if (!result.note) {
     return { title: "集合笔记未找到" };
@@ -46,14 +50,10 @@ export async function generateMetadata({
 }
 
 export async function generateStaticParams() {
-  const result = await getCachedCollectionSummaries();
+  const slugs = await getStaticPublicCollectionSlugs(STATIC_PLAZA_PARAM_LIMIT);
 
-  if (result.status !== "ok") {
-    return [];
-  }
-
-  return result.notes.slice(0, STATIC_PLAZA_PARAM_LIMIT).map((note) => ({
-    slug: note.slug,
+  return slugs.map((slug) => ({
+    slug,
   }));
 }
 

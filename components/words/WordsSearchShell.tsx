@@ -3,7 +3,6 @@
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
-import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -12,12 +11,10 @@ import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { useToast } from "@/components/ui/Toast";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
 type WordFilters = PublicWordsResponse["filters"];
 type WordPagination = Pick<PublicWordsResponse["pageInfo"], "limit" | "offset">;
-type AuthState = "checking" | "guest" | "owner";
 
 interface LoadMoreState {
   error: string | null;
@@ -126,7 +123,6 @@ function mergeWordPages(
 }
 
 export function WordsSearchShell({ initialResult }: { initialResult: PublicWordsResponse }) {
-  const [, setAuthState] = useState<AuthState>("checking");
   const initialPageLimit = initialResult.pageInfo.limit;
   const loadMoreControllerRef = useRef<AbortController | null>(null);
   const [loadMoreState, setLoadMoreState] = useState<LoadMoreState>({
@@ -204,34 +200,6 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
   useEffect(() => {
     return () => {
       loadMoreControllerRef.current?.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    const supabase = createBrowserSupabaseClient();
-    let active = true;
-
-    function setBrowserAuthState(user: User | null) {
-      if (!active) {
-        return;
-      }
-
-      setAuthState(user ? "owner" : "guest");
-    }
-
-    void supabase.auth.getUser().then(({ data }) => {
-      setBrowserAuthState(data.user);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setBrowserAuthState(session?.user ?? null);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
     };
   }, []);
 

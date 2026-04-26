@@ -24,6 +24,7 @@ import type { Database, Json } from "@/types/database.types";
 
 const COLLECTION_NOTE_SELECT =
   "id, slug, kind, title, summary, metadata, tags, related_word_slugs, updated_at";
+const COLLECTION_NOTE_METADATA_SELECT = "slug, kind, title, summary";
 const RELATED_WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
 const PUBLIC_REVALIDATE_SECONDS = 300;
@@ -39,6 +40,13 @@ type CachedCollectionDetailResult =
 
 interface CachedCollectionNoteSummary extends PublicCollectionNoteSummary {
   search_text: string;
+}
+
+interface PublicCollectionNoteMetadataRecord {
+  kind: CollectionNoteKind;
+  slug: string;
+  summary: string | null;
+  title: string;
 }
 
 export type PlazaFilterKind = "all" | CollectionNoteKind;
@@ -336,6 +344,49 @@ export const getCachedCollectionSummaries = unstable_cache(
   },
 );
 
+const getCachedStaticCollectionSlugs = unstable_cache(
+  async (limit: number): Promise<string[] | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      return await withTransientPublicReadRetry(
+        `static collection slugs limit=${limit}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("collection_notes")
+            .select("slug")
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("updated_at", { ascending: false })
+            .order("title")
+            .limit(limit);
+
+          if (isCollectionNotesRelationMissing(error)) {
+            return null;
+          }
+
+          if (error) {
+            throw error;
+          }
+
+          return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+        },
+      );
+    } catch (err) {
+      console.error("[plaza] Failed to fetch static collection slugs:", err);
+      return null;
+    }
+  },
+  ["public-static-collection-slugs"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.plazaIndex],
+  },
+);
+
 const getCachedCollectionDetail = unstable_cache(
   async (slug: string): Promise<CachedCollectionDetailResult> => {
     const supabase = getPublicSupabaseClientOrNull();
@@ -413,6 +464,57 @@ const getCachedCollectionDetail = unstable_cache(
     }
   },
   ["public-collection-note-detail"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.plazaDetail],
+  },
+);
+
+const getCachedCollectionMetadata = unstable_cache(
+  async (slug: string): Promise<PublicCollectionNoteMetadataRecord | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      return await withTransientPublicReadRetry(
+        `plaza metadata slug "${slug}"`,
+        async () => {
+          const { data, error } = await supabase
+            .from("collection_notes")
+            .select(COLLECTION_NOTE_METADATA_SELECT)
+            .eq("slug", slug)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .maybeSingle();
+
+          if (isCollectionNotesRelationMissing(error)) {
+            return null;
+          }
+
+          if (error) {
+            throw error;
+          }
+
+          if (!data) {
+            return null;
+          }
+
+          return {
+            kind: isCollectionNoteKind(data.kind) ? data.kind : "semantic_field",
+            slug: data.slug,
+            summary: data.summary,
+            title: data.title,
+          } satisfies PublicCollectionNoteMetadataRecord;
+        },
+      );
+    } catch (err) {
+      console.error(`[plaza] Failed to fetch metadata for slug "${slug}":`, err);
+      return null;
+    }
+  },
+  ["public-collection-note-metadata"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.plazaDetail],
@@ -542,6 +644,28 @@ export async function getPublicCollectionNoteBySlug(slug: string) {
     configured: true,
     note: canonicalDetail.note,
   };
+}
+
+export async function getPublicCollectionNoteMetadataBySlug(slug: string) {
+  if (!hasSupabasePublicEnv()) {
+    return {
+      configured: false,
+      note: null as PublicCollectionNoteMetadataRecord | null,
+    };
+  }
+
+  return {
+    configured: true,
+    note: await getCachedCollectionMetadata(slug),
+  };
+}
+
+export async function getStaticPublicCollectionSlugs(limit: number) {
+  if (!hasSupabasePublicEnv()) {
+    return [];
+  }
+
+  return (await getCachedStaticCollectionSlugs(limit)) ?? [];
 }
 
 export { getCollectionNoteSummaryText };

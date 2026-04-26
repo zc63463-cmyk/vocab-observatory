@@ -69,6 +69,8 @@ export function PlazaSearchShell({ initialResult }: { initialResult: PlazaOvervi
     initialResult,
     normalizeFilters: normalizePlazaFilters,
     readResponse: readPlazaResponse,
+    shouldSkipInitialFetch: (urlFilters, seededResult) =>
+      arePlazaFiltersEqual(urlFilters, seededResult.filters),
   });
 
   // Stable callbacks

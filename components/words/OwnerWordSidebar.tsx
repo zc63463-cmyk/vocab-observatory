@@ -31,8 +31,7 @@ interface SidebarPayload {
 }
 
 type SidebarState =
-  | { status: "checking" | "loading" }
-  | { status: "guest" }
+  | { status: "guest" | "loading" }
   | {
       history: NoteRevision[];
       note: NoteSnapshot;
@@ -111,7 +110,7 @@ function scheduleIdleTask(callback: IdleCallbackFn) {
 
 export function OwnerWordSidebar({ wordId }: { wordId: string }) {
   const pathname = usePathname();
-  const [sidebarState, setSidebarState] = useState<SidebarState>({ status: "checking" });
+  const [sidebarState, setSidebarState] = useState<SidebarState>({ status: "guest" });
   const abortRef = useRef<AbortController | null>(null);
   const idleHandleRef = useRef<IdleCallbackHandle | null>(null);
 
@@ -220,7 +219,7 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
     };
   }, [wordId]);
 
-  if (sidebarState.status === "checking" || sidebarState.status === "loading") {
+  if (sidebarState.status === "loading") {
     return (
       <div className="space-y-6">
         <LoadingCard />

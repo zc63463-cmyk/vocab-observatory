@@ -23,6 +23,7 @@ import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 const WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
 const WORD_FILTER_METADATA_SELECT = "metadata";
+const WORD_METADATA_SELECT = "slug, title, lemma, short_definition";
 const WORD_SLUG_SELECT = "slug";
 const WORD_DETAIL_LEGACY_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path";
@@ -152,6 +153,13 @@ export interface LandingSnapshot {
   featuredWords: PublicWordSummary[];
   repoName: string;
   totalWords: number;
+}
+
+interface PublicWordMetadataRecord {
+  lemma: string;
+  short_definition: string | null;
+  slug: string;
+  title: string;
 }
 
 interface CachedPublicWordIndexRecord extends PublicWordIndexEntry {
@@ -936,6 +944,92 @@ const getCachedPublicWordSlugs = unstable_cache(
   },
 );
 
+const getCachedStaticPublicWordSlugs = unstable_cache(
+  async (limit: number): Promise<string[] | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      return await withTransientPublicReadRetry(
+        `static public word slugs limit=${limit}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_SLUG_SELECT)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("updated_at", { ascending: false })
+            .order("lemma")
+            .limit(limit);
+
+          if (error) {
+            throw error;
+          }
+
+          return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+        },
+      );
+    } catch (err) {
+      console.error("[words] Failed to fetch static public word slugs:", err);
+      return null;
+    }
+  },
+  ["public-static-word-slugs"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
+const getCachedPublicWordMetadataRecord = unstable_cache(
+  async (slug: string): Promise<PublicWordMetadataRecord | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      return await withTransientPublicReadRetry(
+        `word metadata slug "${slug}"`,
+        async () => {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_METADATA_SELECT)
+            .eq("slug", escapePostgrestLike(slug))
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .maybeSingle();
+
+          if (error) {
+            throw error;
+          }
+
+          if (!data) {
+            return null;
+          }
+
+          return {
+            lemma: String(data.lemma),
+            short_definition: (data.short_definition as string | null) ?? null,
+            slug: String(data.slug),
+            title: String(data.title),
+          } satisfies PublicWordMetadataRecord;
+        },
+      );
+    } catch (err) {
+      console.error(`[words] Failed to fetch metadata for slug "${slug}":`, err);
+      return null;
+    }
+  },
+  ["public-word-metadata"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordDetail],
+  },
+);
+
 const getCachedFeaturedWordRows = unstable_cache(
   async (): Promise<CachedPublicWordIndexRecord[] | null> => {
     const supabase = getPublicSupabaseClientOrNull();
@@ -1060,6 +1154,8 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       }
 
       const publicWord = withStructuredFallback(word);
+      const hasStructuredSynonyms = publicWord.synonym_items.length > 0;
+      const hasStructuredAntonyms = publicWord.antonym_items.length > 0;
       const synonymSection = getSection(publicWord.body_md, "同义词辨析");
       const antonymSection = getSection(publicWord.body_md, "反义词");
       const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
@@ -1067,8 +1163,12 @@ const getCachedPublicWordDetailRecord = unstable_cache(
         publicWord.definition_md
           ? renderObsidianMarkdown(publicWord.definition_md)
           : Promise.resolve(""),
-        synonymSection ? renderObsidianMarkdown(synonymSection) : Promise.resolve(""),
-        antonymSection ? renderObsidianMarkdown(antonymSection) : Promise.resolve(""),
+        !hasStructuredSynonyms && synonymSection
+          ? renderObsidianMarkdown(synonymSection)
+          : Promise.resolve(""),
+        !hasStructuredAntonyms && antonymSection
+          ? renderObsidianMarkdown(antonymSection)
+          : Promise.resolve(""),
       ]);
 
       // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page)
@@ -1276,6 +1376,20 @@ export async function getPublicWordBySlug(slug: string) {
   };
 }
 
+export async function getPublicWordMetadataBySlug(slug: string) {
+  if (!hasSupabasePublicEnv()) {
+    return {
+      configured: false,
+      word: null as PublicWordMetadataRecord | null,
+    };
+  }
+
+  return {
+    configured: true,
+    word: await getCachedPublicWordMetadataRecord(slug),
+  };
+}
+
 export async function getPublicWordsCount() {
   if (!hasSupabasePublicEnv()) {
     return 0;
@@ -1289,8 +1403,11 @@ export async function getStaticPublicWordSlugs(limit?: number) {
     return [];
   }
 
-  const slugs = (await getCachedPublicWordSlugs()) ?? [];
-  return typeof limit === "number" ? slugs.slice(0, limit) : slugs;
+  if (typeof limit === "number") {
+    return (await getCachedStaticPublicWordSlugs(limit)) ?? [];
+  }
+
+  return (await getCachedPublicWordSlugs()) ?? [];
 }
 
 export async function getAllPublicWordIndexEntries(): Promise<PublicWordIndexEntry[]> {

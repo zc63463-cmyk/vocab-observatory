@@ -420,6 +420,13 @@ describe("public detail fallback behavior", () => {
 
     publicClient = {
       from: vi.fn((table: string) => {
+        if (table === "words") {
+          return createAwaitableChain(async () => ({
+            data: [],
+            error: null,
+          }));
+        }
+
         if (table !== "collection_notes") {
           throw new Error(`Unexpected table: ${table}`);
         }

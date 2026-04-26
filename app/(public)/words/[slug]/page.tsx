@@ -15,11 +15,15 @@ import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
-import { getPublicWordBySlug, getStaticPublicWordSlugs } from "@/lib/words";
+import {
+  getPublicWordBySlug,
+  getPublicWordMetadataBySlug,
+  getStaticPublicWordSlugs,
+} from "@/lib/words";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
-const STATIC_WORD_PARAM_LIMIT = 200;
+const STATIC_WORD_PARAM_LIMIT = 48;
 
 export async function generateMetadata({
   params,
@@ -27,7 +31,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const result = await getPublicWordBySlug(slug);
+  const result = await getPublicWordMetadataBySlug(slug);
 
   if (!result.word) {
     return { title: "词条未找到" };
