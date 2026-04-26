@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const { data: progressData, error: progressError } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, again_count, easy_count, good_count, hard_count, lapse_count, review_count, scheduler_payload, words!inner(content_hash)",
+      "id, word_id, again_count, desired_retention, easy_count, good_count, hard_count, lapse_count, review_count, scheduler_payload, words!inner(content_hash)",
     )
     .eq("id", parsed.data.progressId)
     .single();
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     hard_count: number;
     id: string;
     lapse_count: number;
+    desired_retention: number;
     review_count: number;
     scheduler_payload: Json;
     word_id: string;
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
     progress.scheduler_payload as StoredSchedulerCard | null,
     parsed.data.rating,
     now,
+    progress.desired_retention,
   );
   const nowIso = now.toISOString();
   const counterField = `${parsed.data.rating}_count` as
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
     due_at: scheduling.logDueAt,
     elapsed_days: scheduling.elapsedDays,
     metadata: {
+      desired_retention: progress.desired_retention,
       progress_id: progress.id,
       retrievability: scheduling.retrievability,
     },

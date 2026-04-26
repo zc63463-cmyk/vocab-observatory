@@ -1,6 +1,9 @@
 import { getOwnerUser } from "@/lib/auth";
 import { getLatestImportOverview } from "@/lib/imports";
-import { getCurrentRetrievability } from "@/lib/review/fsrs-adapter";
+import {
+  DEFAULT_DESIRED_RETENTION,
+  getCurrentRetrievability,
+} from "@/lib/review/fsrs-adapter";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
 
@@ -52,8 +55,10 @@ export async function getDashboardSummary() {
   if (!supabase || !owner) {
     return {
       activeSession: null as { cards_seen: number; id: string; started_at: string } | null,
+      averageDesiredRetention: DEFAULT_DESIRED_RETENTION,
       configured: false,
       forgettingRate30d: 0,
+      fsrsCalibrationGap30d: 0,
       fsrsForgettingRate: 0,
       importOverview,
       metrics: {
@@ -121,7 +126,7 @@ export async function getDashboardSummary() {
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("state, due_at, scheduler_payload")
+      .select("state, due_at, desired_retention, scheduler_payload")
       .eq("user_id", owner.id),
     supabase
       .from("review_logs")
@@ -157,6 +162,7 @@ export async function getDashboardSummary() {
 
   // ── Derive metrics from progress rows (in-memory) ──
   const progressRows = (progressResult.data ?? []) as Array<{
+    desired_retention: number | null;
     state: string;
     due_at: string | null;
     scheduler_payload: unknown;
@@ -167,10 +173,23 @@ export async function getDashboardSummary() {
     (row) => row.state === "new" && row.due_at && row.due_at <= now,
   ).length;
 
+  const desiredRetentionValues = progressRows
+    .map((row) => row.desired_retention)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const averageDesiredRetention =
+    desiredRetentionValues.length > 0
+      ? desiredRetentionValues.reduce((sum, value) => sum + value, 0) / desiredRetentionValues.length
+      : DEFAULT_DESIRED_RETENTION;
+
   // ── FSRS retrievability from progress rows ──
   const retrievabilityValues = progressRows
     .filter((row) => row.state !== "suspended")
-    .map((row) => getCurrentRetrievability(row.scheduler_payload as never))
+    .map((row) =>
+      getCurrentRetrievability(
+        row.scheduler_payload as never,
+        row.desired_retention ?? DEFAULT_DESIRED_RETENTION,
+      ),
+    )
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const fsrsForgettingRate =
     retrievabilityValues.length > 0
@@ -255,11 +274,16 @@ export async function getDashboardSummary() {
 
   // Reviewed today count
   const reviewedToday = reviewLogs30d.filter((row) => row.reviewed_at >= today).length;
+  const forgettingRate30d =
+    reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0;
+  const fsrsCalibrationGap30d = forgettingRate30d - fsrsForgettingRate;
 
   return {
     activeSession: activeSessionResult.data ?? null,
+    averageDesiredRetention,
     configured: true,
-    forgettingRate30d: reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0,
+    forgettingRate30d,
+    fsrsCalibrationGap30d,
     fsrsForgettingRate,
     importOverview,
     metrics: {

@@ -13,6 +13,7 @@ export default async function DashboardPage() {
   const maxReviewVolume30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 1);
   const reviewsToday = summary.reviewVolume30d.at(-1)?.count ?? 0;
   const reviewPeak30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 0);
+  const retentionGapLabel = `${summary.fsrsCalibrationGap30d >= 0 ? "+" : ""}${(summary.fsrsCalibrationGap30d * 100).toFixed(0)}pp`;
 
   const ratingSegments = [
     { label: "Again", value: summary.ratingDistribution.again, color: "#ef4444" },
@@ -56,11 +57,20 @@ export default async function DashboardPage() {
                 </Badge>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                 <MetricCard label="Tracked" value={summary.metrics.trackedWords} />
                 <MetricCard label="Notes" value={summary.metrics.notesCount} tone="warm" />
                 <MetricCard label="Reviews 7d" value={summary.metrics.reviewed7d} />
                 <MetricCard label="Reviews 30d" value={summary.metrics.reviewed30d} tone="warm" />
+                <MetricCard
+                  label="Target Retention"
+                  value={`${(summary.averageDesiredRetention * 100).toFixed(0)}%`}
+                />
+                <MetricCard
+                  label="FSRS Gap 30d"
+                  value={retentionGapLabel}
+                  tone={summary.fsrsCalibrationGap30d > 0 ? "warm" : "cool"}
+                />
               </div>
 
               {summary.activeSession ? (
@@ -68,6 +78,7 @@ export default async function DashboardPage() {
                   <p>当前会话开始于：{formatDateTime(summary.activeSession.started_at)}</p>
                   <p>当前会话已完成：{summary.activeSession.cards_seen}</p>
                   <p>行为遗忘率（30天 Again 占比）：{(summary.forgettingRate30d * 100).toFixed(0)}%</p>
+                  <p>FSRS 校准偏差（行为 - 理论）：{retentionGapLabel}</p>
                 </div>
               ) : null}
             </section>

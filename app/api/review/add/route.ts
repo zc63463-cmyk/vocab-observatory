@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildInitialSchedulerPayload } from "@/lib/review/fsrs-adapter";
+import {
+  buildInitialSchedulerPayload,
+  DEFAULT_DESIRED_RETENTION,
+} from "@/lib/review/fsrs-adapter";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { addToReviewSchema } from "@/lib/validation/schemas";
 import { serializeOwnerWordProgress } from "@/lib/words";
@@ -44,7 +47,7 @@ export async function POST(request: NextRequest) {
     .upsert(
       {
         content_hash_snapshot: word.content_hash,
-        desired_retention: 0.9,
+        desired_retention: DEFAULT_DESIRED_RETENTION,
         due_at: now,
         schedule_algo: "fsrs",
         scheduler_payload: asJson(initialPayload),

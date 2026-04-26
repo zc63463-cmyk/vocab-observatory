@@ -422,9 +422,13 @@ async function getOwnerProgressMap(
   );
 }
 
-export function resolveWordHref(label: string, availableSlugs: Set<string>) {
+export function resolveWordHref(label: string, availableSlugs?: Set<string>) {
   const slug = slugifyLabel(label);
-  if (!slug || !availableSlugs.has(slug)) {
+  if (!slug) {
+    return null;
+  }
+
+  if (availableSlugs && !availableSlugs.has(slug)) {
     return null;
   }
 
@@ -433,7 +437,7 @@ export function resolveWordHref(label: string, availableSlugs: Set<string>) {
 
 export function resolveSynonymItems(
   items: SynonymItem[],
-  availableSlugs: Set<string>,
+  availableSlugs?: Set<string>,
 ): ResolvedSynonymItem[] {
   return items.map((item) => ({
     ...item,
@@ -443,7 +447,7 @@ export function resolveSynonymItems(
 
 export function resolveAntonymItems(
   items: AntonymItem[],
-  availableSlugs: Set<string>,
+  availableSlugs?: Set<string>,
 ): ResolvedAntonymItem[] {
   return items.map((item) => ({
     ...item,
@@ -569,9 +573,6 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       }
 
       const publicWord = withStructuredFallback(word);
-      const availableSlugs = new Set(
-        ((await getCachedPublicWordRows()) ?? []).map((entry) => entry.slug),
-      );
       const synonymSection = getSection(publicWord.body_md, "同义词辨析");
       const antonymSection = getSection(publicWord.body_md, "反义词");
       const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
@@ -604,8 +605,8 @@ const getCachedPublicWordDetailRecord = unstable_cache(
         body_html: bodyHtml,
         definition_html: definitionHtml,
         progress: null,
-        resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items, availableSlugs),
-        resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items, availableSlugs),
+        resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items),
+        resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items),
         synonym_html: synonymHtml,
         tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
           (row) => row.tags,

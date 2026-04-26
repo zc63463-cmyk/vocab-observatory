@@ -2,10 +2,10 @@ import { createEmptyCard, fsrs, Rating, State, type Card } from "ts-fsrs";
 import type { ReviewRating } from "@/types/database.types";
 import type { ReviewState, SchedulerUpdate, StoredSchedulerCard } from "@/lib/review/types";
 
-const scheduler = fsrs({
-  request_retention: 0.9,
-  maximum_interval: 36500,
-});
+export const DEFAULT_DESIRED_RETENTION = 0.9;
+const MIN_DESIRED_RETENTION = 0.7;
+const MAX_DESIRED_RETENTION = 0.99;
+const schedulerCache = new Map<number, ReturnType<typeof fsrs>>();
 
 const ratingMap: Record<ReviewRating, 1 | 2 | 3 | 4> = {
   again: Rating.Again,
@@ -20,6 +20,34 @@ const reviewStateMap: Record<number, ReviewState> = {
   [State.Review]: "review",
   [State.Relearning]: "relearning",
 };
+
+export function normalizeDesiredRetention(value?: number | null) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_DESIRED_RETENTION;
+  }
+
+  return Math.min(
+    MAX_DESIRED_RETENTION,
+    Math.max(MIN_DESIRED_RETENTION, Number(value)),
+  );
+}
+
+function getScheduler(desiredRetention = DEFAULT_DESIRED_RETENTION) {
+  const normalizedRetention = normalizeDesiredRetention(desiredRetention);
+  const cacheKey = Number(normalizedRetention.toFixed(3));
+  const cached = schedulerCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const scheduler = fsrs({
+    maximum_interval: 36500,
+    request_retention: cacheKey,
+  });
+  schedulerCache.set(cacheKey, scheduler);
+  return scheduler;
+}
 
 function toCard(payload?: StoredSchedulerCard | null): Card {
   if (!payload) {
@@ -61,6 +89,7 @@ export function buildInitialSchedulerPayload(now = new Date()) {
 
 export function getCurrentRetrievability(
   payload: StoredSchedulerCard | null | undefined,
+  desiredRetention = DEFAULT_DESIRED_RETENTION,
   now = new Date(),
 ) {
   if (!payload) {
@@ -72,14 +101,16 @@ export function getCurrentRetrievability(
     return null;
   }
 
-  return scheduler.get_retrievability(card, now, false);
+  return getScheduler(desiredRetention).get_retrievability(card, now, false);
 }
 
 export function applyReviewAnswer(
   payload: StoredSchedulerCard | null | undefined,
   rating: ReviewRating,
   now = new Date(),
+  desiredRetention = DEFAULT_DESIRED_RETENTION,
 ): SchedulerUpdate {
+  const scheduler = getScheduler(desiredRetention);
   const currentCard = toCard(payload);
   const result = scheduler.next(currentCard, now, ratingMap[rating]);
   const retrievability =
