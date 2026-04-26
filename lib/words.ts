@@ -19,6 +19,7 @@ import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 
 const WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
+const WORD_FILTER_METADATA_SELECT = "metadata";
 const WORD_SLUG_SELECT = "slug";
 const WORD_DETAIL_LEGACY_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path";
@@ -117,6 +118,11 @@ export interface PublicWordsResponse {
   words: PublicWordSummary[];
 }
 
+export interface PublicWordFilterOptions {
+  frequencies: string[];
+  semanticFields: string[];
+}
+
 export interface LandingSnapshot {
   configured: boolean;
   featuredWords: PublicWordSummary[];
@@ -136,6 +142,7 @@ interface GetPublicWordsOptions {
 }
 
 type BarePublicWordSummary = PublicWordIndexEntry;
+type BarePublicWordMetadataRow = Pick<PublicWordIndexEntry, "metadata">;
 
 function isReviewFilter(value: string | undefined): value is ReviewFilter {
   return value === "all" || value === "tracked" || value === "due" || value === "untracked";
@@ -197,6 +204,15 @@ export function createPublicWordsShellResponse(
   };
 }
 
+export function isDefaultPublicWordFilters(filters: NormalizedWordQueryFilters) {
+  return (
+    filters.freq === "" &&
+    filters.q === "" &&
+    filters.review === "all" &&
+    filters.semantic === ""
+  );
+}
+
 function buildWordSearchText(word: {
   lemma: string;
   semantic_field: string | null;
@@ -256,6 +272,30 @@ function toPublicWordSummary(
   return {
     ...toPublicWordIndexEntry(record),
     progress,
+  };
+}
+
+function buildPublicWordFilterOptions(
+  rows: BarePublicWordMetadataRow[],
+): PublicWordFilterOptions {
+  const semanticFields = [
+    ...new Set(
+      rows
+        .map((row) => getWordMetadataString(row.metadata, "semantic_field"))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+  const frequencies = [
+    ...new Set(
+      rows
+        .map((row) => getWordMetadataString(row.metadata, "word_freq"))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  return {
+    frequencies,
+    semanticFields,
   };
 }
 
@@ -542,6 +582,76 @@ const getCachedPublicWordRows = unstable_cache(
   },
 );
 
+const getCachedDefaultPublicWordRows = unstable_cache(
+  async (): Promise<CachedPublicWordIndexRecord[] | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("words")
+        .select(WORD_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .order("lemma")
+        .limit(DISPLAY_LIMIT);
+
+      if (error) {
+        throw error;
+      }
+
+      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+    } catch (err) {
+      console.error("[words] Failed to fetch default public word rows:", err);
+      return null;
+    }
+  },
+  ["public-default-word-rows"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
+const getCachedPublicWordFilterOptions = unstable_cache(
+  async (): Promise<PublicWordFilterOptions> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return {
+        frequencies: [],
+        semanticFields: [],
+      };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("words")
+        .select(WORD_FILTER_METADATA_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false);
+
+      if (error) {
+        throw error;
+      }
+
+      return buildPublicWordFilterOptions((data ?? []) as BarePublicWordMetadataRow[]);
+    } catch (err) {
+      console.error("[words] Failed to fetch public word filter options:", err);
+      return {
+        frequencies: [],
+        semanticFields: [],
+      };
+    }
+  },
+  ["public-word-filter-options"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
 const getCachedPublicWordSlugs = unstable_cache(
   async (): Promise<string[] | null> => {
     const supabase = getPublicSupabaseClientOrNull();
@@ -795,28 +905,39 @@ export async function getPublicWords(
     };
   }
 
-  const [allWords, ownerProgressMap] = await Promise.all([
+  const publicFilterOptionsPromise = getCachedPublicWordFilterOptions();
+
+  if (!isOwner && isDefaultPublicWordFilters(normalizedFilters)) {
+    const [defaultRows, filterOptions, total] = await Promise.all([
+      getCachedDefaultPublicWordRows(),
+      publicFilterOptionsPromise,
+      getCachedPublicWordsCountValue(),
+    ]);
+    const visibleWords = (defaultRows ?? []).map((word) => toPublicWordSummary(word, null));
+
+    return {
+      configured: true,
+      counts: {
+        showing: visibleWords.length,
+        total,
+      },
+      filterOptions,
+      filters: normalizedFilters,
+      isOwner: false,
+      truncated: total > visibleWords.length,
+      words: visibleWords,
+    };
+  }
+
+  const [allWords, ownerProgressMap, filterOptions] = await Promise.all([
     getCachedPublicWordRows(),
     isOwner
       ? getOwnerProgressMap(options!.ownerUserId!, options!.ownerSupabase!)
       : Promise.resolve(new Map<string, OwnerWordProgressSummary>()),
+    publicFilterOptionsPromise,
   ]);
 
   const safeWords = allWords ?? [];
-  const semanticFields = [
-    ...new Set(
-      safeWords
-        .map((word) => word.semantic_field)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ].sort((left, right) => left.localeCompare(right));
-  const frequencies = [
-    ...new Set(
-      safeWords
-        .map((word) => word.word_freq)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ].sort((left, right) => left.localeCompare(right));
 
   const filtered = safeWords.filter((word) => {
     if (!matchesQuery(word, normalizedFilters.q)) {
@@ -848,10 +969,7 @@ export async function getPublicWords(
       showing: visibleWords.length,
       total: filtered.length,
     },
-    filterOptions: {
-      frequencies,
-      semanticFields,
-    },
+    filterOptions,
     filters: normalizedFilters,
     isOwner,
     truncated: filtered.length > visibleWords.length,

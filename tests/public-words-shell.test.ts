@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createPublicWordsShellResponse } from "@/lib/words";
+import {
+  createPublicWordsShellResponse,
+  isDefaultPublicWordFilters,
+} from "@/lib/words";
 
 describe("public words shell response", () => {
   it("creates a zero-query shell with normalized filters", () => {
@@ -24,5 +27,25 @@ describe("public words shell response", () => {
     expect(shell.isOwner).toBe(false);
     expect(shell.truncated).toBe(false);
     expect(shell.words).toEqual([]);
+  });
+
+  it("recognizes default public filters", () => {
+    expect(
+      isDefaultPublicWordFilters({
+        freq: "",
+        q: "",
+        review: "all",
+        semantic: "",
+      }),
+    ).toBe(true);
+
+    expect(
+      isDefaultPublicWordFilters({
+        freq: "",
+        q: "ab",
+        review: "all",
+        semantic: "",
+      }),
+    ).toBe(false);
   });
 });
