@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPublicWordFilterOptionsFromFacetRows,
   createPublicWordsPageState,
   createPublicWordsShellResponse,
   isDefaultPublicWordFilters,
@@ -127,6 +128,46 @@ describe("public words pagination", () => {
         total: 91,
       },
       truncated: false,
+    });
+  });
+
+  it("builds filter options from precomputed facet rows", () => {
+    expect(
+      buildPublicWordFilterOptionsFromFacetRows([
+        {
+          count: 12,
+          dimension: "word_freq",
+          updated_at: "2026-04-26T00:00:00.000Z",
+          value: "高频",
+        },
+        {
+          count: 4,
+          dimension: "semantic_field",
+          updated_at: "2026-04-26T00:00:00.000Z",
+          value: "抽象关系",
+        },
+        {
+          count: 7,
+          dimension: "semantic_field",
+          updated_at: "2026-04-26T00:00:00.000Z",
+          value: "行为动作",
+        },
+        {
+          count: 0,
+          dimension: "word_freq",
+          updated_at: "2026-04-26T00:00:00.000Z",
+          value: "低频",
+        },
+        {
+          count: 5,
+          dimension: "unknown_dimension",
+          updated_at: "2026-04-26T00:00:00.000Z",
+          value: "ignore me",
+        },
+      ]),
+    ).toEqual({
+      frequencies: ["高频"],
+      semanticFields: ["抽象关系", "行为动作"],
     });
   });
 });

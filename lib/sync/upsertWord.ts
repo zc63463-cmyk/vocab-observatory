@@ -29,6 +29,55 @@ type AdminClient = SupabaseClient<Database>;
 type ImportedWords = Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["words"];
 type ImportedCollections =
   Awaited<ReturnType<typeof importWordsFromGitHubArchive>>["collectionNotes"];
+const WORD_FILTER_FACET_DIMENSIONS = ["semantic_field", "word_freq"] as const;
+type WordFilterFacetDimension = (typeof WORD_FILTER_FACET_DIMENSIONS)[number];
+
+function isWordFilterFacetRelationMissing(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.includes("word_filter_facets")
+  );
+}
+
+function buildWordFilterFacetRows(
+  words: ImportedWords,
+  now: string,
+): Database["public"]["Tables"]["word_filter_facets"]["Insert"][] {
+  const counts = new Map<string, number>();
+
+  for (const word of words) {
+    for (const dimension of WORD_FILTER_FACET_DIMENSIONS) {
+      const value = word.metadata[dimension];
+      if (typeof value !== "string") {
+        continue;
+      }
+
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      const key = `${dimension}:${trimmed}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()].map(([key, count]) => {
+    const separatorIndex = key.indexOf(":");
+    const dimension = key.slice(0, separatorIndex) as WordFilterFacetDimension;
+    const value = key.slice(separatorIndex + 1);
+
+    return {
+      count,
+      dimension,
+      updated_at: now,
+      value,
+    };
+  });
+}
 
 function tagRecordsFromWords(words: ImportedWords) {
   const tagMap = new Map<string, { label: string; slug: string }>();
@@ -208,6 +257,38 @@ export async function syncGitHubWords(
         );
         upsertChunks = chunkArray(upsertableWords, 100);
         chunkIndex = -1;
+        continue;
+      }
+
+      if (error) {
+        throw error;
+      }
+    }
+
+    let wordFilterFacetsAvailable = true;
+    const wordFilterFacetRows = buildWordFilterFacetRows(incomingWords, now);
+    const { error: clearWordFilterFacetError } = await admin
+      .from("word_filter_facets")
+      .delete()
+      .in("dimension", [...WORD_FILTER_FACET_DIMENSIONS]);
+
+    if (isWordFilterFacetRelationMissing(clearWordFilterFacetError)) {
+      wordFilterFacetsAvailable = false;
+    } else if (clearWordFilterFacetError) {
+      throw clearWordFilterFacetError;
+    }
+
+    for (const chunk of chunkArray(wordFilterFacetRows, 100)) {
+      if (chunk.length === 0 || !wordFilterFacetsAvailable) {
+        continue;
+      }
+
+      const { error } = await admin.from("word_filter_facets").upsert(chunk, {
+        onConflict: "dimension,value",
+      });
+
+      if (isWordFilterFacetRelationMissing(error)) {
+        wordFilterFacetsAvailable = false;
         continue;
       }
 

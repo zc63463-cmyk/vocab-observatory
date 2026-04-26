@@ -344,6 +344,22 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["word_tags"]["Insert"]>;
         Relationships: [];
       };
+      word_filter_facets: {
+        Row: {
+          count: number;
+          dimension: string;
+          updated_at: string;
+          value: string;
+        };
+        Insert: {
+          count?: number;
+          dimension: string;
+          updated_at?: string;
+          value: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["word_filter_facets"]["Insert"]>;
+        Relationships: [];
+      };
       words: {
         Row: {
           aliases: string[];
