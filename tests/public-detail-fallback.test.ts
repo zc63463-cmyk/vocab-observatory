@@ -52,6 +52,33 @@ function createSingleResultClient(
   };
 }
 
+function createAwaitableChain<TResult>(
+  executor: () => Promise<TResult>,
+  extraMethods?: Record<string, () => unknown>,
+) {
+  const chain: Record<string, unknown> = {
+    eq: vi.fn(() => chain),
+    gt: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    order: vi.fn(() => chain),
+    range: vi.fn(() => chain),
+    select: vi.fn(() => chain),
+    then: (onFulfilled?: (value: TResult) => unknown, onRejected?: (reason: unknown) => unknown) =>
+      executor().then(onFulfilled, onRejected),
+  };
+
+  if (extraMethods) {
+    for (const [name, factory] of Object.entries(extraMethods)) {
+      chain[name] = vi.fn(() => {
+        factory();
+        return chain;
+      });
+    }
+  }
+
+  return chain;
+}
+
 describe("public detail fallback behavior", () => {
   beforeEach(() => {
     hasPublicEnv = true;
@@ -108,6 +135,78 @@ describe("public detail fallback behavior", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
+  it("retries public word count once after a transient failure", async () => {
+    let attempts = 0;
+    publicClient = {
+      from: vi.fn((table: string) => {
+        if (table !== "words") {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return createAwaitableChain(async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return {
+              count: null,
+              error: { code: "", details: "read ECONNRESET", message: "TypeError: terminated" },
+            };
+          }
+
+          return {
+            count: 321,
+            error: null,
+          };
+        });
+      }),
+    };
+
+    const { getPublicWordsCount } = await import("@/lib/words");
+    const promise = getPublicWordsCount();
+
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(promise).resolves.toBe(321);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("retries public word slugs once after a transient failure", async () => {
+    let attempts = 0;
+    publicClient = {
+      from: vi.fn((table: string) => {
+        if (table !== "words") {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return createAwaitableChain(async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return {
+              data: null,
+              error: { code: "", details: "socket hang up", message: "fetch failed" },
+            };
+          }
+
+          return {
+            data: [{ slug: "abandon" }, { slug: "abide" }],
+            error: null,
+          };
+        });
+      }),
+    };
+
+    const { getStaticPublicWordSlugs } = await import("@/lib/words");
+    const promise = getStaticPublicWordSlugs();
+
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(promise).resolves.toEqual(["abandon", "abide"]);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it("does not treat missing collection_notes relation as retryable", async () => {
     const client = createSingleResultClient("collection_notes", async () => ({
       data: null,
@@ -126,6 +225,81 @@ describe("public detail fallback behavior", () => {
 
     expect(client.from).toHaveBeenCalledTimes(1);
     expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("returns missing_relation collection summaries without retrying", async () => {
+    publicClient = {
+      from: vi.fn((table: string) => {
+        if (table !== "collection_notes") {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return createAwaitableChain(async () => ({
+          data: null,
+          error: { code: "PGRST205", message: "Could not find the table 'collection_notes'" },
+        }));
+      }),
+    };
+
+    const { getCachedCollectionSummaries } = await import("@/lib/plaza");
+
+    await expect(getCachedCollectionSummaries()).resolves.toEqual({
+      notes: [],
+      status: "missing_relation",
+    });
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("retries collection summaries once after a transient failure", async () => {
+    let attempts = 0;
+    publicClient = {
+      from: vi.fn((table: string) => {
+        if (table !== "collection_notes") {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return createAwaitableChain(async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return {
+              data: null,
+              error: { code: "", details: "ETIMEDOUT", message: "network error" },
+            };
+          }
+
+          return {
+            data: [
+              {
+                id: "note-1",
+                kind: "root_affix",
+                metadata: { coreMeaning: "Leave" },
+                related_word_slugs: [],
+                slug: "root-ab-abs-绂诲紑",
+                summary: "Canonical summary",
+                tags: ["roots"],
+                title: "ab-/abs-(绂诲紑)",
+                updated_at: "2026-04-26T00:00:00.000Z",
+              },
+            ],
+            error: null,
+          };
+        });
+      }),
+    };
+
+    const { getCachedCollectionSummaries } = await import("@/lib/plaza");
+    const promise = getCachedCollectionSummaries();
+
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(promise).resolves.toMatchObject({
+      notes: [{ slug: "root-ab-abs-绂诲紑", title: "ab-/abs-(绂诲紑)" }],
+      status: "ok",
+    });
+    expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.error).not.toHaveBeenCalled();
   });
 
