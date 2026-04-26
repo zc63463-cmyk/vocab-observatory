@@ -6,6 +6,7 @@ import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
+import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -92,8 +93,6 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     initialResult,
     normalizeFilters: normalizeWordFilters,
     readResponse: readWordsResponse,
-    shouldSkipInitialFetch: (urlFilters, initial) =>
-      !initial.isOwner && areWordFiltersEqual(urlFilters, initial.filters),
   });
 
   useEffect(() => {
@@ -146,6 +145,15 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     },
     [setFilter],
   );
+  const shouldShowInitialLoading =
+    result.configured &&
+    !result.isOwner &&
+    result.words.length === 0 &&
+    result.counts.total === 0 &&
+    result.filterOptions.frequencies.length === 0 &&
+    result.filterOptions.semanticFields.length === 0 &&
+    isUpdating &&
+    !fetchError;
 
   return (
     <div className="space-y-8">
@@ -232,6 +240,25 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
           title="Supabase 尚未配置"
           description="请先配置公开环境变量并运行导入接口，随后这里会显示公开词条列表。"
         />
+      ) : shouldShowInitialLoading ? (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="panel rounded-[1.75rem] p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <SkeletonLine className="h-8 w-28" />
+                  <SkeletonLine className="h-4 w-20" />
+                </div>
+                <SkeletonLine className="h-6 w-16" />
+              </div>
+              <SkeletonBlock className="mt-5 h-20 w-full" />
+              <div className="mt-6 flex gap-2">
+                <SkeletonLine className="h-6 w-20" />
+                <SkeletonLine className="h-6 w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : result.words.length === 0 ? (
         <EmptyState
           title="没有匹配词条"

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { WordsSearchShell } from "@/components/words/WordsSearchShell";
-import { getPublicWords } from "@/lib/words";
+import { createPublicWordsShellResponse } from "@/lib/words";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default async function WordsPage() {
-  const result = await getPublicWords();
+  const result = createPublicWordsShellResponse();
 
   return <WordsSearchShell initialResult={result} />;
 }

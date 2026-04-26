@@ -177,6 +177,26 @@ export function normalizeWordFilters(
   };
 }
 
+export function createPublicWordsShellResponse(
+  filters?: WordQueryFilters,
+): PublicWordsResponse {
+  return {
+    configured: hasSupabasePublicEnv(),
+    counts: {
+      showing: 0,
+      total: 0,
+    },
+    filterOptions: {
+      frequencies: [],
+      semanticFields: [],
+    },
+    filters: normalizeWordFilters(filters),
+    isOwner: false,
+    truncated: false,
+    words: [],
+  };
+}
+
 function buildWordSearchText(word: {
   lemma: string;
   semantic_field: string | null;
@@ -769,16 +789,9 @@ export async function getPublicWords(
 
   if (!hasSupabasePublicEnv()) {
     return {
+      ...createPublicWordsShellResponse(normalizedFilters),
       configured: false,
-      counts: { showing: 0, total: 0 },
-      filterOptions: {
-        frequencies: [],
-        semanticFields: [],
-      },
-      filters: normalizedFilters,
       isOwner,
-      truncated: false,
-      words: [],
     };
   }
 
