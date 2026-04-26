@@ -1,0 +1,9 @@
+# Keep local env files out of Vercel CLI uploads.
+.env*
+
+# Local diagnostics and generated outputs do not belong in deployments.
+.codex-dev*.log
+.codex-dev*.err.log
+coverage
+coverage/
+docs/health-check-*.md
