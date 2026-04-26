@@ -3,23 +3,55 @@ import { getLatestImportOverview } from "@/lib/imports";
 import {
   DEFAULT_DESIRED_RETENTION,
   getCurrentRetrievability,
+  normalizeDesiredRetention,
+  retuneScheduledReviewCard,
 } from "@/lib/review/fsrs-adapter";
-import { readDesiredRetentionSetting } from "@/lib/review/settings";
+import { REVIEW_RETENTION_PRESETS, readDesiredRetentionSetting } from "@/lib/review/settings";
+import type { StoredSchedulerCard } from "@/lib/review/types";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
+import type { Json } from "@/types/database.types";
+
+type DashboardProgressRow = {
+  desired_retention: number | null;
+  due_at: string | null;
+  scheduler_payload: Json;
+  state: string;
+};
+
+type DashboardReviewLogRow = {
+  metadata: Json;
+  rating: string;
+  reviewed_at: string;
+};
+
+type DashboardSemanticWord = {
+  metadata: Json;
+};
+
+function isJsonObject(
+  value: Json | null | undefined,
+): value is { [key: string]: Json | undefined } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function formatDayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>, today = new Date()) {
+  const anchor = new Date(today);
+  anchor.setHours(0, 0, 0, 0);
 
   const buckets = new Map<string, number>();
   for (let index = days - 1; index >= 0; index -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - index);
+    const date = addDays(anchor, -index);
     buckets.set(formatDayKey(date), 0);
   }
 
@@ -46,7 +78,183 @@ function calculateStreak(daysSet: Set<string>) {
   return streak;
 }
 
+function readDesiredRetentionFromLogMetadata(
+  metadata: Json | null | undefined,
+  fallbackDesiredRetention: number,
+) {
+  if (!isJsonObject(metadata)) {
+    return fallbackDesiredRetention;
+  }
+
+  const desiredRetention = metadata.desired_retention;
+  return normalizeDesiredRetention(
+    typeof desiredRetention === "number" ? desiredRetention : fallbackDesiredRetention,
+  );
+}
+
+function resolveForecastDueAt(
+  row: DashboardProgressRow,
+  desiredRetention: number,
+  now: Date,
+) {
+  if (row.state === "suspended") {
+    return null;
+  }
+
+  if (row.state !== "review") {
+    return row.due_at;
+  }
+
+  const retuned = retuneScheduledReviewCard(
+    row.scheduler_payload as StoredSchedulerCard | null,
+    desiredRetention,
+    now,
+  );
+
+  return retuned?.dueAt ?? row.due_at;
+}
+
+export interface RetentionGapPoint {
+  againRate: number;
+  date: string;
+  gap: number;
+  reviewCount: number;
+  targetForgettingRate: number;
+}
+
+export interface RetentionLoadForecast {
+  desiredRetention: number;
+  due14d: number;
+  due7d: number;
+  dueNow: number;
+}
+
+export interface RetentionPresetForecast extends RetentionLoadForecast {
+  description: string;
+  id: "sprint" | "balanced" | "conservative";
+  label: string;
+}
+
+export function buildRetentionGapSeries(
+  days: number,
+  reviewLogs: DashboardReviewLogRow[],
+  fallbackDesiredRetention = DEFAULT_DESIRED_RETENTION,
+  today = new Date(),
+) {
+  const anchor = new Date(today);
+  anchor.setHours(0, 0, 0, 0);
+
+  const buckets = new Map<
+    string,
+    { againCount: number; reviewCount: number; targetForgettingSum: number }
+  >();
+
+  for (let index = days - 1; index >= 0; index -= 1) {
+    const date = addDays(anchor, -index);
+    buckets.set(formatDayKey(date), {
+      againCount: 0,
+      reviewCount: 0,
+      targetForgettingSum: 0,
+    });
+  }
+
+  for (const log of reviewLogs) {
+    const key = log.reviewed_at.slice(0, 10);
+    const bucket = buckets.get(key);
+
+    if (!bucket) {
+      continue;
+    }
+
+    const desiredRetention = readDesiredRetentionFromLogMetadata(
+      log.metadata,
+      fallbackDesiredRetention,
+    );
+
+    bucket.reviewCount += 1;
+    bucket.targetForgettingSum += 1 - desiredRetention;
+    if (log.rating === "again") {
+      bucket.againCount += 1;
+    }
+  }
+
+  return [...buckets.entries()].map(([date, bucket]) => {
+    if (bucket.reviewCount === 0) {
+      return {
+        againRate: 0,
+        date,
+        gap: 0,
+        reviewCount: 0,
+        targetForgettingRate: 0,
+      } satisfies RetentionGapPoint;
+    }
+
+    const againRate = bucket.againCount / bucket.reviewCount;
+    const targetForgettingRate = bucket.targetForgettingSum / bucket.reviewCount;
+
+    return {
+      againRate,
+      date,
+      gap: againRate - targetForgettingRate,
+      reviewCount: bucket.reviewCount,
+      targetForgettingRate,
+    } satisfies RetentionGapPoint;
+  });
+}
+
+export function buildRetentionForecast(
+  progressRows: DashboardProgressRow[],
+  desiredRetention: number,
+  now = new Date(),
+) {
+  const normalizedRetention = normalizeDesiredRetention(desiredRetention);
+  const nowIso = now.toISOString();
+  const next7dIso = addDays(now, 7).toISOString();
+  const next14dIso = addDays(now, 14).toISOString();
+
+  let dueNow = 0;
+  let due7d = 0;
+  let due14d = 0;
+
+  for (const row of progressRows) {
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, now);
+    if (!dueAt) {
+      continue;
+    }
+
+    if (dueAt <= nowIso) {
+      dueNow += 1;
+    }
+    if (dueAt <= next7dIso) {
+      due7d += 1;
+    }
+    if (dueAt <= next14dIso) {
+      due14d += 1;
+    }
+  }
+
+  return {
+    desiredRetention: normalizedRetention,
+    due14d,
+    due7d,
+    dueNow,
+  } satisfies RetentionLoadForecast;
+}
+
+export function buildRetentionForecasts(
+  progressRows: DashboardProgressRow[],
+  now = new Date(),
+) {
+  return REVIEW_RETENTION_PRESETS.map((preset) => ({
+    ...preset,
+    ...buildRetentionForecast(progressRows, preset.desiredRetention, now),
+  })) satisfies RetentionPresetForecast[];
+}
+
 export async function getDashboardSummary() {
+  const emptyForecast = buildRetentionForecast([], DEFAULT_DESIRED_RETENTION);
+  const emptyPresetForecasts = buildRetentionForecasts([]);
+
   const [owner, supabase, importOverview] = await Promise.all([
     getOwnerUser(),
     getServerSupabaseClientOrNull(),
@@ -58,6 +266,7 @@ export async function getDashboardSummary() {
       activeSession: null as { cards_seen: number; id: string; started_at: string } | null,
       averageDesiredRetention: DEFAULT_DESIRED_RETENTION,
       configuredDesiredRetention: DEFAULT_DESIRED_RETENTION,
+      configuredRetentionForecast: emptyForecast,
       configured: false,
       forgettingRate30d: 0,
       fsrsCalibrationGap30d: 0,
@@ -90,6 +299,8 @@ export async function getDashboardSummary() {
         reviewed_at: string;
         words: { lemma: string; slug: string; title: string } | null;
       }>,
+      retentionForecasts: emptyPresetForecasts,
+      retentionGapSeries14d: [] as RetentionGapPoint[],
       reviewVolume30d: [] as Array<{ count: number; date: string }>,
       reviewVolume7d: [] as Array<{ count: number; date: string }>,
       weakestSemanticFields: [] as Array<{
@@ -101,31 +312,18 @@ export async function getDashboardSummary() {
   }
 
   const today = startOfTodayIso();
-  const now = new Date().toISOString();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setHours(0, 0, 0, 0);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-  const yearAgo = new Date();
-  yearAgo.setHours(0, 0, 0, 0);
-  yearAgo.setDate(yearAgo.getDate() - 364);
+  const nowDate = new Date();
+  const nowIso = nowDate.toISOString();
+  const thirtyDaysAgo = addDays(new Date(today), -29);
+  const yearAgo = addDays(new Date(today), -364);
 
-  // ── Optimized: 6 parallel queries instead of 12 ──
-  // Merged review_logs queries: 3 → 1 (fetch 30d with words, derive 7d/30d/rating from it)
-  // Merged user_word_progress count queries: 3 → 1 (fetch all progress, count in-memory)
   const [
-    // 1. All active progress rows (for tracked count, due count, new count, FSRS retrievability)
     progressResult,
-    // 2. 30d review logs WITH word metadata (covers: recent logs, 7d/30d volume, rating distribution, semantic fields)
     reviewLogs30dWithWordsResult,
-    // 3. Year-long review dates (for streak calculation)
     streakResult,
-    // 4. Recent notes
     notesResult,
-    // 5. Notes count
     notesCountResult,
-    // 6. Active session
     activeSessionResult,
-    // 7. Profile settings
     profileResult,
   ] = await Promise.all([
     supabase
@@ -134,7 +332,7 @@ export async function getDashboardSummary() {
       .eq("user_id", owner.id),
     supabase
       .from("review_logs")
-      .select("rating, reviewed_at, words(lemma, slug, title, metadata)")
+      .select("rating, reviewed_at, metadata, words(lemma, slug, title, metadata)")
       .eq("user_id", owner.id)
       .gte("reviewed_at", thirtyDaysAgo.toISOString())
       .order("reviewed_at", { ascending: false })
@@ -165,17 +363,13 @@ export async function getDashboardSummary() {
     supabase.from("profiles").select("settings").eq("id", owner.id).maybeSingle(),
   ]);
 
-  // ── Derive metrics from progress rows (in-memory) ──
-  const progressRows = (progressResult.data ?? []) as Array<{
-    desired_retention: number | null;
-    state: string;
-    due_at: string | null;
-    scheduler_payload: unknown;
-  }>;
+  const progressRows = (progressResult.data ?? []) as DashboardProgressRow[];
   const trackedWords = progressRows.length;
-  const dueToday = progressRows.filter((row) => row.due_at && row.due_at <= now).length;
+  const dueToday = progressRows.filter(
+    (row) => row.state !== "suspended" && row.due_at && row.due_at <= nowIso,
+  ).length;
   const todayNewCount = progressRows.filter(
-    (row) => row.state === "new" && row.due_at && row.due_at <= now,
+    (row) => row.state === "new" && row.due_at && row.due_at <= nowIso,
   ).length;
 
   const desiredRetentionValues = progressRows
@@ -189,12 +383,11 @@ export async function getDashboardSummary() {
     profileResult.data?.settings ?? null,
   );
 
-  // ── FSRS retrievability from progress rows ──
   const retrievabilityValues = progressRows
     .filter((row) => row.state !== "suspended")
     .map((row) =>
       getCurrentRetrievability(
-        row.scheduler_payload as never,
+        row.scheduler_payload as StoredSchedulerCard | null,
         row.desired_retention ?? DEFAULT_DESIRED_RETENTION,
       ),
     )
@@ -205,28 +398,23 @@ export async function getDashboardSummary() {
         retrievabilityValues.length
       : 0;
 
-  // ── Derive review metrics from the single 30d query ──
   type ReviewLogWithWords = {
+    metadata: Json;
     rating: string;
     reviewed_at: string;
-    words: { lemma: string; slug: string; title: string; metadata: unknown } | null;
+    words: { lemma: string; metadata: Json; slug: string; title: string } | null;
   };
   const reviewLogs30d = (reviewLogs30dWithWordsResult.data ?? []) as ReviewLogWithWords[];
 
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setHours(0, 0, 0, 0);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-
+  const sevenDaysAgo = addDays(new Date(today), -6);
   const reviewLogs7d = reviewLogs30d.filter((row) => row.reviewed_at >= sevenDaysAgo.toISOString());
 
-  // Recent logs (top 8) — already ordered by reviewed_at desc, but limit in-memory
   const recentLogs = reviewLogs30d.slice(0, 8).map((row) => ({
     rating: row.rating,
     reviewed_at: row.reviewed_at,
     words: row.words ? { lemma: row.words.lemma, slug: row.words.slug, title: row.words.title } : null,
   }));
 
-  // Rating distribution
   const ratingDistribution = { again: 0, easy: 0, good: 0, hard: 0 };
   for (const row of reviewLogs30d) {
     if (row.rating in ratingDistribution) {
@@ -234,18 +422,15 @@ export async function getDashboardSummary() {
     }
   }
 
-  // Weakest semantic fields
   const semanticCounts = new Map<string, { again: number; total: number }>();
   for (const row of reviewLogs30d) {
-    const metadata = row.words?.metadata;
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    const metadata = row.words?.metadata as DashboardSemanticWord["metadata"] | null | undefined;
+    if (!isJsonObject(metadata)) {
       continue;
     }
 
     const semanticField =
-      "semantic_field" in metadata && typeof metadata.semantic_field === "string"
-        ? metadata.semantic_field
-        : null;
+      typeof metadata.semantic_field === "string" ? metadata.semantic_field : null;
     if (!semanticField) {
       continue;
     }
@@ -273,14 +458,12 @@ export async function getDashboardSummary() {
     })
     .slice(0, 3);
 
-  // Streak
   const streakDays = calculateStreak(
     new Set(((streakResult.data ?? []) as Array<{ reviewed_at: string }>).map((row) =>
       row.reviewed_at.slice(0, 10),
     )),
   );
 
-  // Reviewed today count
   const reviewedToday = reviewLogs30d.filter((row) => row.reviewed_at >= today).length;
   const forgettingRate30d =
     reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0;
@@ -290,6 +473,11 @@ export async function getDashboardSummary() {
     activeSession: activeSessionResult.data ?? null,
     averageDesiredRetention,
     configuredDesiredRetention,
+    configuredRetentionForecast: buildRetentionForecast(
+      progressRows,
+      configuredDesiredRetention,
+      nowDate,
+    ),
     configured: true,
     forgettingRate30d,
     fsrsCalibrationGap30d,
@@ -313,8 +501,15 @@ export async function getDashboardSummary() {
     }>,
     ratingDistribution,
     recentLogs,
-    reviewVolume30d: buildVolumeSeries(30, reviewLogs30d),
-    reviewVolume7d: buildVolumeSeries(7, reviewLogs7d),
+    retentionForecasts: buildRetentionForecasts(progressRows, nowDate),
+    retentionGapSeries14d: buildRetentionGapSeries(
+      14,
+      reviewLogs30d,
+      configuredDesiredRetention,
+      nowDate,
+    ),
+    reviewVolume30d: buildVolumeSeries(30, reviewLogs30d, nowDate),
+    reviewVolume7d: buildVolumeSeries(7, reviewLogs7d, nowDate),
     weakestSemanticFields,
   };
 }

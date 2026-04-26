@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getNearestReviewRetentionPreset,
   readDesiredRetentionSetting,
   writeDesiredRetentionSetting,
 } from "@/lib/review/settings";
@@ -41,5 +42,15 @@ describe("review settings", () => {
         desired_retention: 0.93,
       },
     });
+  });
+
+  it("maps configured values to the nearest preset", () => {
+    expect(getNearestReviewRetentionPreset(0.965).id).toBe("sprint");
+    expect(getNearestReviewRetentionPreset(0.905).id).toBe("balanced");
+    expect(getNearestReviewRetentionPreset(0.84).id).toBe("conservative");
+  });
+
+  it("falls back to the balanced preset when the value is missing", () => {
+    expect(getNearestReviewRetentionPreset(null).id).toBe("balanced");
   });
 });

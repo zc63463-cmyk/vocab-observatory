@@ -9,10 +9,10 @@ interface BarItem {
 }
 
 interface MiniBarChartProps {
-  data: BarItem[];
-  maxCount: number;
   accentColor?: string;
   className?: string;
+  data: BarItem[];
+  maxCount: number;
 }
 
 export function MiniBarChart({
@@ -22,9 +22,7 @@ export function MiniBarChart({
   className,
 }: MiniBarChartProps) {
   if (data.length === 0) {
-    return (
-      <p className="text-sm text-[var(--color-ink-soft)]">暂无数据</p>
-    );
+    return <p className="text-sm text-[var(--color-ink-soft)]">No data yet.</p>;
   }
 
   return (
@@ -35,18 +33,12 @@ export function MiniBarChart({
         const shortLabel = label.slice(-5);
 
         return (
-          <div
-            key={item.date}
-            className="group relative flex flex-1 flex-col items-center"
-          >
-            {/* Tooltip */}
+          <div key={item.date} className="group relative flex flex-1 flex-col items-center">
             <div className="pointer-events-none absolute -top-10 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[var(--color-ink)] px-2.5 py-1 text-xs text-[var(--color-canvas)] opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
               {label}: {item.count}
             </div>
 
-            {/* Bar track */}
             <div className="relative h-32 w-full overflow-hidden rounded-t-lg bg-[var(--color-surface-muted)]">
-              {/* Filled bar — scaleY animates from 0 to target */}
               <motion.div
                 className="absolute inset-x-0 bottom-0 rounded-t-lg"
                 style={{
@@ -64,7 +56,6 @@ export function MiniBarChart({
               />
             </div>
 
-            {/* Date label */}
             <span className="mt-2 text-[10px] leading-tight text-[var(--color-ink-soft)]">
               {shortLabel}
             </span>

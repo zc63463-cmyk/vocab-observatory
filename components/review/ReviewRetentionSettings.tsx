@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
+import {
+  getNearestReviewRetentionPreset,
+  REVIEW_RETENTION_PRESETS,
+} from "@/lib/review/settings";
 
 interface ReviewRetentionSettingsProps {
   averageDesiredRetention: number;
@@ -12,26 +16,8 @@ interface ReviewRetentionSettingsProps {
   trackedWords: number;
 }
 
-const presetOptions = [85, 90, 95, 97];
-
 function toPercent(value: number) {
   return Math.round(value * 100);
-}
-
-function getRetentionModeLabel(percent: number) {
-  if (percent >= 95) {
-    return "Conservative";
-  }
-
-  if (percent >= 90) {
-    return "Balanced";
-  }
-
-  if (percent >= 80) {
-    return "Faster";
-  }
-
-  return "Aggressive";
 }
 
 export function ReviewRetentionSettings({
@@ -60,9 +46,12 @@ export function ReviewRetentionSettings({
     (isValidPercent &&
       Math.abs(desiredRetention - initialDesiredRetention) >= 0.0005) ||
     retuneExisting;
-  const modeLabel = useMemo(
-    () => getRetentionModeLabel(isValidPercent ? parsedPercent : averagePercent),
-    [averagePercent, isValidPercent, parsedPercent],
+  const selectedPreset = useMemo(
+    () =>
+      getNearestReviewRetentionPreset(
+        isValidPercent ? desiredRetention : initialDesiredRetention,
+      ),
+    [desiredRetention, initialDesiredRetention, isValidPercent],
   );
 
   function handleSave() {
@@ -122,26 +111,34 @@ export function ReviewRetentionSettings({
             Review Target
           </p>
           <p className="text-sm text-[var(--color-ink-soft)]">
-            {modeLabel} mode, default {toPercent(initialDesiredRetention)}%.
+            {selectedPreset.label} preset, current target {toPercent(initialDesiredRetention)}%.
             {hasMixedRetention
               ? ` Active cards average ${averagePercent}%.`
               : " Active cards are aligned."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {presetOptions.map((option) => (
-            <Button
-              key={option}
-              type="button"
-              variant="ghost"
-              size="sm"
-              active={parsedPercent === option}
-              onClick={() => setRetentionPercent(String(option))}
-            >
-              {option}%
-            </Button>
-          ))}
+          {REVIEW_RETENTION_PRESETS.map((preset) => {
+            const presetPercent = toPercent(preset.desiredRetention);
+
+            return (
+              <Button
+                key={preset.id}
+                type="button"
+                variant="ghost"
+                size="sm"
+                active={parsedPercent === presetPercent}
+                onClick={() => setRetentionPercent(String(presetPercent))}
+              >
+                {preset.label} {presetPercent}%
+              </Button>
+            );
+          })}
         </div>
+      </div>
+
+      <div className="mt-3 rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-panel)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+        {selectedPreset.description}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,220px)_1fr]">
@@ -191,7 +188,7 @@ export function ReviewRetentionSettings({
               </span>
             ) : (
               <span className="text-xs text-[var(--color-ink-soft)]">
-                Higher targets shorten intervals and reduce tolerated forgetting.
+                Higher targets shorten intervals and pull more cards forward.
               </span>
             )}
           </div>

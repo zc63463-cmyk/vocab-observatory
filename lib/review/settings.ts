@@ -9,6 +9,34 @@ import { asJson } from "@/types/database.types";
 type AppSupabaseClient = SupabaseClient<Database>;
 type JsonObject = { [key: string]: Json | undefined };
 
+export interface ReviewRetentionPreset {
+  description: string;
+  desiredRetention: number;
+  id: "sprint" | "balanced" | "conservative";
+  label: string;
+}
+
+export const REVIEW_RETENTION_PRESETS: ReviewRetentionPreset[] = [
+  {
+    description: "Exam prep mode. Shorter intervals, heavier daily load, fewer misses.",
+    desiredRetention: 0.97,
+    id: "sprint",
+    label: "Sprint",
+  },
+  {
+    description: "Everyday mode. Keeps recall stable without overloading the queue.",
+    desiredRetention: 0.9,
+    id: "balanced",
+    label: "Balanced",
+  },
+  {
+    description: "Lighter mode. Longer intervals and a smaller queue, with more tolerated forgetting.",
+    desiredRetention: 0.85,
+    id: "conservative",
+    label: "Conservative",
+  },
+];
+
 function isJsonObject(value: Json | null | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -44,6 +72,16 @@ export function writeDesiredRetentionSetting(
       ...reviewSettings,
       desired_retention: normalizeDesiredRetention(desiredRetention),
     },
+  });
+}
+
+export function getNearestReviewRetentionPreset(value?: number | null) {
+  const normalized = normalizeDesiredRetention(value);
+
+  return REVIEW_RETENTION_PRESETS.reduce((closest, preset) => {
+    const currentDistance = Math.abs(preset.desiredRetention - normalized);
+    const closestDistance = Math.abs(closest.desiredRetention - normalized);
+    return currentDistance < closestDistance ? preset : closest;
   });
 }
 
