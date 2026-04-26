@@ -81,7 +81,7 @@ export function ThemeToggle() {
     );
   }
 
-  const label = theme === "light" ? "Light mode" : theme === "dark" ? "Dark mode" : "System theme";
+  const label = theme === "light" ? "浅色模式" : theme === "dark" ? "深色模式" : "跟随系统";
   const systemTheme = getSystemTheme();
   const iconKey = theme === "system" ? `system-${systemTheme}` : theme;
 

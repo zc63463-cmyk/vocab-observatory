@@ -10,6 +10,10 @@ export const addToReviewSchema = z.object({
   wordId: z.string().uuid(),
 });
 
+export const batchAddToReviewSchema = z.object({
+  wordIds: z.array(z.string().uuid()).min(1).max(100),
+});
+
 export const reviewAnswerSchema = z.object({
   progressId: z.string().uuid(),
   rating: reviewRatingSchema,

@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
+import { useToast } from "@/components/ui/Toast";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
@@ -135,6 +136,28 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     pageInfo: null,
     words: [],
   });
+
+  // Batch selection state (declared early, logic after displayResult)
+  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
+  const [isBatchPending, setIsBatchPending] = useState(false);
+  const { addToast } = useToast();
+
+  const toggleWordSelect = useCallback((wordId: string) => {
+    setSelectedWordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(wordId)) {
+        next.delete(wordId);
+      } else {
+        next.add(wordId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedWordIds(new Set());
+  }, []);
+
   const buildInitialApiHref = useCallback(
     (filters: WordFilters) => buildWordsApiHref(filters, { limit: initialPageLimit }),
     [initialPageLimit],
@@ -225,6 +248,46 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
   }, [loadMoreState, result, resultKey]);
   const isLoadingMore = loadMoreState.key === resultKey && loadMoreState.isLoading;
   const loadMoreError = loadMoreState.key === resultKey ? loadMoreState.error : null;
+
+  // Batch selection logic (depends on displayResult)
+  const untrackedWords = useMemo(
+    () => displayResult.words.filter((w) => !w.progress),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayResult.words.map((w) => w.id + (w.progress ? ":t" : ":u")).join(",")],
+  );
+
+  const selectAllUntracked = useCallback(() => {
+    setSelectedWordIds(new Set(untrackedWords.map((w) => w.id)));
+  }, [untrackedWords]);
+
+  const handleBatchAdd = useCallback(() => {
+    if (selectedWordIds.size === 0 || isBatchPending) return;
+
+    setIsBatchPending(true);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/review/add-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wordIds: [...selectedWordIds] }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "批量添加失败");
+        }
+        addToast(`已将 ${payload.addedCount} 个词条加入复习队列`, "success");
+        setSelectedWordIds(new Set());
+        window.location.reload();
+      } catch (error) {
+        addToast(
+          error instanceof Error ? error.message : "批量添加失败",
+          "error",
+        );
+      } finally {
+        setIsBatchPending(false);
+      }
+    });
+  }, [selectedWordIds, isBatchPending, addToast]);
 
   const onQueryChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value),
@@ -456,12 +519,60 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
         />
       ) : (
         <div className="space-y-6">
+          {displayResult.isOwner && untrackedWords.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3">
+              {selectedWordIds.size > 0 ? (
+                <>
+                  <span className="text-sm text-[var(--color-ink-soft)]">
+                    已选 {selectedWordIds.size} 个未追踪词条
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isBatchPending}
+                    onClick={handleBatchAdd}
+                  >
+                    {isBatchPending ? "处理中..." : `批量加入复习 (${selectedWordIds.size})`}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={clearSelection}
+                  >
+                    取消选择
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-[var(--color-ink-soft)]">
+                    当前 {untrackedWords.length} 个词条未加入复习
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={selectAllUntracked}
+                  >
+                    全选加入
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null}
+
           <div
             aria-busy={isBusy}
             className="grid gap-5 md:grid-cols-2 xl:grid-cols-3"
           >
             {displayResult.words.map((word) => (
-              <WordCard key={word.id} word={word} />
+              <WordCard
+                key={word.id}
+                word={word}
+                selectable={displayResult.isOwner}
+                selected={selectedWordIds.has(word.id)}
+                onToggleSelect={toggleWordSelect}
+              />
             ))}
           </div>
 
