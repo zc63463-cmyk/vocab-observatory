@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { prioritizeReviewQueueItems } from "@/lib/review/queue";
 import { getOrCreateReviewSession } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
-import type { ReviewQueueItem } from "@/lib/review/types";
+import type { ReviewQueueItem, StoredSchedulerCard } from "@/lib/review/types";
 
 export async function GET() {
   const ownerSession = await requireOwnerApiSession();
@@ -11,38 +12,46 @@ export async function GET() {
 
   const supabase = ownerSession.supabase!;
   const session = await getOrCreateReviewSession(supabase, ownerSession.user!.id);
-  const { data, error } = await supabase
+  const { count, data, error } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, state, review_count, due_at, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
+      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
+      { count: "exact" },
     )
     .eq("user_id", ownerSession.user!.id)
     .neq("state", "suspended")
     .lte("due_at", new Date().toISOString())
     .order("due_at", { ascending: true })
-    .limit(20);
+    .limit(200);
 
   if (error) {
     throw error;
   }
 
-  const items = ((data ?? []) as Array<{
-    content_hash_snapshot: string | null;
-    due_at: string | null;
-    id: string;
-    review_count: number;
-    state: string;
-    word_id: string;
-    words: {
-      definition_md: string;
-      ipa: string | null;
-      lemma: string;
-      metadata: unknown;
-      short_definition: string | null;
-      slug: string;
-      title: string;
-    };
-  }>).map((row): ReviewQueueItem => ({
+  const prioritizedRows = prioritizeReviewQueueItems(
+    (data ?? []) as Array<{
+      content_hash_snapshot: string | null;
+      desired_retention: number | null;
+      due_at: string | null;
+      id: string;
+      review_count: number;
+      scheduler_payload: StoredSchedulerCard | null;
+      state: string;
+      word_id: string;
+      words: {
+        definition_md: string;
+        ipa: string | null;
+        lemma: string;
+        metadata: unknown;
+        short_definition: string | null;
+        slug: string;
+        title: string;
+      };
+    }>,
+  );
+  const dueToday = count ?? prioritizedRows.length;
+  const newCards = prioritizedRows.filter((row) => row.state === "new").length;
+  const items = prioritizedRows.slice(0, 20).map((row): ReviewQueueItem => ({
     content_hash_snapshot: row.content_hash_snapshot,
     definition_md: row.words.definition_md,
     due_at: row.due_at,
@@ -64,9 +73,9 @@ export async function GET() {
     session,
     stats: {
       completed: session.cards_seen,
-      dueToday: items.length,
-      newCards: items.filter((item) => item.is_new).length,
-      remaining: items.length,
+      dueToday,
+      newCards,
+      remaining: dueToday,
     },
   });
 }

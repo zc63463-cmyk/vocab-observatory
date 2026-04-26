@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ReviewRetentionSettings } from "@/components/review/ReviewRetentionSettings";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -72,6 +73,13 @@ export default async function DashboardPage() {
                   tone={summary.fsrsCalibrationGap30d > 0 ? "warm" : "cool"}
                 />
               </div>
+
+              <ReviewRetentionSettings
+                key={summary.configuredDesiredRetention}
+                initialDesiredRetention={summary.configuredDesiredRetention}
+                averageDesiredRetention={summary.averageDesiredRetention}
+                trackedWords={summary.metrics.trackedWords}
+              />
 
               {summary.activeSession ? (
                 <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">

@@ -4,6 +4,7 @@ import {
   DEFAULT_DESIRED_RETENTION,
   getCurrentRetrievability,
 } from "@/lib/review/fsrs-adapter";
+import { readDesiredRetentionSetting } from "@/lib/review/settings";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
 
@@ -56,6 +57,7 @@ export async function getDashboardSummary() {
     return {
       activeSession: null as { cards_seen: number; id: string; started_at: string } | null,
       averageDesiredRetention: DEFAULT_DESIRED_RETENTION,
+      configuredDesiredRetention: DEFAULT_DESIRED_RETENTION,
       configured: false,
       forgettingRate30d: 0,
       fsrsCalibrationGap30d: 0,
@@ -123,6 +125,8 @@ export async function getDashboardSummary() {
     notesCountResult,
     // 6. Active session
     activeSessionResult,
+    // 7. Profile settings
+    profileResult,
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
@@ -158,6 +162,7 @@ export async function getDashboardSummary() {
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase.from("profiles").select("settings").eq("id", owner.id).maybeSingle(),
   ]);
 
   // ── Derive metrics from progress rows (in-memory) ──
@@ -180,6 +185,9 @@ export async function getDashboardSummary() {
     desiredRetentionValues.length > 0
       ? desiredRetentionValues.reduce((sum, value) => sum + value, 0) / desiredRetentionValues.length
       : DEFAULT_DESIRED_RETENTION;
+  const configuredDesiredRetention = readDesiredRetentionSetting(
+    profileResult.data?.settings ?? null,
+  );
 
   // ── FSRS retrievability from progress rows ──
   const retrievabilityValues = progressRows
@@ -281,6 +289,7 @@ export async function getDashboardSummary() {
   return {
     activeSession: activeSessionResult.data ?? null,
     averageDesiredRetention,
+    configuredDesiredRetention,
     configured: true,
     forgettingRate30d,
     fsrsCalibrationGap30d,

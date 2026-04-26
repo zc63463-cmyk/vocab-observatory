@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  MAX_DESIRED_RETENTION,
+  MIN_DESIRED_RETENTION,
+} from "@/lib/review/fsrs-adapter";
 
 export const reviewRatingSchema = z.enum(["again", "hard", "good", "easy"]);
 
@@ -24,6 +28,14 @@ export const reviewSuspendSchema = z.object({
 
 export const reviewRejoinSchema = z.object({
   progressId: z.string().uuid(),
+});
+
+export const reviewSettingsSchema = z.object({
+  desiredRetention: z
+    .number()
+    .min(MIN_DESIRED_RETENTION)
+    .max(MAX_DESIRED_RETENTION),
+  retuneExisting: z.boolean().default(false),
 });
 
 export const noteSchema = z.object({

@@ -3,8 +3,9 @@ import type { ReviewRating } from "@/types/database.types";
 import type { ReviewState, SchedulerUpdate, StoredSchedulerCard } from "@/lib/review/types";
 
 export const DEFAULT_DESIRED_RETENTION = 0.9;
-const MIN_DESIRED_RETENTION = 0.7;
-const MAX_DESIRED_RETENTION = 0.99;
+export const MIN_DESIRED_RETENTION = 0.7;
+export const MAX_DESIRED_RETENTION = 0.99;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const schedulerCache = new Map<number, ReturnType<typeof fsrs>>();
 
 const ratingMap: Record<ReviewRating, 1 | 2 | 3 | 4> = {
@@ -85,6 +86,43 @@ function fromCard(card: Card): StoredSchedulerCard {
 
 export function buildInitialSchedulerPayload(now = new Date()) {
   return fromCard(createEmptyCard(now));
+}
+
+export function retuneScheduledReviewCard(
+  payload: StoredSchedulerCard | null | undefined,
+  desiredRetention = DEFAULT_DESIRED_RETENTION,
+  now = new Date(),
+) {
+  if (!payload) {
+    return null;
+  }
+
+  const card = toCard(payload);
+  if (
+    card.state !== State.Review ||
+    !card.last_review ||
+    !Number.isFinite(card.stability) ||
+    card.stability <= 0 ||
+    !Number.isFinite(card.scheduled_days) ||
+    card.scheduled_days < 1
+  ) {
+    return null;
+  }
+
+  const scheduler = getScheduler(desiredRetention);
+  const elapsedDays = Number.isFinite(card.elapsed_days)
+    ? Math.max(0, card.elapsed_days)
+    : Math.max(0, card.scheduled_days);
+  const scheduledDays = scheduler.next_interval(card.stability, elapsedDays);
+  card.scheduled_days = scheduledDays;
+  card.due = new Date(card.last_review.getTime() + scheduledDays * DAY_IN_MS);
+
+  return {
+    dueAt: card.due.toISOString(),
+    nextPayload: fromCard(card),
+    retrievability: scheduler.get_retrievability(card, now, false),
+    scheduledDays,
+  };
 }
 
 export function getCurrentRetrievability(
