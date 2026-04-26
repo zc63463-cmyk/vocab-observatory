@@ -1,9 +1,11 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
 import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
@@ -13,7 +15,16 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
 type WordFilters = PublicWordsResponse["filters"];
+type WordPagination = Pick<PublicWordsResponse["pageInfo"], "limit" | "offset">;
 type AuthState = "checking" | "guest" | "owner";
+
+interface LoadMoreState {
+  error: string | null;
+  isLoading: boolean;
+  key: string | null;
+  pageInfo: PublicWordsResponse["pageInfo"] | null;
+  words: PublicWordsResponse["words"];
+}
 
 function normalizeWordFilters(filters?: Partial<WordFilters>): WordFilters {
   const review = filters?.review;
@@ -38,7 +49,10 @@ function areWordFiltersEqual(left: WordFilters, right: WordFilters) {
   );
 }
 
-function buildWordsHref(pathname: string, filters: WordFilters) {
+function createWordsSearchParams(
+  filters: WordFilters,
+  pagination?: Partial<WordPagination>,
+) {
   const params = new URLSearchParams();
 
   if (filters.q) {
@@ -57,20 +71,74 @@ function buildWordsHref(pathname: string, filters: WordFilters) {
     params.set("review", filters.review);
   }
 
-  const query = params.toString();
+  if (typeof pagination?.offset === "number" && pagination.offset > 0) {
+    params.set("offset", String(pagination.offset));
+  }
+
+  if (typeof pagination?.limit === "number" && pagination.limit > 0) {
+    params.set("limit", String(pagination.limit));
+  }
+
+  return params;
+}
+
+function buildWordsHref(pathname: string, filters: WordFilters) {
+  const query = createWordsSearchParams(filters).toString();
   return query ? `${pathname}?${query}` : pathname;
 }
 
-function buildWordsApiHref(filters: WordFilters) {
-  return buildWordsHref("/api/words", filters);
+function buildWordsApiHref(
+  filters: WordFilters,
+  pagination?: Partial<WordPagination>,
+) {
+  const query = createWordsSearchParams(filters, pagination).toString();
+  return query ? `/api/words?${query}` : "/api/words";
 }
 
 function readWordsResponse(response: Response) {
   return response.json() as Promise<PublicWordsResponse & { error?: string }>;
 }
 
+function mergeWordPages(
+  base: PublicWordsResponse,
+  extraWords: PublicWordsResponse["words"],
+  pageInfo: PublicWordsResponse["pageInfo"],
+): PublicWordsResponse {
+  const seen = new Set(base.words.map((word) => word.id));
+  const mergedWords = base.words.concat(
+    extraWords.filter((word) => !seen.has(word.id)),
+  );
+
+  return {
+    ...base,
+    counts: {
+      showing: Math.min(mergedWords.length, base.counts.total),
+      total: base.counts.total,
+    },
+    pageInfo: {
+      ...pageInfo,
+      offset: 0,
+    },
+    truncated: pageInfo.hasMore,
+    words: mergedWords,
+  };
+}
+
 export function WordsSearchShell({ initialResult }: { initialResult: PublicWordsResponse }) {
   const [, setAuthState] = useState<AuthState>("checking");
+  const initialPageLimit = initialResult.pageInfo.limit;
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
+  const [loadMoreState, setLoadMoreState] = useState<LoadMoreState>({
+    error: null,
+    isLoading: false,
+    key: null,
+    pageInfo: null,
+    words: [],
+  });
+  const buildInitialApiHref = useCallback(
+    (filters: WordFilters) => buildWordsApiHref(filters, { limit: initialPageLimit }),
+    [initialPageLimit],
+  );
 
   const {
     activeFilters,
@@ -80,10 +148,10 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     setFilter,
   } = useFilteredSearch<WordFilters, PublicWordsResponse>({
     areFiltersEqual: areWordFiltersEqual,
-    buildApiHref: buildWordsApiHref,
+    buildApiHref: buildInitialApiHref,
     buildHref: buildWordsHref,
     credentials: "same-origin",
-    getFiltersFromResult: (r) => r.filters,
+    getFiltersFromResult: (payload) => payload.filters,
     getFiltersFromSearchParams: (params) => ({
       freq: params.get("freq") ?? undefined,
       q: params.get("q") ?? undefined,
@@ -94,6 +162,27 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     normalizeFilters: normalizeWordFilters,
     readResponse: readWordsResponse,
   });
+
+  const resultKey = useMemo(() => {
+    return JSON.stringify({
+      filters: result.filters,
+      isOwner: result.isOwner,
+      limit: result.pageInfo.limit,
+      total: result.counts.total,
+      words: result.words.map((word) => word.id),
+    });
+  }, [result]);
+
+  useEffect(() => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
+  }, [resultKey]);
+
+  useEffect(() => {
+    return () => {
+      loadMoreControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -123,7 +212,20 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     };
   }, []);
 
-  // Stable callbacks to avoid re-creating on every render
+  const displayResult = useMemo(() => {
+    if (
+      loadMoreState.key !== resultKey ||
+      !loadMoreState.pageInfo ||
+      loadMoreState.words.length === 0
+    ) {
+      return result;
+    }
+
+    return mergeWordPages(result, loadMoreState.words, loadMoreState.pageInfo);
+  }, [loadMoreState, result, resultKey]);
+  const isLoadingMore = loadMoreState.key === resultKey && loadMoreState.isLoading;
+  const loadMoreError = loadMoreState.key === resultKey ? loadMoreState.error : null;
+
   const onQueryChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value),
     [setFilter],
@@ -145,15 +247,103 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     },
     [setFilter],
   );
+  const onLoadMore = useCallback(() => {
+    if (
+      isUpdating ||
+      isLoadingMore ||
+      !displayResult.configured ||
+      !displayResult.pageInfo.hasMore
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const nextOffset = displayResult.words.length;
+    const activeResultKey = resultKey;
+
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = controller;
+    setLoadMoreState((current) => ({
+      error: null,
+      isLoading: true,
+      key: activeResultKey,
+      pageInfo: current.key === activeResultKey ? current.pageInfo : null,
+      words: current.key === activeResultKey ? current.words : [],
+    }));
+
+    void fetch(
+      buildWordsApiHref(displayResult.filters, {
+        limit: displayResult.pageInfo.limit,
+        offset: nextOffset,
+      }),
+      {
+        credentials: "same-origin",
+        signal: controller.signal,
+      },
+    )
+      .then(async (response) => {
+        const payload = await readWordsResponse(response);
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to load more words.");
+        }
+
+        return payload;
+      })
+      .then((payload) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setLoadMoreState((current) => {
+          const existingWords =
+            current.key === activeResultKey ? current.words : [];
+          const seen = new Set(existingWords.map((word) => word.id));
+          const mergedWords = existingWords.concat(
+            payload.words.filter((word) => !seen.has(word.id)),
+          );
+
+          return {
+            error: null,
+            isLoading: false,
+            key: activeResultKey,
+            pageInfo: payload.pageInfo,
+            words: mergedWords,
+          };
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setLoadMoreState((current) => ({
+          error:
+            error instanceof Error ? error.message : "Failed to load more words.",
+          isLoading: false,
+          key: activeResultKey,
+          pageInfo: current.key === activeResultKey ? current.pageInfo : null,
+          words: current.key === activeResultKey ? current.words : [],
+        }));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          loadMoreControllerRef.current = null;
+        }
+      });
+  }, [displayResult, isLoadingMore, isUpdating, resultKey]);
+
+  const combinedFetchError = fetchError ?? loadMoreError;
+  const isBusy = isUpdating || isLoadingMore;
   const shouldShowInitialLoading =
-    result.configured &&
-    !result.isOwner &&
-    result.words.length === 0 &&
-    result.counts.total === 0 &&
-    result.filterOptions.frequencies.length === 0 &&
-    result.filterOptions.semanticFields.length === 0 &&
+    displayResult.configured &&
+    !displayResult.isOwner &&
+    displayResult.words.length === 0 &&
+    displayResult.counts.total === 0 &&
+    displayResult.filterOptions.frequencies.length === 0 &&
+    displayResult.filterOptions.semanticFields.length === 0 &&
     isUpdating &&
-    !fetchError;
+    !combinedFetchError;
 
   return (
     <div className="space-y-8">
@@ -163,7 +353,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
         </p>
         <h1 className="section-title mt-3 text-5xl font-semibold">词条库</h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-ink-soft)]">
-          搜索公开词条。内容来自 Obsidian 主库；复习与个人笔记只在 owner 登录后显示。
+          搜索公开词条。内容来自 Obsidian 主库；复习与个人笔记仅在 owner 登录后显示。
         </p>
 
         <div className="mt-6 space-y-3">
@@ -183,7 +373,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               onChange={onSemanticChange}
             >
               <option value="">全部语义场</option>
-              {result.filterOptions.semanticFields.map((value) => (
+              {displayResult.filterOptions.semanticFields.map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
@@ -195,14 +385,14 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               onChange={onFreqChange}
             >
               <option value="">全部词频</option>
-              {result.filterOptions.frequencies.map((value) => (
+              {displayResult.filterOptions.frequencies.map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
               ))}
             </Select>
 
-            {result.isOwner ? (
+            {displayResult.isOwner ? (
               <Select
                 value={activeFilters.review}
                 onChange={onReviewChange}
@@ -214,28 +404,28 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               </Select>
             ) : (
               <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
-                Owner 登录后可按复习状态筛选
+                Owner 登录后可按复习状态筛选。
               </div>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--color-ink-soft)]">
             <span>
-              共 {result.counts.total} 条，当前显示 {result.counts.showing} 条
+              共 {displayResult.counts.total} 条，当前显示 {displayResult.counts.showing} 条
             </span>
-            {isUpdating ? <Badge tone="warm">更新中</Badge> : null}
-            {result.truncated ? <Badge tone="warm">已截断显示</Badge> : null}
+            {isBusy ? <Badge tone="warm">更新中</Badge> : null}
+            {displayResult.pageInfo.hasMore ? <Badge tone="warm">还有更多</Badge> : null}
             <Link href="/words" className="font-semibold text-[var(--color-accent)]">
               清除筛选
             </Link>
-            {fetchError ? (
-              <span className="text-[var(--color-accent-2)]">{fetchError}</span>
+            {combinedFetchError ? (
+              <span className="text-[var(--color-accent-2)]">{combinedFetchError}</span>
             ) : null}
           </div>
         </div>
       </section>
 
-      {!result.configured ? (
+      {!displayResult.configured ? (
         <EmptyState
           title="Supabase 尚未配置"
           description="请先配置公开环境变量并运行导入接口，随后这里会显示公开词条列表。"
@@ -259,19 +449,39 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             </div>
           ))}
         </div>
-      ) : result.words.length === 0 ? (
+      ) : displayResult.words.length === 0 ? (
         <EmptyState
           title="没有匹配词条"
           description="试试更短的关键词，或先运行导入同步，把 Obsidian 内容写入数据库。"
         />
       ) : (
-        <div
-          aria-busy={isUpdating}
-          className="grid gap-5 md:grid-cols-2 xl:grid-cols-3"
-        >
-          {result.words.map((word) => (
-            <WordCard key={word.id} word={word} />
-          ))}
+        <div className="space-y-6">
+          <div
+            aria-busy={isBusy}
+            className="grid gap-5 md:grid-cols-2 xl:grid-cols-3"
+          >
+            {displayResult.words.map((word) => (
+              <WordCard key={word.id} word={word} />
+            ))}
+          </div>
+
+          {displayResult.pageInfo.hasMore ? (
+            <div className="flex flex-col items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                onClick={onLoadMore}
+                disabled={isBusy}
+                iconRight={<ChevronDown />}
+              >
+                {isLoadingMore ? "加载中..." : "加载更多"}
+              </Button>
+              <p className="text-sm text-[var(--color-ink-soft)]">
+                已显示 {displayResult.counts.showing} / {displayResult.counts.total}
+              </p>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

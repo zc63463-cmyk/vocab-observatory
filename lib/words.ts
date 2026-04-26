@@ -25,7 +25,8 @@ const WORD_DETAIL_LEGACY_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path";
 const WORD_DETAIL_STRUCTURED_SELECT =
   `${WORD_DETAIL_LEGACY_SELECT}, core_definitions, prototype_text, collocations, corpus_items, synonym_items, antonym_items`;
-const DISPLAY_LIMIT = 120;
+const DEFAULT_PUBLIC_WORD_PAGE_LIMIT = 60;
+const MAX_PUBLIC_WORD_PAGE_LIMIT = 120;
 const FEATURED_WORD_LIMIT = 6;
 const PUBLIC_REVALIDATE_SECONDS = 300;
 
@@ -95,11 +96,28 @@ export interface WordQueryFilters {
   semantic?: string;
 }
 
+export interface WordPagination {
+  limit?: number | null;
+  offset?: number | null;
+}
+
 export interface NormalizedWordQueryFilters {
   freq: string;
   q: string;
   review: ReviewFilter;
   semantic: string;
+}
+
+export interface NormalizedWordPagination {
+  limit: number;
+  offset: number;
+}
+
+export interface PublicWordsPageInfo {
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface PublicWordsResponse {
@@ -114,6 +132,7 @@ export interface PublicWordsResponse {
   };
   filters: NormalizedWordQueryFilters;
   isOwner: boolean;
+  pageInfo: PublicWordsPageInfo;
   truncated: boolean;
   words: PublicWordSummary[];
 }
@@ -139,6 +158,7 @@ interface CachedPublicWordIndexRecord extends PublicWordIndexEntry {
 interface GetPublicWordsOptions {
   ownerSupabase?: ServerSupabaseClient | null;
   ownerUserId?: string | null;
+  pagination?: WordPagination;
 }
 
 type BarePublicWordSummary = PublicWordIndexEntry;
@@ -184,15 +204,62 @@ export function normalizeWordFilters(
   };
 }
 
+export function normalizeWordPagination(
+  pagination?: WordPagination,
+): NormalizedWordPagination {
+  const rawLimit = pagination?.limit;
+  const rawOffset = pagination?.offset;
+  const limit =
+    typeof rawLimit === "number" && Number.isFinite(rawLimit)
+      ? Math.min(
+          MAX_PUBLIC_WORD_PAGE_LIMIT,
+          Math.max(1, Math.floor(rawLimit)),
+        )
+      : DEFAULT_PUBLIC_WORD_PAGE_LIMIT;
+  const offset =
+    typeof rawOffset === "number" && Number.isFinite(rawOffset)
+      ? Math.max(0, Math.floor(rawOffset))
+      : 0;
+
+  return { limit, offset };
+}
+
+export function createPublicWordsPageState(
+  total: number,
+  pagination: NormalizedWordPagination,
+  returned: number,
+) {
+  const safeTotal = Math.max(0, total);
+  const safeReturned = Math.max(
+    0,
+    Math.min(returned, pagination.limit, Math.max(safeTotal - pagination.offset, 0)),
+  );
+  const hasMore = pagination.offset + safeReturned < safeTotal;
+
+  return {
+    counts: {
+      showing: safeReturned,
+      total: safeTotal,
+    },
+    pageInfo: {
+      hasMore,
+      limit: pagination.limit,
+      offset: pagination.offset,
+      total: safeTotal,
+    },
+    truncated: hasMore,
+  } satisfies Pick<PublicWordsResponse, "counts" | "pageInfo" | "truncated">;
+}
+
 export function createPublicWordsShellResponse(
   filters?: WordQueryFilters,
+  pagination?: WordPagination,
 ): PublicWordsResponse {
+  const normalizedPagination = normalizeWordPagination(pagination);
+
   return {
     configured: hasSupabasePublicEnv(),
-    counts: {
-      showing: 0,
-      total: 0,
-    },
+    ...createPublicWordsPageState(0, normalizedPagination, 0),
     filterOptions: {
       frequencies: [],
       semanticFields: [],
@@ -583,7 +650,7 @@ const getCachedPublicWordRows = unstable_cache(
 );
 
 const getCachedDefaultPublicWordRows = unstable_cache(
-  async (): Promise<CachedPublicWordIndexRecord[] | null> => {
+  async (offset: number, limit: number): Promise<CachedPublicWordIndexRecord[] | null> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
       return null;
@@ -596,7 +663,7 @@ const getCachedDefaultPublicWordRows = unstable_cache(
         .eq("is_published", true)
         .eq("is_deleted", false)
         .order("lemma")
-        .limit(DISPLAY_LIMIT);
+        .range(offset, offset + limit - 1);
 
       if (error) {
         throw error;
@@ -893,13 +960,14 @@ export async function getPublicWords(
   options?: GetPublicWordsOptions,
 ): Promise<PublicWordsResponse> {
   const isOwner = Boolean(options?.ownerUserId && options.ownerSupabase);
+  const pagination = normalizeWordPagination(options?.pagination);
   const normalizedFilters = normalizeWordFilters(filters, {
     allowReviewFilter: isOwner,
   });
 
   if (!hasSupabasePublicEnv()) {
     return {
-      ...createPublicWordsShellResponse(normalizedFilters),
+      ...createPublicWordsShellResponse(normalizedFilters, pagination),
       configured: false,
       isOwner,
     };
@@ -909,22 +977,19 @@ export async function getPublicWords(
 
   if (!isOwner && isDefaultPublicWordFilters(normalizedFilters)) {
     const [defaultRows, filterOptions, total] = await Promise.all([
-      getCachedDefaultPublicWordRows(),
+      getCachedDefaultPublicWordRows(pagination.offset, pagination.limit),
       publicFilterOptionsPromise,
       getCachedPublicWordsCountValue(),
     ]);
     const visibleWords = (defaultRows ?? []).map((word) => toPublicWordSummary(word, null));
+    const pageState = createPublicWordsPageState(total, pagination, visibleWords.length);
 
     return {
       configured: true,
-      counts: {
-        showing: visibleWords.length,
-        total,
-      },
+      ...pageState,
       filterOptions,
       filters: normalizedFilters,
       isOwner: false,
-      truncated: total > visibleWords.length,
       words: visibleWords,
     };
   }
@@ -959,20 +1024,19 @@ export async function getPublicWords(
     return true;
   });
 
-  const visibleWords = filtered.slice(0, DISPLAY_LIMIT).map((word) =>
-    toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
-  );
+  const visibleWords = filtered
+    .slice(pagination.offset, pagination.offset + pagination.limit)
+    .map((word) =>
+      toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
+    );
+  const pageState = createPublicWordsPageState(filtered.length, pagination, visibleWords.length);
 
   return {
     configured: true,
-    counts: {
-      showing: visibleWords.length,
-      total: filtered.length,
-    },
+    ...pageState,
     filterOptions,
     filters: normalizedFilters,
     isOwner,
-    truncated: filtered.length > visibleWords.length,
     words: visibleWords,
   };
 }
