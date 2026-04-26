@@ -10,6 +10,7 @@ import { WordCollocations } from "@/components/words/WordCollocations";
 import { WordCorpus } from "@/components/words/WordCorpus";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordHeader } from "@/components/words/WordHeader";
+import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
@@ -149,12 +150,7 @@ async function WordDetailContent({
           />
 
           {result.word.prototype_text ? (
-            <section className="panel rounded-[1.75rem] p-6">
-              <h2 className="section-title text-2xl font-semibold">原型义</h2>
-              <p className="mt-4 text-base leading-8 text-[var(--color-ink-soft)]">
-                {result.word.prototype_text}
-              </p>
-            </section>
+            <PrototypeReveal text={result.word.prototype_text} />
           ) : null}
 
           <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />

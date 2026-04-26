@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
+import { LemmaReveal } from "@/components/motion/LemmaReveal";
 import { Badge } from "@/components/ui/Badge";
 import { createCollectionNotePath, createCollectionNoteSlug } from "@/lib/collection-notes";
 import type { PublicWordDetail } from "@/lib/words";
@@ -27,7 +28,9 @@ export function WordHeader({ word }: { word: PublicWordDetail }) {
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--color-ink-soft)]">
             {word.pos ?? "Word"}
           </p>
-          <h1 className="section-title mt-3 text-5xl font-semibold">{word.lemma}</h1>
+          <h1 className="mt-3">
+            <LemmaReveal lemma={word.lemma} />
+          </h1>
           {word.ipa ? (
             <p className="mt-3 text-lg tracking-wide text-[var(--color-ink-soft)]">{word.ipa}</p>
           ) : null}
