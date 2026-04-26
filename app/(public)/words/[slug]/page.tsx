@@ -13,7 +13,7 @@ import { WordHeader } from "@/components/words/WordHeader";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
-import { getAllPublicWordIndexEntries, getPublicWordBySlug } from "@/lib/words";
+import { getPublicWordBySlug, getStaticPublicWordSlugs } from "@/lib/words";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
@@ -50,10 +50,10 @@ export async function generateMetadata({
 }
 
 export async function generateStaticParams() {
-  const words = await getAllPublicWordIndexEntries();
+  const slugs = await getStaticPublicWordSlugs(STATIC_WORD_PARAM_LIMIT);
 
-  return words.slice(0, STATIC_WORD_PARAM_LIMIT).map((word) => ({
-    slug: word.slug,
+  return slugs.map((slug) => ({
+    slug,
   }));
 }
 

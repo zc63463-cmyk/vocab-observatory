@@ -77,6 +77,7 @@ export function ReviewQueue() {
       current
         ? {
             completed: current.completed + (incrementCompleted ? 1 : 0),
+            deferredNewCards: current.deferredNewCards,
             dueToday: Math.max(current.dueToday - 1, 0),
             newCards: Math.max(current.newCards - (item.is_new ? 1 : 0), 0),
             remaining: Math.max(current.remaining - 1, 0),
@@ -302,6 +303,12 @@ export function ReviewQueue() {
       </div>
 
       <ReviewProgressBar completed={completedCount} remaining={remainingCount} />
+
+      {stats?.deferredNewCards ? (
+        <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+          This batch is holding back {stats.deferredNewCards} new cards until the active review load clears.
+        </div>
+      ) : null}
 
       {session ? (
         <div className="panel rounded-[1.75rem] p-5 text-sm text-[var(--color-ink-soft)]">

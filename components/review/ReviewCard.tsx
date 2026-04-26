@@ -16,6 +16,7 @@ export function ReviewCard({ item }: { item: ReviewQueueItem }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           {semanticField ? <Badge>{semanticField}</Badge> : null}
+          <Badge>{item.queue_label}</Badge>
           <Badge tone="warm">Due {formatDateTime(item.due_at)}</Badge>
         </div>
         <Link
@@ -28,6 +29,7 @@ export function ReviewCard({ item }: { item: ReviewQueueItem }) {
 
       <h1 className="section-title mt-6 text-5xl font-semibold">{item.lemma}</h1>
       {item.ipa ? <p className="mt-3 text-lg text-[var(--color-ink-soft)]">{item.ipa}</p> : null}
+      <p className="mt-4 text-sm text-[var(--color-ink-soft)]">{item.queue_reason}</p>
 
       <div className="mt-8 rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-glass-hover)] p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">

@@ -1,6 +1,11 @@
 import type { Json, ReviewRating } from "@/types/database.types";
 
 export type ReviewState = "new" | "learning" | "review" | "relearning";
+export type ReviewQueuePriorityBucket =
+  | "learning"
+  | "at-risk"
+  | "overdue"
+  | "new";
 
 export interface StoredSchedulerCard {
   difficulty: number;
@@ -24,7 +29,11 @@ export interface ReviewQueueItem {
   lemma: string;
   metadata: Json;
   progress_id: string;
+  queue_bucket: ReviewQueuePriorityBucket;
+  queue_label: string;
+  queue_reason: string;
   review_count: number;
+  retrievability: number | null;
   short_definition: string | null;
   slug: string;
   state: string;
@@ -40,6 +49,7 @@ export interface ReviewSessionSummary {
 
 export interface ReviewQueueStats {
   completed: number;
+  deferredNewCards: number;
   dueToday: number;
   newCards: number;
   remaining: number;

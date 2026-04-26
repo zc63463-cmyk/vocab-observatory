@@ -1,6 +1,9 @@
 import { State } from "ts-fsrs";
 import { describe, expect, it } from "vitest";
-import { prioritizeReviewQueueItems } from "@/lib/review/queue";
+import {
+  buildReviewQueueBatch,
+  prioritizeReviewQueueItems,
+} from "@/lib/review/queue";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 
 function buildReviewCard(
@@ -84,5 +87,45 @@ describe("review queue prioritization", () => {
       "stable-review",
       "new-card",
     ]);
+  });
+
+  it("throttles new cards per batch and explains why a card was prioritized", () => {
+    const now = new Date("2026-05-01T10:00:00.000Z");
+    const batch = buildReviewQueueBatch(
+      [
+        {
+          desired_retention: 0.9,
+          due_at: "2026-05-01T09:30:00.000Z",
+          id: "learning-card",
+          review_count: 1,
+          scheduler_payload: buildReviewCard({
+            due: "2026-05-01T09:30:00.000Z",
+            learning_steps: 1,
+            scheduled_days: 0,
+            stability: 3,
+            state: State.Learning,
+          }),
+          state: "learning",
+        },
+        ...Array.from({ length: 10 }, (_, index) => ({
+          desired_retention: 0.9,
+          due_at: `2026-05-01T09:${String(index).padStart(2, "0")}:00.000Z`,
+          id: `new-card-${index}`,
+          review_count: 0,
+          scheduler_payload: null,
+          state: "new",
+        })),
+      ],
+      now,
+      20,
+    );
+
+    expect(batch.items).toHaveLength(9);
+    expect(batch.deferredNewCards).toBe(2);
+    expect(batch.items[0]?.priority.label).toBe("Learning");
+    expect(batch.items[0]?.priority.reason).toContain("Short-step card");
+    expect(
+      batch.items.filter((entry) => entry.item.state === "new"),
+    ).toHaveLength(8);
   });
 });

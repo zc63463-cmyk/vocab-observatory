@@ -19,11 +19,13 @@ import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 
 const WORD_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
+const WORD_SLUG_SELECT = "slug";
 const WORD_DETAIL_LEGACY_SELECT =
   "id, slug, title, lemma, ipa, short_definition, metadata, updated_at, definition_md, body_md, examples, pos, source_path";
 const WORD_DETAIL_STRUCTURED_SELECT =
   `${WORD_DETAIL_LEGACY_SELECT}, core_definitions, prototype_text, collocations, corpus_items, synonym_items, antonym_items`;
 const DISPLAY_LIMIT = 120;
+const FEATURED_WORD_LIMIT = 6;
 const PUBLIC_REVALIDATE_SECONDS = 300;
 
 type ServerSupabaseClient = SupabaseClient<Database>;
@@ -520,6 +522,102 @@ const getCachedPublicWordRows = unstable_cache(
   },
 );
 
+const getCachedPublicWordSlugs = unstable_cache(
+  async (): Promise<string[] | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("words")
+        .select(WORD_SLUG_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .order("lemma");
+
+      if (error) {
+        throw error;
+      }
+
+      return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+    } catch (err) {
+      console.error("[words] Failed to fetch public word slugs:", err);
+      return null;
+    }
+  },
+  ["public-word-slugs"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
+const getCachedFeaturedWordRows = unstable_cache(
+  async (): Promise<CachedPublicWordIndexRecord[] | null> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("words")
+        .select(WORD_SELECT)
+        .eq("is_published", true)
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(FEATURED_WORD_LIMIT);
+
+      if (error) {
+        throw error;
+      }
+
+      return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+    } catch (err) {
+      console.error("[words] Failed to fetch featured public words:", err);
+      return null;
+    }
+  },
+  ["public-featured-word-rows"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.landing, PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
+const getCachedPublicWordsCountValue = unstable_cache(
+  async (): Promise<number> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      return 0;
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from("words")
+        .select("*", { count: "exact", head: true })
+        .eq("is_published", true)
+        .eq("is_deleted", false);
+
+      if (error) {
+        throw error;
+      }
+
+      return count ?? 0;
+    } catch (err) {
+      console.error("[words] Failed to fetch public word count:", err);
+      return 0;
+    }
+  },
+  ["public-word-count"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.landing, PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
 const getCachedPublicWordDetailRecord = unstable_cache(
   async (slug: string) => {
     const supabase = getPublicSupabaseClientOrNull();
@@ -639,17 +737,18 @@ export const getLandingSnapshot = unstable_cache(
       };
     }
 
-    const rows = await getCachedPublicWordRows();
-    const featuredWords = [...(rows ?? [])]
-      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-      .slice(0, 6)
+    const [featuredRows, totalWords] = await Promise.all([
+      getCachedFeaturedWordRows(),
+      getCachedPublicWordsCountValue(),
+    ]);
+    const featuredWords = [...(featuredRows ?? [])]
       .map((word) => toPublicWordSummary(word, null));
 
     return {
       configured: true,
       featuredWords,
       repoName,
-      totalWords: rows?.length ?? 0,
+      totalWords,
     };
   },
   ["public-landing-snapshot"],
@@ -766,8 +865,16 @@ export async function getPublicWordsCount() {
     return 0;
   }
 
-  const rows = await getCachedPublicWordRows();
-  return rows?.length ?? 0;
+  return getCachedPublicWordsCountValue();
+}
+
+export async function getStaticPublicWordSlugs(limit?: number) {
+  if (!hasSupabasePublicEnv()) {
+    return [];
+  }
+
+  const slugs = (await getCachedPublicWordSlugs()) ?? [];
+  return typeof limit === "number" ? slugs.slice(0, limit) : slugs;
 }
 
 export async function getAllPublicWordIndexEntries(): Promise<PublicWordIndexEntry[]> {

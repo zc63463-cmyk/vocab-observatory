@@ -16,15 +16,13 @@ import {
 import { hasSupabasePublicEnv } from "@/lib/env";
 import { renderObsidianMarkdown } from "@/lib/markdown";
 import { getPublicSupabaseClientOrNull } from "@/lib/supabase/public";
-import {
-  getAllPublicWordIndexEntries,
-  getWordMetadataString,
-  type PublicWordIndexEntry,
-} from "@/lib/words";
+import type { PublicWordIndexEntry } from "@/lib/words";
 import type { Database, Json } from "@/types/database.types";
 
 const COLLECTION_NOTE_SELECT =
   "id, slug, kind, title, summary, metadata, tags, related_word_slugs, updated_at";
+const RELATED_WORD_SELECT =
+  "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const KIND_ORDER: CollectionNoteKind[] = ["root_affix", "semantic_field"];
 
@@ -238,10 +236,30 @@ export function getCollectionNoteCanonicalPath(
 }
 
 async function getRelatedWords(note: PublicCollectionNoteSummary) {
-  const allWords = await getAllPublicWordIndexEntries();
+  const supabase = getPublicSupabaseClientOrNull();
+  if (!supabase) {
+    return [];
+  }
 
   if (note.kind === "root_affix") {
-    const wordBySlug = new Map(allWords.map((word) => [word.slug, word]));
+    if (note.related_word_slugs.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("words")
+      .select(RELATED_WORD_SELECT)
+      .eq("is_published", true)
+      .eq("is_deleted", false)
+      .in("slug", note.related_word_slugs);
+
+    if (error) {
+      throw error;
+    }
+
+    const wordBySlug = new Map(
+      ((data ?? []) as PublicWordIndexEntry[]).map((word) => [word.slug, word]),
+    );
 
     return note.related_word_slugs
       .map((slug) => wordBySlug.get(slug))
@@ -249,10 +267,19 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
       .map(toRelatedWord);
   }
 
-  return allWords
-    .filter((word) => getWordMetadataString(word.metadata, "semantic_field") === note.title)
-    .sort((left, right) => left.lemma.localeCompare(right.lemma, "zh-CN"))
-    .map(toRelatedWord);
+  const { data, error } = await supabase
+    .from("words")
+    .select(RELATED_WORD_SELECT)
+    .eq("is_published", true)
+    .eq("is_deleted", false)
+    .contains("metadata", { semantic_field: note.title })
+    .order("lemma");
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as PublicWordIndexEntry[]).map(toRelatedWord);
 }
 
 export const getCachedCollectionSummaries = unstable_cache(
