@@ -135,6 +135,22 @@ export interface RetentionPresetForecast extends RetentionLoadForecast {
   label: string;
 }
 
+export interface DailyForecastDay {
+  date: string;
+  weekday: string;
+  dateLabel: string;
+  dueCount: number;
+  isToday: boolean;
+  isPast: boolean;
+  actualReviewCount: number | null;
+}
+
+const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
+
+function formatWeekday(date: Date): string {
+  return WEEKDAY_LABELS[date.getDay()];
+}
+
 export function buildRetentionGapSeries(
   days: number,
   reviewLogs: DashboardReviewLogRow[],
@@ -251,6 +267,59 @@ export function buildRetentionForecasts(
   })) satisfies RetentionPresetForecast[];
 }
 
+export function buildDailyForecastCalendar(
+  progressRows: DashboardProgressRow[],
+  desiredRetention: number,
+  days = 14,
+  reviewLogs?: Array<{ reviewed_at: string }>,
+  now = new Date(),
+): DailyForecastDay[] {
+  const normalizedRetention = normalizeDesiredRetention(desiredRetention);
+  const anchor = new Date(now);
+  anchor.setHours(0, 0, 0, 0);
+  const todayIso = formatDayKey(anchor);
+
+  const buckets: Array<{ date: string; dueCount: number; actualReviewCount: number | null }> =
+    [];
+  for (let i = 0; i < days; i += 1) {
+    const d = addDays(anchor, i);
+    buckets.push({ date: formatDayKey(d), dueCount: 0, actualReviewCount: null });
+  }
+
+  for (const row of progressRows) {
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, now);
+    if (!dueAt) continue;
+    const bucket = buckets.find((b) => b.date === dueAt.slice(0, 10));
+    if (bucket) bucket.dueCount += 1;
+  }
+
+  if (reviewLogs && reviewLogs.length > 0) {
+    const countsByDay = new Map<string, number>();
+    for (const log of reviewLogs) {
+      const key = log.reviewed_at.slice(0, 10);
+      countsByDay.set(key, (countsByDay.get(key) ?? 0) + 1);
+    }
+    for (const bucket of buckets) {
+      if (bucket.date < todayIso && countsByDay.has(bucket.date)) {
+        bucket.actualReviewCount = countsByDay.get(bucket.date)!;
+      }
+    }
+  }
+
+  return buckets.map((bucket, index) => {
+    const d = addDays(anchor, index);
+    return {
+      date: bucket.date,
+      weekday: formatWeekday(d),
+      dateLabel: `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`,
+      dueCount: bucket.dueCount,
+      isToday: bucket.date === todayIso,
+      isPast: bucket.date < todayIso,
+      actualReviewCount: bucket.actualReviewCount,
+    } satisfies DailyForecastDay;
+  });
+}
+
 export async function getDashboardSummary() {
   const emptyForecast = buildRetentionForecast([], DEFAULT_DESIRED_RETENTION);
   const emptyPresetForecasts = buildRetentionForecasts([]);
@@ -308,6 +377,7 @@ export async function getDashboardSummary() {
         name: string;
         total: number;
       }>,
+      dailyForecast: [] as DailyForecastDay[],
     };
   }
 
@@ -511,5 +581,12 @@ export async function getDashboardSummary() {
     reviewVolume30d: buildVolumeSeries(30, reviewLogs30d, nowDate),
     reviewVolume7d: buildVolumeSeries(7, reviewLogs7d, nowDate),
     weakestSemanticFields,
+    dailyForecast: buildDailyForecastCalendar(
+      progressRows,
+      configuredDesiredRetention,
+      14,
+      reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
+      nowDate,
+    ),
   };
 }

@@ -5,6 +5,7 @@ import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
+import type { DailyForecastDay } from "@/lib/dashboard";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { getNearestReviewRetentionPreset } from "@/lib/review/settings";
 import { excerpt, formatDateTime } from "@/lib/utils";
@@ -15,6 +16,54 @@ function formatPercent(value: number, digits = 0) {
 
 function formatSignedPoints(value: number, digits = 0) {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}pp`;
+}
+
+function getLoadColor(count: number): string {
+  if (count <= 5) return "#0f766e";
+  if (count <= 15) return "#3b82f6";
+  if (count <= 30) return "#f59e0b";
+  return "#ef4444";
+}
+
+function getForecastSuggestion(days: DailyForecastDay[]): { text: string; tone: "cool" | "warm" } {
+  const today = days.find((d) => d.isToday);
+  if (!today) return { text: "无法获取今日数据", tone: "warm" };
+  const futureDays = days.filter((d) => !d.isPast && !d.isToday);
+  const maxFuture = Math.max(...futureDays.map((d) => d.dueCount), 0);
+  const avgFuture =
+    futureDays.length > 0
+      ? futureDays.reduce((sum, d) => sum + d.dueCount, 0) / futureDays.length
+      : 0;
+  const tomorrow = futureDays[0];
+
+  if (today.dueCount === 0 && maxFuture > 0) {
+    return {
+      text: `今天没有到期卡片，可以提前复习。未来 ${futureDays.length} 天平均每日 ${Math.round(avgFuture)} 张，最高 ${maxFuture} 张（${futureDays.find((d) => d.dueCount === maxFuture)?.dateLabel}）。`,
+      tone: "cool",
+    };
+  }
+  if (today.dueCount > avgFuture * 1.5) {
+    return {
+      text: `今天负载较高（${today.dueCount} 张），是日均的 ${Math.round(today.dueCount / Math.max(avgFuture, 1))} 倍。建议专注完成核心复习，非紧急卡可推迟到明天（${tomorrow?.dueCount ?? 0} 张）。`,
+      tone: "warm",
+    };
+  }
+  if (tomorrow && tomorrow.dueCount > today.dueCount * 1.5) {
+    return {
+      text: `明天负载会上升（${tomorrow.dueCount} vs 今天 ${today.dueCount}）。如果时间充裕，今天可以多处理一些，减轻明日压力。`,
+      tone: "warm",
+    };
+  }
+  if (today.dueCount <= 10 && maxFuture <= 20) {
+    return {
+      text: `负载平稳，今天 ${today.dueCount} 张，未来两周峰值 ${maxFuture} 张。节奏舒适，保持即可。`,
+      tone: "cool",
+    };
+  }
+  return {
+    text: `今天 ${today.dueCount} 张待复习，未来 ${futureDays.length} 天共 ${futureDays.reduce((s, d) => s + d.dueCount, 0)} 张。`,
+    tone: "cool",
+  };
 }
 
 function SmallStat({
@@ -341,6 +390,134 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
+
+      <section className="panel rounded-[1.75rem] p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="section-title text-2xl font-semibold">复习预测日历</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+              基于当前 retention 目标配算的未来 14 天每日到期量
+            </p>
+          </div>
+          <Badge>{formatPercent(summary.configuredDesiredRetention)} 目标</Badge>
+        </div>
+
+        {summary.dailyForecast.length === 0 ? (
+          <p className="mt-5 text-sm text-[var(--color-ink-soft)]">暂无预测数据。</p>
+        ) : (
+          <>
+            <div className="mt-5 grid grid-cols-7 gap-2 sm:gap-3 xl:grid-cols-14">
+              {summary.dailyForecast.map((day) => {
+                const color = getLoadColor(day.dueCount);
+                const hasActual = day.actualReviewCount !== null;
+
+                return (
+                  <div
+                    key={day.date}
+                    className={`relative flex flex-col items-center rounded-[1.2rem] border p-3 transition-all ${
+                      day.isToday
+                        ? "border-[var(--color-accent)] bg-[var(--color-surface)] shadow-md"
+                        : "border-[var(--color-border)] bg-[var(--color-surface-soft)]"
+                    } ${day.isPast ? "opacity-60" : ""}`}
+                  >
+                    {day.isToday && (
+                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-[var(--color-accent)] px-2 text-[10px] font-bold uppercase tracking-wider text-white">
+                        今天
+                      </span>
+                    )}
+                    <p className="text-xs font-medium text-[var(--color-ink-soft)]">
+                      周{day.weekday}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{day.dateLabel}</p>
+
+                    <div className="mt-2 flex flex-col items-center gap-1">
+                      {hasActual ? (
+                        <div className="relative h-8 w-full">
+                          <div
+                            className="absolute bottom-0 w-full rounded-t-md opacity-25"
+                            style={{
+                              backgroundColor: color,
+                              height: `${Math.min(100, Math.max(8, day.dueCount * 2))}%`,
+                            }}
+                          />
+                          <div
+                            className="absolute bottom-0 w-full rounded-t-md"
+                            style={{
+                              backgroundColor: "#22c55e",
+                              height: `${Math.min(100, Math.max(4, (day.actualReviewCount ?? 0) * 2))}%`,
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-8 w-full items-end justify-center rounded-t-md"
+                          style={{ backgroundColor: `${color}20` }}
+                        >
+                          <div
+                            className="w-full rounded-t-md transition-all"
+                            style={{
+                              backgroundColor: color,
+                              height: `${Math.min(100, Math.max(6, day.dueCount * 2))}%`,
+                            }}
+                          />
+                        </div>
+                      )}
+                      <span
+                        className="text-base font-bold"
+                        style={{ color: day.dueCount > 0 ? color : "var(--color-ink-soft)" }}
+                      >
+                        {day.dueCount}
+                      </span>
+                    </div>
+
+                    {hasActual ? (
+                      <p className="mt-1 text-[10px] leading-tight text-emerald-600 dark:text-emerald-400">
+                        实际 {day.actualReviewCount}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--color-ink-soft)]">
+                  负载等级：
+                </span>
+                {[
+                  { label: "轻", color: "#0f766e" },
+                  { label: "中", color: "#3b82f6" },
+                  { label: "较高", color: "#f59e0b" },
+                  { label: "重", color: "#ef4444" },
+                ].map((level) => (
+                  <span key={level.label} className="flex items-center gap-1">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: level.color }}
+                    />
+                    <span className="text-[11px] text-[var(--color-ink-soft)]">{level.label}</span>
+                  </span>
+                ))}
+              </div>
+              {(() => {
+                const suggestion = getForecastSuggestion(summary.dailyForecast);
+                return (
+                  <p
+                    className={`max-w-xl text-sm ${
+                      suggestion.tone === "warm"
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-teal-700 dark:text-teal-300"
+                    }`}
+                  >
+                    💡 {suggestion.text}
+                  </p>
+                );
+              })()}
+            </div>
+          </>
+        )}
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="panel rounded-[1.75rem] p-6">
