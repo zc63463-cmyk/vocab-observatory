@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
+import { RevealSection } from "@/components/motion/RevealSection";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { OwnerWordSidebar } from "@/components/words/OwnerWordSidebar";
@@ -144,39 +145,56 @@ async function WordDetailContent({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-6">
           <WordHeader word={result.word} />
-          <WordDefinitions
-            definitions={result.word.core_definitions}
-            fallbackHtml={result.word.definition_html}
-          />
+
+          <RevealSection delay={0.05}>
+            <WordDefinitions
+              definitions={result.word.core_definitions}
+              fallbackHtml={result.word.definition_html}
+            />
+          </RevealSection>
 
           {result.word.prototype_text ? (
-            <PrototypeReveal text={result.word.prototype_text} />
+            <RevealSection delay={0.1}>
+              <PrototypeReveal text={result.word.prototype_text} />
+            </RevealSection>
           ) : null}
 
-          <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
-          <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
+          <RevealSection delay={0.15}>
+            <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
+          </RevealSection>
 
-          <WordSynonyms
-            resolvedSynonymItems={result.word.resolved_synonym_items}
-            fallbackHtml={result.word.synonym_html}
-          />
-          <WordAntonyms
-            resolvedAntonymItems={result.word.resolved_antonym_items}
-            fallbackHtml={result.word.antonym_html}
-          />
+          <RevealSection delay={0.2}>
+            <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
+          </RevealSection>
+
+          <RevealSection delay={0.25}>
+            <WordSynonyms
+              resolvedSynonymItems={result.word.resolved_synonym_items}
+              fallbackHtml={result.word.synonym_html}
+            />
+          </RevealSection>
+
+          <RevealSection delay={0.3}>
+            <WordAntonyms
+              resolvedAntonymItems={result.word.resolved_antonym_items}
+              fallbackHtml={result.word.antonym_html}
+            />
+          </RevealSection>
 
           {result.word.body_md.trim() ? (
-            <CollapsiblePanel
-              title="词条正文"
-              defaultOpen={false}
-              summary={bodySummary}
-              subtitle="结构化区块优先展示；展开后查看完整原文。"
-            >
-              <div
-                className="prose-obsidian"
-                dangerouslySetInnerHTML={{ __html: result.word.body_html }}
-              />
-            </CollapsiblePanel>
+            <RevealSection delay={0.35}>
+              <CollapsiblePanel
+                title="词条正文"
+                defaultOpen={false}
+                summary={bodySummary}
+                subtitle="结构化区块优先展示；展开后查看完整原文。"
+              >
+                <div
+                  className="prose-obsidian"
+                  dangerouslySetInnerHTML={{ __html: result.word.body_html }}
+                />
+              </CollapsiblePanel>
+            </RevealSection>
           ) : null}
         </div>
 

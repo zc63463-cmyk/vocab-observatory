@@ -1,6 +1,8 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { springs } from "@/components/motion";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -322,7 +324,17 @@ export function ReviewQueue() {
         </div>
       ) : null}
 
-      <ReviewCard item={items[0]} />
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={items[0].progress_id}
+          initial={{ opacity: 0, x: 60 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -60 }}
+          transition={{ type: "spring", ...springs.smooth }}
+        >
+          <ReviewCard item={items[0]} />
+        </motion.div>
+      </AnimatePresence>
       <div className="panel rounded-[1.75rem] p-6">
         <p className="text-sm text-[var(--color-ink-soft)]">
           还剩 {items.length} 个待复习词条。你可以评分、跳过到队尾，或长期暂停某张卡，之后再手动恢复。

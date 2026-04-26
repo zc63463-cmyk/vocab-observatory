@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ReviewRetentionSettings } from "@/components/review/ReviewRetentionSettings";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
-import { MetricCard } from "@/components/ui/MetricCard";
+import { AnimatedMetricCard as MetricCard } from "@/components/ui/AnimatedMetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
 import type { DailyForecastDay } from "@/lib/dashboard";
