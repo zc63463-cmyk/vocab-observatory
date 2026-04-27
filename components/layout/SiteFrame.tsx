@@ -1,3 +1,4 @@
+import { BackToTopButton } from "@/components/layout/BackToTopButton";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { PageTransitionMain } from "@/components/motion/PageTransitionMain";
 
@@ -10,6 +11,7 @@ export function SiteFrame({
     <>
       <SiteHeader />
       <PageTransitionMain>{children}</PageTransitionMain>
+      <BackToTopButton />
     </>
   );
 }
