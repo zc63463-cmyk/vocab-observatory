@@ -204,7 +204,14 @@ export async function WordDetailContent({
 
         <aside className="lg:sticky lg:top-[calc(var(--header-height,5rem)+1.5rem)] lg:self-start">
           <div className="space-y-6">
-            <OwnerWordSidebar wordId={result.word.id} />
+            <Suspense fallback={
+              <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
+                <SkeletonLine className="h-4 w-24" />
+                <SkeletonLine className="mt-4 h-10 rounded-2xl" />
+              </div>
+            }>
+              <OwnerWordSidebar wordId={result.word.id} />
+            </Suspense>
           </div>
         </aside>
       </div>
