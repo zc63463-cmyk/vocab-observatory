@@ -9,6 +9,7 @@ import type { DailyForecastDay } from "@/lib/dashboard";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { getNearestReviewRetentionPreset } from "@/lib/review/settings";
 import { excerpt, formatDateTime } from "@/lib/utils";
+import { connection } from "next/server";
 
 function formatPercent(value: number, digits = 0) {
   return `${(value * 100).toFixed(digits)}%`;
@@ -84,6 +85,7 @@ function SmallStat({
 }
 
 export default async function DashboardPage() {
+  await connection();
   const summary = await getDashboardSummary();
   const maxReviewVolume7d = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
   const maxReviewVolume30d = Math.max(...summary.reviewVolume30d.map((item) => item.count), 1);

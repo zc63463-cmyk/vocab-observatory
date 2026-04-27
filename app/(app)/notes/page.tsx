@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { formatDateTime } from "@/lib/utils";
+import { connection } from "next/server";
 
 export default async function NotesPage() {
+  await connection();
   const summary = await getDashboardSummary();
 
   return (
