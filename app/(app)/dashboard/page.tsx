@@ -1,15 +1,17 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { connection } from "next/server";
 import { ReviewRetentionSettings } from "@/components/review/ReviewRetentionSettings";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { AnimatedMetricCard as MetricCard } from "@/components/ui/AnimatedMetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
+import { SkeletonLine } from "@/components/ui/Skeleton";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
 import type { DailyForecastDay } from "@/lib/dashboard";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { getNearestReviewRetentionPreset } from "@/lib/review/settings";
 import { excerpt, formatDateTime } from "@/lib/utils";
-import { connection } from "next/server";
 
 function formatPercent(value: number, digits = 0) {
   return `${(value * 100).toFixed(digits)}%`;
@@ -84,7 +86,35 @@ function SmallStat({
   );
 }
 
-export default async function DashboardPage() {
+function DashboardFallback() {
+  return (
+    <div className="space-y-8">
+      <section className="panel-strong rounded-[2rem] p-8">
+        <SkeletonLine className="h-4 w-28" />
+        <SkeletonLine className="mt-4 h-14 w-56" />
+        <SkeletonLine className="mt-4 h-5 w-full" />
+      </section>
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <section key={index} className="panel rounded-[1.75rem] p-6">
+            <SkeletonLine className="h-4 w-20" />
+            <SkeletonLine className="mt-4 h-10 w-16" />
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardFallback />}>
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+async function DashboardContent() {
   await connection();
   const summary = await getDashboardSummary();
   const maxReviewVolume7d = Math.max(...summary.reviewVolume7d.map((item) => item.count), 1);
