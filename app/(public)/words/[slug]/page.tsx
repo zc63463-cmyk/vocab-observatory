@@ -63,7 +63,7 @@ export async function generateStaticParams() {
   }));
 }
 
-function WordDetailFallback() {
+export function WordDetailFallback() {
   return (
     <>
       <div className="mb-4 flex items-center gap-1.5">
@@ -113,7 +113,7 @@ export default function WordDetailPage({
   );
 }
 
-async function WordDetailContent({
+export async function WordDetailContent({
   params,
 }: {
   params: Promise<{ slug: string }>;
