@@ -1,13 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
 
-export function Modal({ children }: { children: React.ReactNode }) {
+export function Modal({
+  activePathPrefix,
+  children,
+}: {
+  activePathPrefix?: string;
+  children: React.ReactNode;
+}) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const router = useRouter();
 
   const onDismiss = useCallback(() => {
@@ -41,10 +48,14 @@ export function Modal({ children }: { children: React.ReactNode }) {
     };
   }, [onKeyDown]);
 
+  if (activePathPrefix && pathname && !pathname.startsWith(activePathPrefix)) {
+    return null;
+  }
+
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6 md:p-8"
+      className="fixed inset-x-0 bottom-0 top-[5rem] z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6 md:p-8"
       onClick={onClick}
     >
       <div ref={wrapperRef} className="absolute inset-0 z-0" />
@@ -53,7 +64,7 @@ export function Modal({ children }: { children: React.ReactNode }) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="relative z-10 w-full max-w-6xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl rounded-[2.5rem] flex flex-col max-h-[100dvh]"
+        className="relative z-10 flex max-h-[calc(100dvh-7rem)] w-full max-w-6xl flex-col rounded-[2.5rem] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
       >
         <div className="absolute top-6 right-6 z-50">
           <button

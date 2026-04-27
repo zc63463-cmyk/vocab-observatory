@@ -6,13 +6,14 @@ import { formatDateTime } from "@/lib/utils";
 import type { PublicWordSummary } from "@/lib/words";
 
 interface WordCardProps {
+  href?: string;
   word: PublicWordSummary;
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (wordId: string) => void;
 }
 
-export function WordCard({ word, selectable, selected, onToggleSelect }: WordCardProps) {
+export function WordCard({ href, word, selectable, selected, onToggleSelect }: WordCardProps) {
   const semanticField =
     typeof word.metadata === "object" &&
     word.metadata &&
@@ -27,9 +28,10 @@ export function WordCard({ word, selectable, selected, onToggleSelect }: WordCar
       : null;
   const isDue = word.progress?.is_due ?? false;
   const isTracked = word.progress !== null;
+  const detailHref = href ?? `/words/${word.slug}`;
 
   return (
-    <WordCardShell href={`/words/${word.slug}`}>
+    <WordCardShell href={detailHref}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
           {selectable && !isTracked ? (

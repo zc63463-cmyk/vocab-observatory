@@ -47,9 +47,12 @@ export function useFilteredSearch<F extends { q: string }, R>(
   }));
 
   const initialFilters = stableConfig.getFiltersFromResult(stableConfig.initialResult);
+  const searchParamsString = searchParams.toString();
   const [result, setResult] = useState(stableConfig.initialResult);
   const [draftFilters, setDraftFilters] = useState<F>(initialFilters);
-  const [draftSourceKey, setDraftSourceKey] = useState(searchParams.toString());
+  const [draftSourceKey, setDraftSourceKey] = useState(() =>
+    searchParamsString ? "__url__" : searchParamsString,
+  );
   const [debouncedQ, setDebouncedQ] = useState(initialFilters.q as string);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -57,7 +60,6 @@ export function useFilteredSearch<F extends { q: string }, R>(
 
   const initialResultRef = useRef(stableConfig.initialResult);
   const hasHydratedFetchRef = useRef(false);
-  const searchParamsString = searchParams.toString();
 
   const urlFilters = useMemo(() => {
     const params = new URLSearchParams(searchParamsString);
@@ -166,9 +168,12 @@ export function useFilteredSearch<F extends { q: string }, R>(
   const setFilter = useMemo(() => {
     return <K extends keyof F>(key: K, value: F[K]) => {
       setDraftSourceKey(searchParamsString);
-      setDraftFilters((current) => ({ ...current, [key]: value }));
+      setDraftFilters((current) => ({
+        ...(draftSourceKey === searchParamsString ? current : activeFilters),
+        [key]: value,
+      }));
     };
-  }, [searchParamsString]);
+  }, [activeFilters, draftSourceKey, searchParamsString]);
 
   return {
     activeFilters,

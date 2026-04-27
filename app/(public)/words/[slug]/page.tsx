@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
@@ -13,6 +13,7 @@ import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordHeader } from "@/components/words/WordHeader";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
+import { buildWordsListHref } from "@/lib/words-routing";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
 import {
@@ -24,6 +25,13 @@ import {
 export const dynamic = "force-static";
 export const revalidate = 300;
 const STATIC_WORD_PARAM_LIMIT = 48;
+
+type WordDetailSearchParams = Promise<{
+  freq?: string | string[];
+  q?: string | string[];
+  review?: string | string[];
+  semantic?: string | string[];
+}>;
 
 export async function generateMetadata({
   params,
@@ -103,23 +111,31 @@ export function WordDetailFallback() {
 
 export default function WordDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: WordDetailSearchParams;
 }) {
   return (
     <Suspense fallback={<WordDetailFallback />}>
-      <WordDetailContent params={params} />
+      <WordDetailContent params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
 export async function WordDetailContent({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: WordDetailSearchParams;
 }) {
-  const { slug } = await params;
+  const [{ slug }, resolvedSearchParams] = await Promise.all([
+    params,
+    searchParams ?? Promise.resolve({}),
+  ]);
   const result = await getPublicWordBySlug(slug);
+  const listHref = buildWordsListHref(resolvedSearchParams) as Route;
 
   if (result.configured && !result.word) {
     notFound();
@@ -141,7 +157,7 @@ export async function WordDetailContent({
     <>
       <Breadcrumb
         items={[
-          { href: "/words", label: "词条库" },
+          { href: listHref, label: "词条库" },
           { label: result.word.lemma },
         ]}
       />

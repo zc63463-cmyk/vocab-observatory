@@ -10,6 +10,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
+import { buildWordDetailHref } from "@/lib/words-routing";
 import { useToast } from "@/components/ui/Toast";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
@@ -164,6 +165,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     fetchError,
     isUpdating,
     result,
+    searchParamsString,
     setFilter,
   } = useFilteredSearch<WordFilters, PublicWordsResponse>({
     areFiltersEqual: areWordFiltersEqual,
@@ -535,6 +537,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             {displayResult.words.map((word) => (
               <WordCard
                 key={word.id}
+                href={buildWordDetailHref(word.slug, new URLSearchParams(searchParamsString))}
                 word={word}
                 selectable={displayResult.isOwner}
                 selected={selectedWordIds.has(word.id)}
