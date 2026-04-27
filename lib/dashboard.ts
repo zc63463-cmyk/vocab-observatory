@@ -53,8 +53,8 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>, today = new Date()) {
-  const anchor = new Date(today);
+function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>, today?: Date) {
+  const anchor = new Date(today ?? new Date());
   anchor.setHours(0, 0, 0, 0);
 
   const buckets = new Map<string, number>();
@@ -73,9 +73,9 @@ function buildVolumeSeries(days: number, logs: Array<{ reviewed_at: string }>, t
   return [...buckets.entries()].map(([date, count]) => ({ count, date }));
 }
 
-function calculateStreak(daysSet: Set<string>) {
+function calculateStreak(daysSet: Set<string>, now?: Date) {
   let streak = 0;
-  const cursor = new Date();
+  const cursor = new Date(now ?? new Date());
   cursor.setHours(0, 0, 0, 0);
 
   while (daysSet.has(formatDayKey(cursor))) {
@@ -163,9 +163,9 @@ export function buildRetentionGapSeries(
   days: number,
   reviewLogs: DashboardReviewLogRow[],
   fallbackDesiredRetention = DEFAULT_DESIRED_RETENTION,
-  today = new Date(),
+  today?: Date,
 ) {
-  const anchor = new Date(today);
+  const anchor = new Date(today ?? new Date());
   anchor.setHours(0, 0, 0, 0);
 
   const buckets = new Map<
@@ -229,19 +229,20 @@ export function buildRetentionGapSeries(
 export function buildRetentionForecast(
   progressRows: DashboardProgressRow[],
   desiredRetention: number,
-  now = new Date(),
+  now?: Date,
 ) {
+  const actualNow = now ?? new Date();
   const normalizedRetention = normalizeDesiredRetention(desiredRetention);
-  const nowIso = now.toISOString();
-  const next7dIso = addDays(now, 7).toISOString();
-  const next14dIso = addDays(now, 14).toISOString();
+  const nowIso = actualNow.toISOString();
+  const next7dIso = addDays(actualNow, 7).toISOString();
+  const next14dIso = addDays(actualNow, 14).toISOString();
 
   let dueNow = 0;
   let due7d = 0;
   let due14d = 0;
 
   for (const row of progressRows) {
-    const dueAt = resolveForecastDueAt(row, normalizedRetention, now);
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow);
     if (!dueAt) {
       continue;
     }
@@ -267,11 +268,12 @@ export function buildRetentionForecast(
 
 export function buildRetentionForecasts(
   progressRows: DashboardProgressRow[],
-  now = new Date(),
+  now?: Date,
 ) {
+  const actualNow = now ?? new Date();
   return REVIEW_RETENTION_PRESETS.map((preset) => ({
     ...preset,
-    ...buildRetentionForecast(progressRows, preset.desiredRetention, now),
+    ...buildRetentionForecast(progressRows, preset.desiredRetention, actualNow),
   })) satisfies RetentionPresetForecast[];
 }
 
@@ -280,10 +282,11 @@ export function buildDailyForecastCalendar(
   desiredRetention: number,
   days = 14,
   reviewLogs?: Array<{ reviewed_at: string }>,
-  now = new Date(),
+  now?: Date,
 ): DailyForecastDay[] {
+  const actualNow = now ?? new Date();
   const normalizedRetention = normalizeDesiredRetention(desiredRetention);
-  const anchor = new Date(now);
+  const anchor = new Date(actualNow);
   anchor.setHours(0, 0, 0, 0);
   const todayIso = formatDayKey(anchor);
 
@@ -295,7 +298,7 @@ export function buildDailyForecastCalendar(
   }
 
   for (const row of progressRows) {
-    const dueAt = resolveForecastDueAt(row, normalizedRetention, now);
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow);
     if (!dueAt) continue;
     const bucket = buckets.find((b) => b.date === toLocalDayKey(dueAt));
     if (bucket) bucket.dueCount += 1;
@@ -540,6 +543,7 @@ export async function getDashboardSummary() {
     new Set(((streakResult.data ?? []) as Array<{ reviewed_at: string }>).map((row) =>
       toLocalDayKey(row.reviewed_at),
     )),
+    nowDate,
   );
 
   const reviewedToday = reviewLogs30d.filter((row) => row.reviewed_at >= today).length;
