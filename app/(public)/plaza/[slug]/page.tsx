@@ -120,9 +120,9 @@ async function PlazaDetailContent({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const { slug } = await params;
   "use cache";
   cacheLife("minutes");
+  const { slug } = await params;
   const result = await getPublicCollectionNoteBySlug(slug);
 
   if (result.canonicalPath) {

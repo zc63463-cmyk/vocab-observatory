@@ -117,9 +117,9 @@ export async function WordDetailContent({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const { slug } = await params;
   "use cache";
   cacheLife("minutes");
+  const { slug } = await params;
   const result = await getPublicWordBySlug(slug);
 
   if (result.configured && !result.word) {
