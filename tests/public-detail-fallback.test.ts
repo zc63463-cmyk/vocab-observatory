@@ -303,6 +303,49 @@ describe("public detail fallback behavior", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
+  it("returns all public collection slugs without applying a hot-set limit", async () => {
+    let limitCalled = false;
+
+    publicClient = {
+      from: vi.fn((table: string) => {
+        if (table !== "collection_notes") {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        const chain = {
+          eq: vi.fn(() => chain),
+          limit: vi.fn(() => {
+            limitCalled = true;
+            return chain;
+          }),
+          order: vi.fn(() => chain),
+          select: vi.fn(() => chain),
+          then: (
+            onFulfilled?: (value: { data: Array<{ slug: string }>; error: null }) => unknown,
+            onRejected?: (reason: unknown) => unknown,
+          ) =>
+            Promise.resolve({
+              data: [{ slug: "root-ana-向上-再-分离" }, { slug: "root-tract-拉拖" }, { slug: "semantic-人体动作" }],
+              error: null,
+            }).then(onFulfilled, onRejected),
+        };
+
+        return chain;
+      }),
+    };
+
+    const { getStaticPublicCollectionSlugs } = await import("@/lib/plaza");
+
+    await expect(getStaticPublicCollectionSlugs()).resolves.toEqual([
+      "root-ana-向上-再-分离",
+      "root-tract-拉拖",
+      "semantic-人体动作",
+    ]);
+    expect(limitCalled).toBe(false);
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it("returns a sanitized word detail payload on success", async () => {
     const wordsMaybeSingle = vi.fn(async () => ({
       data: {

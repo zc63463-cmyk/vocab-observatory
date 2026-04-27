@@ -345,7 +345,7 @@ export const getCachedCollectionSummaries = unstable_cache(
 );
 
 const getCachedStaticCollectionSlugs = unstable_cache(
-  async (limit: number): Promise<string[] | null> => {
+  async (): Promise<string[] | null> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
       return null;
@@ -353,7 +353,7 @@ const getCachedStaticCollectionSlugs = unstable_cache(
 
     try {
       return await withTransientPublicReadRetry(
-        `static collection slugs limit=${limit}`,
+        "static collection slugs",
         async () => {
           const { data, error } = await supabase
             .from("collection_notes")
@@ -361,8 +361,7 @@ const getCachedStaticCollectionSlugs = unstable_cache(
             .eq("is_published", true)
             .eq("is_deleted", false)
             .order("updated_at", { ascending: false })
-            .order("title")
-            .limit(limit);
+            .order("title");
 
           if (isCollectionNotesRelationMissing(error)) {
             return null;
@@ -660,12 +659,12 @@ export async function getPublicCollectionNoteMetadataBySlug(slug: string) {
   };
 }
 
-export async function getStaticPublicCollectionSlugs(limit: number) {
+export async function getStaticPublicCollectionSlugs() {
   if (!hasSupabasePublicEnv()) {
     return [];
   }
 
-  return (await getCachedStaticCollectionSlugs(limit)) ?? [];
+  return (await getCachedStaticCollectionSlugs()) ?? [];
 }
 
 export { getCollectionNoteSummaryText };

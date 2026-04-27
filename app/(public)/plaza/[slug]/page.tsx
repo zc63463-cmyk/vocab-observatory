@@ -16,7 +16,6 @@ import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-static";
 export const revalidate = 300;
-const STATIC_PLAZA_PARAM_LIMIT = 12;
 
 export async function generateMetadata({
   params,
@@ -50,7 +49,10 @@ export async function generateMetadata({
 }
 
 export async function generateStaticParams() {
-  const slugs = await getStaticPublicCollectionSlugs(STATIC_PLAZA_PARAM_LIMIT);
+  // Plaza canonicals currently contain non-ASCII slugs, so cold ISR requests can
+  // fail on Vercel when Next emits implicit pathname cache tags as response headers.
+  // Pre-render the full public plaza set instead of a small hot subset.
+  const slugs = await getStaticPublicCollectionSlugs();
 
   return slugs.map((slug) => ({
     slug,
