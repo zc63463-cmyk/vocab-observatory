@@ -66,7 +66,7 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
 
   return (
     <MotionLink
-      href={href}
+      href={href as any}
       prefetch={shouldPrefetch || undefined}
       className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition-colors duration-200 hover:border-[var(--color-border-strong)]"
       style={tiltStyle}
