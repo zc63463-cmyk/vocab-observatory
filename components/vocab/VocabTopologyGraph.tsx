@@ -32,21 +32,15 @@ const MIN_GRAPH_WIDTH = 320;
 const MIN_GRAPH_HEIGHT = 320;
 const NODE_PRIORITY: Record<VocabGraphNodeType, number> = {
   current: 0,
-  semantic: 1,
-  root: 2,
-  synonym: 3,
-  antonym: 3,
-  backlink: 4,
-  related: 5,
+  root: 1,
+  synonym: 2,
+  antonym: 2,
 };
 
 const RELATION_LABELS: Array<{ relation: VocabGraphRelation; label: string }> = [
   { relation: "root-family", label: "同根" },
   { relation: "synonym", label: "近义" },
   { relation: "antonym", label: "反义" },
-  { relation: "semantic-field", label: "语义场" },
-  { relation: "backlink", label: "引用" },
-  { relation: "related", label: "相关" },
 ];
 
 function limitGraphData(data: VocabGraphData, maxNodes: number): VocabGraphData {
@@ -197,7 +191,7 @@ export function VocabTopologyGraph({
         d3
           .forceLink<SimulationNode, SimulationEdge>(edges)
           .id((node) => node.id)
-          .distance((edge) => (edge.relation === "semantic-field" ? 130 : 105))
+          .distance(105)
           .strength((edge) => (edge.relation === "root-family" ? 0.45 : 0.32)),
       )
       .force("charge", d3.forceManyBody().strength(-260))

@@ -7,7 +7,6 @@ const allEntries: VocabGraphEntry[] = [
     lemma: "resilient",
     metadata: {
       roots: ["resil"],
-      semantic_field: "recovery",
     },
     slug: "resilient",
     title: "resilient",
@@ -15,9 +14,7 @@ const allEntries: VocabGraphEntry[] = [
   {
     id: "word-robust",
     lemma: "robust",
-    metadata: {
-      semantic_field: "recovery",
-    },
+    metadata: {},
     slug: "robust",
     title: "robust",
   },
@@ -71,7 +68,6 @@ describe("buildLocalVocabGraph", () => {
         expect.objectContaining({ id: "resilient", type: "current" }),
         expect.objectContaining({ id: "robust", href: "/words/robust" }),
         expect.objectContaining({ id: "fragile", href: "/words/fragile" }),
-        expect.objectContaining({ id: "antifragile", href: "/words/antifragile" }),
         expect.objectContaining({ id: "rebound", href: "/words/rebound" }),
       ]),
     );
@@ -80,14 +76,15 @@ describe("buildLocalVocabGraph", () => {
         "root-family",
         "synonym",
         "antonym",
-        "semantic-field",
-        "backlink",
-        "related",
       ]),
     );
+    expect(graph.edges.map((edge) => edge.relation)).not.toEqual(
+      expect.arrayContaining(["semantic-field", "backlink", "related"]),
+    );
+    expect(graph.nodes.some((node) => node.id === "antifragile")).toBe(false);
   });
 
-  it("deduplicates repeated related words into one node", () => {
+  it("deduplicates repeated relation labels into one node", () => {
     const graph = buildLocalVocabGraph(
       {
         lemma: "resilient",
@@ -102,10 +99,17 @@ describe("buildLocalVocabGraph", () => {
     );
 
     expect(graph.nodes.filter((node) => node.id === "robust")).toHaveLength(1);
-    expect(graph.edges.filter((edge) => edge.target === "robust")).toHaveLength(2);
+    expect(graph.edges.filter((edge) => edge.target === "robust")).toHaveLength(1);
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        relation: "synonym",
+        source: "resilient",
+        target: "robust",
+      }),
+    );
   });
 
-  it("keeps missing related entries as orphan nodes without hrefs", () => {
+  it("keeps missing synonym entries as orphan nodes without hrefs", () => {
     const graph = buildLocalVocabGraph(
       {
         lemma: "resilient",

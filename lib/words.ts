@@ -36,10 +36,7 @@ const PUBLIC_REVALIDATE_SECONDS = 300;
 const WORD_FILTER_FACET_DIMENSIONS = ["semantic_field", "word_freq"] as const;
 const WORD_GRAPH_METADATA_KEYS = [
   "antonyms",
-  "backlinks",
-  "related",
   "roots",
-  "semanticFields",
   "synonyms",
 ] as const;
 

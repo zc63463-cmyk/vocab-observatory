@@ -4,18 +4,12 @@ export type VocabGraphNodeType =
   | "current"
   | "root"
   | "synonym"
-  | "antonym"
-  | "semantic"
-  | "backlink"
-  | "related";
+  | "antonym";
 
 export type VocabGraphRelation =
   | "root-family"
   | "synonym"
-  | "antonym"
-  | "semantic-field"
-  | "backlink"
-  | "related";
+  | "antonym";
 
 export type VocabGraphNode = {
   id: string;
@@ -63,21 +57,15 @@ type RelationCandidate = {
 
 const NODE_TYPE_WEIGHT: Record<VocabGraphNodeType, number> = {
   antonym: 4,
-  backlink: 3,
   current: 9,
-  related: 2,
   root: 6,
-  semantic: 5,
   synonym: 4,
 };
 
 const NODE_TYPE_PRIORITY: Record<VocabGraphNodeType, number> = {
   antonym: 50,
-  backlink: 35,
   current: 100,
-  related: 20,
   root: 70,
-  semantic: 60,
   synonym: 50,
 };
 
@@ -105,32 +93,6 @@ const ANTONYM_FIELD_KEYS = [
   "antonym_items",
   "antonymWords",
   "antonym_words",
-];
-
-const SEMANTIC_FIELD_KEYS = [
-  "semanticFields",
-  "semantic_fields",
-  "semanticField",
-  "semantic_field",
-  "semantic-field",
-];
-
-const BACKLINK_FIELD_KEYS = [
-  "backlinks",
-  "backLinks",
-  "back_links",
-  "wikilinks",
-  "wikiLinks",
-  "links",
-  "references",
-];
-
-const RELATED_FIELD_KEYS = [
-  "related",
-  "relatedWords",
-  "related_words",
-  "relatedEntries",
-  "related_entries",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -265,34 +227,6 @@ function getRootLabels(entry: VocabGraphEntry) {
   return uniqueLabels(getMetadataLabels(entry, ROOT_FIELD_KEYS));
 }
 
-function getSemanticLabels(entry: VocabGraphEntry) {
-  return uniqueLabels(getMetadataLabels(entry, SEMANTIC_FIELD_KEYS));
-}
-
-function getBacklinkLabels(entry: VocabGraphEntry) {
-  return uniqueLabels([
-    ...getMetadataLabels(entry, BACKLINK_FIELD_KEYS),
-    ...extractWikiLinkTargets(entry.body_md ?? entry.bodyMd ?? ""),
-  ]);
-}
-
-function getRelatedLabels(entry: VocabGraphEntry) {
-  return uniqueLabels(getMetadataLabels(entry, RELATED_FIELD_KEYS));
-}
-
-function extractWikiLinkTargets(markdown: string) {
-  const targets: string[] = [];
-  const wikiLinkPattern = /\[\[([^|\]#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
-  let match = wikiLinkPattern.exec(markdown);
-
-  while (match) {
-    targets.push(match[1].trim());
-    match = wikiLinkPattern.exec(markdown);
-  }
-
-  return targets;
-}
-
 function lookupKeysForLabel(label: string) {
   const normalized = normalizeLabel(label);
   const slug = slugifyLabel(normalized);
@@ -412,15 +346,11 @@ export function buildLocalVocabGraph(
   const edges = new Map<string, VocabGraphEdge>();
   const lookup = createEntryLookup(allEntries);
   const currentRootLabels = getRootLabels(entry);
-  const currentSemanticLabels = getSemanticLabels(entry);
 
   const candidates: RelationCandidate[] = [
     ...createCandidate(currentRootLabels, "root-family", "root"),
     ...createCandidate(getSynonymLabels(entry), "synonym", "synonym"),
     ...createCandidate(getAntonymLabels(entry), "antonym", "antonym"),
-    ...createCandidate(currentSemanticLabels, "semantic-field", "semantic"),
-    ...createCandidate(getBacklinkLabels(entry), "backlink", "backlink"),
-    ...createCandidate(getRelatedLabels(entry), "related", "related"),
   ];
 
   for (const relatedEntry of allEntries) {
@@ -438,14 +368,6 @@ export function buildLocalVocabGraph(
       });
     }
 
-    if (hasSharedLabel(currentSemanticLabels, getSemanticLabels(relatedEntry))) {
-      candidates.push({
-        label: getEntryLabel(relatedEntry),
-        relation: "semantic-field",
-        type: "semantic",
-        weight: NODE_TYPE_WEIGHT.semantic,
-      });
-    }
   }
 
   for (const candidate of candidates) {

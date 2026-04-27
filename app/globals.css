@@ -309,17 +309,11 @@ button {
   --graph-root: #5f63c7;
   --graph-synonym: var(--color-accent);
   --graph-antonym: var(--color-accent-2);
-  --graph-semantic: #2c7a9a;
-  --graph-backlink: #7a6b56;
-  --graph-related: #8a7a66;
   --graph-muted: rgba(103, 77, 44, 0.28);
 }
 
 [data-theme="dark"] .vocab-topology {
   --graph-root: #9b9ffc;
-  --graph-semantic: #6fc7e6;
-  --graph-backlink: rgba(232, 224, 212, 0.62);
-  --graph-related: rgba(232, 224, 212, 0.5);
   --graph-muted: rgba(196, 178, 148, 0.24);
 }
 
@@ -345,20 +339,6 @@ button {
 
 .vocab-topology__edge.relation-antonym {
   stroke: var(--graph-antonym);
-}
-
-.vocab-topology__edge.relation-semantic-field {
-  stroke: var(--graph-semantic);
-}
-
-.vocab-topology__edge.relation-backlink {
-  stroke: var(--graph-backlink);
-  stroke-dasharray: 5 5;
-}
-
-.vocab-topology__edge.relation-related {
-  stroke: var(--graph-related);
-  stroke-dasharray: 2 5;
 }
 
 .vocab-topology__edge.is-active {
@@ -412,21 +392,6 @@ button {
   stroke: var(--graph-antonym);
 }
 
-.vocab-topology__node.node-semantic .vocab-topology__node-circle {
-  fill: color-mix(in srgb, var(--graph-semantic) 22%, var(--color-surface-glass));
-  stroke: var(--graph-semantic);
-}
-
-.vocab-topology__node.node-backlink .vocab-topology__node-circle {
-  fill: color-mix(in srgb, var(--graph-backlink) 18%, var(--color-surface-glass));
-  stroke: var(--graph-backlink);
-}
-
-.vocab-topology__node.node-related .vocab-topology__node-circle {
-  fill: color-mix(in srgb, var(--graph-related) 16%, var(--color-surface-glass));
-  stroke: var(--graph-related);
-}
-
 .vocab-topology__node.is-orphan .vocab-topology__node-circle {
   fill: var(--color-surface-soft);
   stroke: var(--graph-muted);
@@ -478,7 +443,7 @@ button {
   width: 0.65rem;
   height: 0.65rem;
   border-radius: 999px;
-  background: var(--graph-related);
+  background: var(--graph-root);
 }
 
 .vocab-topology__legend-item.relation-root-family .vocab-topology__legend-mark {
@@ -491,14 +456,6 @@ button {
 
 .vocab-topology__legend-item.relation-antonym .vocab-topology__legend-mark {
   background: var(--graph-antonym);
-}
-
-.vocab-topology__legend-item.relation-semantic-field .vocab-topology__legend-mark {
-  background: var(--graph-semantic);
-}
-
-.vocab-topology__legend-item.relation-backlink .vocab-topology__legend-mark {
-  background: var(--graph-backlink);
 }
 
 @media (prefers-reduced-motion: reduce) {

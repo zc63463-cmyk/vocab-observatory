@@ -179,22 +179,6 @@ function readFrontmatterStringList(
 function buildGraphRelationMetadata(data: Record<string, Json>): Record<string, Json> {
   const relationFields = {
     antonyms: readFrontmatterStringList(data, ["antonyms", "antonymWords", "antonym_words"]),
-    backlinks: readFrontmatterStringList(data, [
-      "backlinks",
-      "backLinks",
-      "back_links",
-      "wikilinks",
-      "wikiLinks",
-      "links",
-      "references",
-    ]),
-    related: readFrontmatterStringList(data, [
-      "related",
-      "relatedWords",
-      "related_words",
-      "relatedEntries",
-      "related_entries",
-    ]),
     roots: readFrontmatterStringList(data, [
       "roots",
       "root",
@@ -202,12 +186,6 @@ function buildGraphRelationMetadata(data: Record<string, Json>): Record<string, 
       "root_family",
       "wordRoots",
       "word_roots",
-    ]),
-    semanticFields: readFrontmatterStringList(data, [
-      "semanticFields",
-      "semantic_fields",
-      "semanticField",
-      "semantic_field",
     ]),
     synonyms: readFrontmatterStringList(data, ["synonyms", "synonymWords", "synonym_words"]),
   };
