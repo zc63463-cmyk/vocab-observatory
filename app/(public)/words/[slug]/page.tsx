@@ -20,8 +20,9 @@ import {
   getPublicWordMetadataBySlug,
   getStaticPublicWordSlugs,
 } from "@/lib/words";
-import { cacheLife } from "next/cache";
 
+export const dynamic = "force-static";
+export const revalidate = 300;
 const STATIC_WORD_PARAM_LIMIT = 48;
 
 export async function generateMetadata({
@@ -117,8 +118,6 @@ export async function WordDetailContent({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  "use cache";
-  cacheLife("minutes");
   const { slug } = await params;
   const result = await getPublicWordBySlug(slug);
 

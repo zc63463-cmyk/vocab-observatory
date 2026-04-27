@@ -1,40 +1,8 @@
-import { Suspense } from "react";
 import Link from "next/link";
-import { connection } from "next/server";
 import { getDashboardSummary } from "@/lib/dashboard";
-import { SkeletonLine } from "@/components/ui/Skeleton";
 import { formatDateTime } from "@/lib/utils";
 
-function NotesFallback() {
-  return (
-    <div className="space-y-8">
-      <section className="panel-strong rounded-[2rem] p-8">
-        <SkeletonLine className="h-4 w-28" />
-        <SkeletonLine className="mt-4 h-14 w-40" />
-        <SkeletonLine className="mt-4 h-5 w-full" />
-      </section>
-      <section className="space-y-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="panel rounded-[1.75rem] p-6">
-            <SkeletonLine className="h-6 w-32" />
-            <SkeletonLine className="mt-4 h-4 w-full" />
-          </div>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-export default function NotesPage() {
-  return (
-    <Suspense fallback={<NotesFallback />}>
-      <NotesContent />
-    </Suspense>
-  );
-}
-
-async function NotesContent() {
-  await connection();
+export default async function NotesPage() {
   const summary = await getDashboardSummary();
 
   return (

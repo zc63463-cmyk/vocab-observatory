@@ -8,8 +8,9 @@ import { AnimatedCounter } from "@/components/motion/AnimatedCounter";
 import { MagneticButton } from "@/components/motion/MagneticButton";
 import { HeroDecorSVG } from "@/components/motion/HeroDecorSVG";
 import { getLandingSnapshot } from "@/lib/words";
-import { cacheLife } from "next/cache";
 
+export const dynamic = "force-static";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   description:
@@ -24,8 +25,6 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  "use cache";
-  cacheLife("minutes");
   const snapshot = await getLandingSnapshot();
 
   return (

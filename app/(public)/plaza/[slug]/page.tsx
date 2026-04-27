@@ -13,8 +13,9 @@ import {
   getStaticPublicCollectionSlugs,
 } from "@/lib/plaza";
 import { formatDate } from "@/lib/utils";
-import { cacheLife } from "next/cache";
 
+export const dynamic = "force-static";
+export const revalidate = 300;
 
 export async function generateMetadata({
   params,
@@ -120,8 +121,6 @@ async function PlazaDetailContent({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  "use cache";
-  cacheLife("minutes");
   const { slug } = await params;
   const result = await getPublicCollectionNoteBySlug(slug);
 
