@@ -1,8 +1,12 @@
 "use client";
 
 import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
+import Link from "next/link";
+import { useState } from "react";
 import { springs } from "@/components/motion";
 import type { ReactNode } from "react";
+
+const MotionLink = motion.create(Link);
 
 interface WordCardShellProps {
   children: ReactNode;
@@ -23,6 +27,7 @@ const SPRING_CONFIG = { damping: 25, stiffness: 200 };
  */
 export function WordCardShell({ children, href }: WordCardShellProps) {
   const prefersReduced = useReducedMotion();
+  const [shouldPrefetch, setShouldPrefetch] = useState(false);
 
   const rotateX = useMotionValue(0);
   const rotateY = useMotionValue(0);
@@ -30,6 +35,10 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
   const springRotateY = useSpring(rotateY, SPRING_CONFIG);
 
   function handleMouseMove(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (!shouldPrefetch) {
+      setShouldPrefetch(true);
+    }
+    
     if (prefersReduced) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
@@ -56,8 +65,9 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
       };
 
   return (
-    <motion.a
+    <MotionLink
       href={href}
+      prefetch={shouldPrefetch || undefined}
       className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition-colors duration-200 hover:border-[var(--color-border-strong)]"
       style={tiltStyle}
       onMouseMove={handleMouseMove}
@@ -70,6 +80,6 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
       whileTap={{ scale: 0.985 }}
     >
       {children}
-    </motion.a>
+    </MotionLink>
   );
 }
