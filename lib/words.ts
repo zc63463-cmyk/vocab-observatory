@@ -34,6 +34,14 @@ const MAX_PUBLIC_WORD_PAGE_LIMIT = 120;
 const FEATURED_WORD_LIMIT = 6;
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const WORD_FILTER_FACET_DIMENSIONS = ["semantic_field", "word_freq"] as const;
+const WORD_GRAPH_METADATA_KEYS = [
+  "antonyms",
+  "backlinks",
+  "related",
+  "roots",
+  "semanticFields",
+  "synonyms",
+] as const;
 
 type ServerSupabaseClient = SupabaseClient<Database>;
 type WordFilterFacetDimension = (typeof WORD_FILTER_FACET_DIMENSIONS)[number];
@@ -202,10 +210,24 @@ function isWordFilterFacetRelationMissing(error: unknown) {
 }
 
 function compactPublicMetadata(metadata: Json) {
-  return {
+  const compacted: Record<string, Json> = {
     semantic_field: getWordMetadataString(metadata, "semantic_field"),
     word_freq: getWordMetadataString(metadata, "word_freq"),
-  } satisfies Json;
+  };
+
+  if (typeof metadata === "object" && metadata && !Array.isArray(metadata)) {
+    for (const key of WORD_GRAPH_METADATA_KEYS) {
+      const value = metadata[key];
+      if (
+        typeof value === "string" ||
+        (Array.isArray(value) && value.every((item) => typeof item === "string"))
+      ) {
+        compacted[key] = value;
+      }
+    }
+  }
+
+  return compacted satisfies Json;
 }
 
 export function getWordMetadataString(metadata: Json, key: string) {

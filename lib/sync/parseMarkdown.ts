@@ -145,6 +145,78 @@ function parseFrontmatterDate(value: Json) {
   return null;
 }
 
+function normalizeFrontmatterStringList(value: unknown) {
+  if (typeof value === "string") {
+    return value
+      .split(/[,;，、\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readFrontmatterStringList(
+  data: Record<string, Json>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    if (key in data) {
+      return normalizeFrontmatterStringList(data[key]);
+    }
+  }
+
+  return [];
+}
+
+function buildGraphRelationMetadata(data: Record<string, Json>): Record<string, Json> {
+  const relationFields = {
+    antonyms: readFrontmatterStringList(data, ["antonyms", "antonymWords", "antonym_words"]),
+    backlinks: readFrontmatterStringList(data, [
+      "backlinks",
+      "backLinks",
+      "back_links",
+      "wikilinks",
+      "wikiLinks",
+      "links",
+      "references",
+    ]),
+    related: readFrontmatterStringList(data, [
+      "related",
+      "relatedWords",
+      "related_words",
+      "relatedEntries",
+      "related_entries",
+    ]),
+    roots: readFrontmatterStringList(data, [
+      "roots",
+      "root",
+      "rootFamily",
+      "root_family",
+      "wordRoots",
+      "word_roots",
+    ]),
+    semanticFields: readFrontmatterStringList(data, [
+      "semanticFields",
+      "semantic_fields",
+      "semanticField",
+      "semantic_field",
+    ]),
+    synonyms: readFrontmatterStringList(data, ["synonyms", "synonymWords", "synonym_words"]),
+  };
+
+  return Object.fromEntries(
+    Object.entries(relationFields).filter(([, value]) => value.length > 0),
+  ) as Record<string, Json>;
+}
+
 function parseLooseFrontmatter(markdown: string) {
   if (!markdown.startsWith("---\n")) {
     return {
@@ -565,6 +637,7 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
       source_repo: "Obsidian-Eg",
       source_title: rawTitle ?? title,
       word_freq: typeof data.word_freq === "string" ? data.word_freq : null,
+      ...buildGraphRelationMetadata(data),
     },
     pos: extractPrimaryPos(definitionMd),
     prototypeText: structuredFields.prototypeText,

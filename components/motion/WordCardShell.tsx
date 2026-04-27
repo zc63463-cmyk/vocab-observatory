@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
+import type { Route } from "next";
 import Link from "next/link";
 import { useState } from "react";
 import { springs } from "@/components/motion";
@@ -66,7 +67,7 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
 
   return (
     <MotionLink
-      href={href as any}
+      href={href as Route}
       prefetch={shouldPrefetch || undefined}
       className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition-colors duration-200 hover:border-[var(--color-border-strong)]"
       style={tiltStyle}

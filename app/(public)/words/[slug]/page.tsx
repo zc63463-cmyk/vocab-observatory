@@ -13,10 +13,13 @@ import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordHeader } from "@/components/words/WordHeader";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
+import { VocabTopologyGraphIsland } from "@/components/vocab/VocabTopologyGraphIsland";
+import { buildLocalVocabGraph } from "@/lib/vocab-graph";
 import { buildWordsListHref } from "@/lib/words-routing";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
 import {
+  getAllPublicWordIndexEntries,
   getPublicWordBySlug,
   getPublicWordMetadataBySlug,
   getStaticPublicWordSlugs,
@@ -134,7 +137,10 @@ export async function WordDetailContent({
     params,
     searchParams ?? Promise.resolve({}),
   ]);
-  const result = await getPublicWordBySlug(slug);
+  const [result, allEntries] = await Promise.all([
+    getPublicWordBySlug(slug),
+    getAllPublicWordIndexEntries(),
+  ]);
   const listHref = buildWordsListHref(resolvedSearchParams) as Route;
 
   if (result.configured && !result.word) {
@@ -151,6 +157,7 @@ export async function WordDetailContent({
 
   // examples is stored as Json but is actually ParsedExample[] at runtime
   const legacyExamples = result.word.examples as unknown as ParsedExample[];
+  const graphData = buildLocalVocabGraph(result.word, allEntries);
   const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
 
   return (
@@ -188,13 +195,17 @@ export async function WordDetailContent({
           </RevealSection>
 
           <RevealSection delay={0.25}>
+            <VocabTopologyGraphIsland data={graphData} maxNodes={60} />
+          </RevealSection>
+
+          <RevealSection delay={0.3}>
             <WordSynonyms
               resolvedSynonymItems={result.word.resolved_synonym_items}
               fallbackHtml={result.word.synonym_html}
             />
           </RevealSection>
 
-          <RevealSection delay={0.3}>
+          <RevealSection delay={0.35}>
             <WordAntonyms
               resolvedAntonymItems={result.word.resolved_antonym_items}
               fallbackHtml={result.word.antonym_html}
@@ -202,7 +213,7 @@ export async function WordDetailContent({
           </RevealSection>
 
           {result.word.body_md.trim() ? (
-            <RevealSection delay={0.35}>
+            <RevealSection delay={0.4}>
               <CollapsiblePanel
                 title="词条正文"
                 defaultOpen={false}

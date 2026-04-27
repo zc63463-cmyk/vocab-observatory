@@ -304,3 +304,207 @@ button {
 .duration-\[280ms\] {
   transition-duration: 280ms;
 }
+
+.vocab-topology {
+  --graph-root: #5f63c7;
+  --graph-synonym: var(--color-accent);
+  --graph-antonym: var(--color-accent-2);
+  --graph-semantic: #2c7a9a;
+  --graph-backlink: #7a6b56;
+  --graph-related: #8a7a66;
+  --graph-muted: rgba(103, 77, 44, 0.28);
+}
+
+[data-theme="dark"] .vocab-topology {
+  --graph-root: #9b9ffc;
+  --graph-semantic: #6fc7e6;
+  --graph-backlink: rgba(232, 224, 212, 0.62);
+  --graph-related: rgba(232, 224, 212, 0.5);
+  --graph-muted: rgba(196, 178, 148, 0.24);
+}
+
+.vocab-topology__canvas svg {
+  display: block;
+  touch-action: none;
+}
+
+.vocab-topology__edge {
+  stroke: var(--graph-muted);
+  stroke-linecap: round;
+  opacity: 0.58;
+  transition: opacity 0.16s ease, stroke-width 0.16s ease;
+}
+
+.vocab-topology__edge.relation-root-family {
+  stroke: var(--graph-root);
+}
+
+.vocab-topology__edge.relation-synonym {
+  stroke: var(--graph-synonym);
+}
+
+.vocab-topology__edge.relation-antonym {
+  stroke: var(--graph-antonym);
+}
+
+.vocab-topology__edge.relation-semantic-field {
+  stroke: var(--graph-semantic);
+}
+
+.vocab-topology__edge.relation-backlink {
+  stroke: var(--graph-backlink);
+  stroke-dasharray: 5 5;
+}
+
+.vocab-topology__edge.relation-related {
+  stroke: var(--graph-related);
+  stroke-dasharray: 2 5;
+}
+
+.vocab-topology__edge.is-active {
+  opacity: 0.95;
+  stroke-width: 2.4px;
+}
+
+.vocab-topology__edge.is-muted {
+  opacity: 0.12;
+}
+
+.vocab-topology__node {
+  cursor: default;
+  outline: none;
+}
+
+.vocab-topology__node.is-clickable {
+  cursor: pointer;
+}
+
+.vocab-topology__node-circle {
+  fill: var(--color-surface-glass);
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 8px 16px rgba(35, 26, 18, 0.12));
+  transition: opacity 0.16s ease, stroke-width 0.16s ease, filter 0.16s ease;
+}
+
+[data-theme="dark"] .vocab-topology__node-circle {
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.28));
+}
+
+.vocab-topology__node.node-current .vocab-topology__node-circle {
+  fill: var(--color-accent);
+  stroke: rgba(255, 255, 255, 0.74);
+  stroke-width: 2.5px;
+}
+
+.vocab-topology__node.node-root .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-root) 22%, var(--color-surface-glass));
+  stroke: var(--graph-root);
+}
+
+.vocab-topology__node.node-synonym .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-synonym) 20%, var(--color-surface-glass));
+  stroke: var(--graph-synonym);
+}
+
+.vocab-topology__node.node-antonym .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-antonym) 20%, var(--color-surface-glass));
+  stroke: var(--graph-antonym);
+}
+
+.vocab-topology__node.node-semantic .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-semantic) 22%, var(--color-surface-glass));
+  stroke: var(--graph-semantic);
+}
+
+.vocab-topology__node.node-backlink .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-backlink) 18%, var(--color-surface-glass));
+  stroke: var(--graph-backlink);
+}
+
+.vocab-topology__node.node-related .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-related) 16%, var(--color-surface-glass));
+  stroke: var(--graph-related);
+}
+
+.vocab-topology__node.is-orphan .vocab-topology__node-circle {
+  fill: var(--color-surface-soft);
+  stroke: var(--graph-muted);
+  stroke-dasharray: 4 4;
+}
+
+.vocab-topology__node-label {
+  fill: var(--color-ink);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--color-panel);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+
+.vocab-topology__node.node-current .vocab-topology__node-label {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.vocab-topology__node.is-active .vocab-topology__node-circle,
+.vocab-topology__node.is-neighbor .vocab-topology__node-circle,
+.vocab-topology__node:focus-visible .vocab-topology__node-circle {
+  filter: drop-shadow(0 10px 22px rgba(15, 111, 98, 0.22));
+  stroke-width: 3px;
+}
+
+.vocab-topology__node.is-muted {
+  opacity: 0.24;
+}
+
+.vocab-topology__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  padding: 0.35rem 0.65rem;
+  color: var(--color-ink-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.vocab-topology__legend-mark {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--graph-related);
+}
+
+.vocab-topology__legend-item.relation-root-family .vocab-topology__legend-mark {
+  background: var(--graph-root);
+}
+
+.vocab-topology__legend-item.relation-synonym .vocab-topology__legend-mark {
+  background: var(--graph-synonym);
+}
+
+.vocab-topology__legend-item.relation-antonym .vocab-topology__legend-mark {
+  background: var(--graph-antonym);
+}
+
+.vocab-topology__legend-item.relation-semantic-field .vocab-topology__legend-mark {
+  background: var(--graph-semantic);
+}
+
+.vocab-topology__legend-item.relation-backlink .vocab-topology__legend-mark {
+  background: var(--graph-backlink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vocab-topology__edge,
+  .vocab-topology__node,
+  .vocab-topology__node-circle {
+    transition: none;
+  }
+}
