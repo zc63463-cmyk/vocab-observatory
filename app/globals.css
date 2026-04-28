@@ -309,11 +309,13 @@ button {
   --graph-root: #5f63c7;
   --graph-synonym: var(--color-accent);
   --graph-antonym: var(--color-accent-2);
+  --graph-related: #a67c52;
   --graph-muted: rgba(103, 77, 44, 0.28);
 }
 
 [data-theme="dark"] .vocab-topology {
   --graph-root: #9b9ffc;
+  --graph-related: #c9a87c;
   --graph-muted: rgba(196, 178, 148, 0.24);
 }
 
@@ -339,6 +341,11 @@ button {
 
 .vocab-topology__edge.relation-antonym {
   stroke: var(--graph-antonym);
+}
+
+.vocab-topology__edge.relation-related {
+  stroke: var(--graph-related);
+  stroke-dasharray: 4 4;
 }
 
 .vocab-topology__edge.is-active {
@@ -390,6 +397,11 @@ button {
 .vocab-topology__node.node-antonym .vocab-topology__node-circle {
   fill: color-mix(in srgb, var(--graph-antonym) 20%, var(--color-surface-glass));
   stroke: var(--graph-antonym);
+}
+
+.vocab-topology__node.node-related .vocab-topology__node-circle {
+  fill: color-mix(in srgb, var(--graph-related) 18%, var(--color-surface-glass));
+  stroke: var(--graph-related);
 }
 
 .vocab-topology__node.is-orphan .vocab-topology__node-circle {
@@ -456,6 +468,10 @@ button {
 
 .vocab-topology__legend-item.relation-antonym .vocab-topology__legend-mark {
   background: var(--graph-antonym);
+}
+
+.vocab-topology__legend-item.relation-related .vocab-topology__legend-mark {
+  background: var(--graph-related);
 }
 
 @media (prefers-reduced-motion: reduce) {

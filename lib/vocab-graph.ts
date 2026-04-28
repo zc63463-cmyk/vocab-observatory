@@ -4,12 +4,14 @@ export type VocabGraphNodeType =
   | "current"
   | "root"
   | "synonym"
-  | "antonym";
+  | "antonym"
+  | "related";
 
 export type VocabGraphRelation =
   | "root-family"
   | "synonym"
-  | "antonym";
+  | "antonym"
+  | "related";
 
 export type VocabGraphNode = {
   id: string;
@@ -59,6 +61,7 @@ type RelationCandidate = {
 const NODE_TYPE_WEIGHT: Record<VocabGraphNodeType, number> = {
   antonym: 4,
   current: 9,
+  related: 3,
   root: 6,
   synonym: 4,
 };
@@ -66,8 +69,17 @@ const NODE_TYPE_WEIGHT: Record<VocabGraphNodeType, number> = {
 const NODE_TYPE_PRIORITY: Record<VocabGraphNodeType, number> = {
   antonym: 50,
   current: 100,
+  related: 40,
   root: 70,
   synonym: 50,
+};
+
+// Relation priority for edge deduplication: higher = preferred when multiple relations exist for same source-target
+const RELATION_PRIORITY: Record<VocabGraphRelation, number> = {
+  "root-family": 70,
+  synonym: 60,
+  antonym: 50,
+  related: 30,
 };
 
 const ROOT_FIELD_KEYS = [
@@ -228,6 +240,59 @@ function getRootLabels(entry: VocabGraphEntry) {
   return uniqueLabels(getMetadataLabels(entry, ROOT_FIELD_KEYS));
 }
 
+export function extractWikiLinks(
+  text: string | null | undefined,
+  centerId: string,
+): string[] {
+  if (!text) {
+    return [];
+  }
+
+  // Obsidian wikilink patterns:
+  // [[slug]] -> slug
+  // [[slug|display]] -> slug
+  // [[slug#heading]] -> slug
+  // [[slug#heading|display]] -> slug
+  // [[#heading]] -> ignore (not a word reference)
+  const wikiLinkPattern = /\[\[([^\]]+)\]\]/g;
+  const links: string[] = [];
+  let match;
+
+  while ((match = wikiLinkPattern.exec(text)) !== null) {
+    const content = match[1];
+    if (!content) continue;
+
+    // Handle alias: "slug|display text" -> extract slug part before |
+    const beforePipe = content.split("|")[0];
+    if (!beforePipe) continue;
+
+    // Handle anchor: "slug#heading" -> extract slug part before #
+    // If it's just "#heading" (no slug before #), skip it
+    const linkText = beforePipe.split("#")[0]?.trim() ?? "";
+
+    // Skip if:
+    // 1. No valid slug extracted (e.g., pure heading reference [[#section]])
+    // 2. Self-reference (links to center node itself)
+    if (!linkText) continue;
+
+    const normalizedId = slugifyLabel(linkText) || linkText.toLowerCase();
+    const centerKey = slugifyLabel(centerId) || centerId.toLowerCase();
+    if (normalizedId === centerKey) continue;
+
+    links.push(linkText);
+  }
+
+  return uniqueLabels(links);
+}
+
+function getWikiLinkLabels(
+  entry: VocabGraphEntry,
+  centerId: string,
+) {
+  const bodyContent = entry.body_md ?? entry.bodyMd ?? "";
+  return extractWikiLinks(bodyContent, centerId);
+}
+
 function lookupKeysForLabel(label: string) {
   const normalized = normalizeLabel(label);
   const slug = slugifyLabel(normalized);
@@ -276,8 +341,15 @@ function hasSharedLabel(left: string[], right: string[]) {
   return left.some((label) => rightKeys.has(slugifyLabel(label) || label.toLowerCase()));
 }
 
-function makeEdgeId(source: string, target: string, relation: VocabGraphRelation) {
-  return `${source}__${relation}__${target}`;
+function makeEdgeId(source: string, target: string) {
+  return `${source}__${target}`;
+}
+
+function getHigherPriorityRelation(
+  left: VocabGraphRelation,
+  right: VocabGraphRelation,
+): VocabGraphRelation {
+  return RELATION_PRIORITY[left] >= RELATION_PRIORITY[right] ? left : right;
 }
 
 function createCandidate(
@@ -356,6 +428,7 @@ export function buildLocalVocabGraph(
     ...createCandidate(currentRootLabels, "root-family", "root"),
     ...createCandidate(getSynonymLabels(entry), "synonym", "synonym"),
     ...createCandidate(getAntonymLabels(entry), "antonym", "antonym"),
+    ...createCandidate(getWikiLinkLabels(entry, centerId), "related", "related"),
   ];
 
   for (const relatedEntry of allEntries) {
@@ -375,6 +448,9 @@ export function buildLocalVocabGraph(
 
   }
 
+  // Track best relation per source-target for deduplication
+  const bestRelationPerTarget = new Map<string, { relation: VocabGraphRelation; weight: number; label: string }>();
+
   for (const candidate of candidates) {
     const targetEntry = findEntryByLabel(candidate.label, lookup);
     const targetNode = createNodeFromCandidate(candidate, targetEntry);
@@ -385,17 +461,39 @@ export function buildLocalVocabGraph(
 
     addOrUpdateNode(nodes, targetNode);
 
-    const edgeId = makeEdgeId(centerId, targetNode.id, candidate.relation);
-    if (!edges.has(edgeId)) {
-      edges.set(edgeId, {
-        id: edgeId,
-        label: candidate.label,
+    const edgeId = makeEdgeId(centerId, targetNode.id);
+    const existing = bestRelationPerTarget.get(edgeId);
+
+    if (!existing) {
+      bestRelationPerTarget.set(edgeId, {
         relation: candidate.relation,
-        source: centerId,
-        target: targetNode.id,
-        weight: candidate.weight,
+        weight: candidate.weight ?? 1,
+        label: candidate.label,
       });
+    } else {
+      // Arbitration: keep higher priority relation
+      const higherPriorityRelation = getHigherPriorityRelation(existing.relation, candidate.relation);
+      if (higherPriorityRelation !== existing.relation) {
+        bestRelationPerTarget.set(edgeId, {
+          relation: candidate.relation,
+          weight: candidate.weight ?? 1,
+          label: candidate.label,
+        });
+      }
     }
+  }
+
+  // Create edges from deduplicated relations
+  for (const [edgeId, { relation, weight, label }] of bestRelationPerTarget) {
+    const [source, target] = edgeId.split("__");
+    edges.set(edgeId, {
+      id: edgeId,
+      label,
+      relation,
+      source,
+      target,
+      weight,
+    });
   }
 
   return {

@@ -31,16 +31,18 @@ const DEFAULT_MAX_NODES = 60;
 const MIN_GRAPH_WIDTH = 320;
 const MIN_GRAPH_HEIGHT = 320;
 const NODE_PRIORITY: Record<VocabGraphNodeType, number> = {
+  antonym: 3,
   current: 0,
+  related: 3,
   root: 1,
   synonym: 2,
-  antonym: 2,
 };
 
 const RELATION_LABELS: Array<{ relation: VocabGraphRelation; label: string }> = [
   { relation: "root-family", label: "同根" },
   { relation: "synonym", label: "近义" },
   { relation: "antonym", label: "反义" },
+  { relation: "related", label: "笔记" },
 ];
 
 function limitGraphData(data: VocabGraphData, maxNodes: number): VocabGraphData {
