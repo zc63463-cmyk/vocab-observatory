@@ -2,16 +2,16 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
 import { SkeletonBlock, SkeletonLine } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
 import { WordCard } from "@/components/words/WordCard";
 import { useFilteredSearch } from "@/hooks/useFilteredSearch";
 import { buildWordDetailHref } from "@/lib/words-routing";
-import { useToast } from "@/components/ui/Toast";
 import type { PublicWordsResponse, ReviewFilter } from "@/lib/words";
 
 type WordFilters = PublicWordsResponse["filters"];
@@ -23,6 +23,24 @@ interface LoadMoreState {
   key: string | null;
   pageInfo: PublicWordsResponse["pageInfo"] | null;
   words: PublicWordsResponse["words"];
+}
+
+interface BatchAddResponse {
+  addedCount: number;
+  alreadyTrackedCount?: number;
+  error?: string;
+  notFound?: string[];
+  ok: boolean;
+}
+
+function createEmptyLoadMoreState(): LoadMoreState {
+  return {
+    error: null,
+    isLoading: false,
+    key: null,
+    pageInfo: null,
+    words: [],
+  };
 }
 
 function normalizeWordFilters(filters?: Partial<WordFilters>): WordFilters {
@@ -126,34 +144,14 @@ function mergeWordPages(
 export function WordsSearchShell({ initialResult }: { initialResult: PublicWordsResponse }) {
   const initialPageLimit = initialResult.pageInfo.limit;
   const loadMoreControllerRef = useRef<AbortController | null>(null);
-  const [loadMoreState, setLoadMoreState] = useState<LoadMoreState>({
-    error: null,
-    isLoading: false,
-    key: null,
-    pageInfo: null,
-    words: [],
-  });
-
-  // Batch selection state (declared early, logic after displayResult)
+  const [loadMoreState, setLoadMoreState] = useState<LoadMoreState>(createEmptyLoadMoreState);
+  const [refreshedResult, setRefreshedResult] = useState<{
+    result: PublicWordsResponse;
+    sourceResult: PublicWordsResponse;
+  } | null>(null);
   const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
   const [isBatchPending, setIsBatchPending] = useState(false);
   const { addToast } = useToast();
-
-  const toggleWordSelect = useCallback((wordId: string) => {
-    setSelectedWordIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(wordId)) {
-        next.delete(wordId);
-      } else {
-        next.add(wordId);
-      }
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedWordIds(new Set());
-  }, []);
 
   const buildInitialApiHref = useCallback(
     (filters: WordFilters) => buildWordsApiHref(filters, { limit: initialPageLimit }),
@@ -184,15 +182,18 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     readResponse: readWordsResponse,
   });
 
+  const baseResult = refreshedResult?.sourceResult === result
+    ? refreshedResult.result
+    : result;
   const resultKey = useMemo(() => {
     return JSON.stringify({
-      filters: result.filters,
-      isOwner: result.isOwner,
-      limit: result.pageInfo.limit,
-      total: result.counts.total,
-      words: result.words.map((word) => word.id),
+      filters: baseResult.filters,
+      isOwner: baseResult.isOwner,
+      limit: baseResult.pageInfo.limit,
+      total: baseResult.counts.total,
+      words: baseResult.words.map((word) => word.id),
     });
-  }, [result]);
+  }, [baseResult]);
 
   useEffect(() => {
     loadMoreControllerRef.current?.abort();
@@ -211,52 +212,101 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
       !loadMoreState.pageInfo ||
       loadMoreState.words.length === 0
     ) {
-      return result;
+      return baseResult;
     }
 
-    return mergeWordPages(result, loadMoreState.words, loadMoreState.pageInfo);
-  }, [loadMoreState, result, resultKey]);
+    return mergeWordPages(baseResult, loadMoreState.words, loadMoreState.pageInfo);
+  }, [baseResult, loadMoreState, resultKey]);
+
   const isLoadingMore = loadMoreState.key === resultKey && loadMoreState.isLoading;
   const loadMoreError = loadMoreState.key === resultKey ? loadMoreState.error : null;
-
-  // Batch selection logic (depends on displayResult)
   const untrackedWords = useMemo(
-    () => displayResult.words.filter((w) => !w.progress),
+    () => displayResult.words.filter((word) => !word.progress),
     [displayResult.words],
   );
+  const visibleSelectedWordIds = useMemo(() => {
+    const visibleUntrackedIds = new Set(untrackedWords.map((word) => word.id));
+    return new Set(
+      [...selectedWordIds].filter((wordId) => visibleUntrackedIds.has(wordId)),
+    );
+  }, [selectedWordIds, untrackedWords]);
+  const selectedCount = visibleSelectedWordIds.size;
+
+  const toggleWordSelect = useCallback((wordId: string) => {
+    setSelectedWordIds((current) => {
+      const next = new Set(current);
+      if (next.has(wordId)) {
+        next.delete(wordId);
+      } else {
+        next.add(wordId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedWordIds(new Set());
+  }, []);
 
   const selectAllUntracked = useCallback(() => {
-    setSelectedWordIds(new Set(untrackedWords.map((w) => w.id)));
+    setSelectedWordIds(new Set(untrackedWords.map((word) => word.id)));
   }, [untrackedWords]);
 
+  const refreshCurrentWords = useCallback(async () => {
+    const response = await fetch(
+      buildWordsApiHref(displayResult.filters, {
+        limit: Math.max(displayResult.words.length, initialPageLimit),
+      }),
+      {
+        credentials: "same-origin",
+      },
+    );
+    const payload = await readWordsResponse(response);
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to refresh words.");
+    }
+
+    setLoadMoreState(createEmptyLoadMoreState());
+    setRefreshedResult({
+      result: payload,
+      sourceResult: result,
+    });
+  }, [displayResult.filters, displayResult.words.length, initialPageLimit, result]);
+
   const handleBatchAdd = useCallback(() => {
-    if (selectedWordIds.size === 0 || isBatchPending) return;
+    if (visibleSelectedWordIds.size === 0 || isBatchPending) {
+      return;
+    }
 
     setIsBatchPending(true);
-    startTransition(async () => {
+    void (async () => {
       try {
         const response = await fetch("/api/review/add-batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wordIds: [...selectedWordIds] }),
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wordIds: [...visibleSelectedWordIds] }),
         });
-        const payload = await response.json();
+        const payload = (await response.json()) as BatchAddResponse;
         if (!response.ok) {
           throw new Error(payload.error ?? "批量添加失败");
         }
-        addToast(`已将 ${payload.addedCount} 个词条加入复习队列`, "success");
+
         setSelectedWordIds(new Set());
-        window.location.reload();
-      } catch (error) {
+        await refreshCurrentWords();
         addToast(
-          error instanceof Error ? error.message : "批量添加失败",
-          "error",
+          payload.alreadyTrackedCount
+            ? `已将 ${payload.addedCount} 个词条加入复习，${payload.alreadyTrackedCount} 个已在复习中`
+            : `已将 ${payload.addedCount} 个词条加入复习`,
+          "success",
         );
+      } catch (error) {
+        addToast(error instanceof Error ? error.message : "批量添加失败", "error");
       } finally {
         setIsBatchPending(false);
       }
-    });
-  }, [selectedWordIds, isBatchPending, addToast]);
+    })();
+  }, [visibleSelectedWordIds, isBatchPending, addToast, refreshCurrentWords]);
 
   const onQueryChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value),
@@ -279,6 +329,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     },
     [setFilter],
   );
+
   const onLoadMore = useCallback(() => {
     if (
       isUpdating ||
@@ -328,8 +379,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
         }
 
         setLoadMoreState((current) => {
-          const existingWords =
-            current.key === activeResultKey ? current.words : [];
+          const existingWords = current.key === activeResultKey ? current.words : [];
           const seen = new Set(existingWords.map((word) => word.id));
           const mergedWords = existingWords.concat(
             payload.words.filter((word) => !seen.has(word.id)),
@@ -350,8 +400,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
         }
 
         setLoadMoreState((current) => ({
-          error:
-            error instanceof Error ? error.message : "Failed to load more words.",
+          error: error instanceof Error ? error.message : "Failed to load more words.",
           isLoading: false,
           key: activeResultKey,
           pageInfo: current.key === activeResultKey ? current.pageInfo : null,
@@ -400,10 +449,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
-            <Select
-              value={activeFilters.semantic}
-              onChange={onSemanticChange}
-            >
+            <Select value={activeFilters.semantic} onChange={onSemanticChange}>
               <option value="">全部语义场</option>
               {displayResult.filterOptions.semanticFields.map((value) => (
                 <option key={value} value={value}>
@@ -412,10 +458,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
               ))}
             </Select>
 
-            <Select
-              value={activeFilters.freq}
-              onChange={onFreqChange}
-            >
+            <Select value={activeFilters.freq} onChange={onFreqChange}>
               <option value="">全部词频</option>
               {displayResult.filterOptions.frequencies.map((value) => (
                 <option key={value} value={value}>
@@ -425,10 +468,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             </Select>
 
             {displayResult.isOwner ? (
-              <Select
-                value={activeFilters.review}
-                onChange={onReviewChange}
-              >
+              <Select value={activeFilters.review} onChange={onReviewChange}>
                 <option value="all">全部词条</option>
                 <option value="tracked">已加入复习</option>
                 <option value="due">今天到期</option>
@@ -460,7 +500,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
       {!displayResult.configured ? (
         <EmptyState
           title="Supabase 尚未配置"
-          description="请先配置公开环境变量并运行导入接口，随后这里会显示公开词条列表。"
+          description="请先配置公开环境变量并运行导入同步，随后这里会显示公开词条列表。"
         />
       ) : shouldShowInitialLoading ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -490,10 +530,10 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
         <div className="space-y-6">
           {displayResult.isOwner && untrackedWords.length > 0 ? (
             <div className="flex flex-wrap items-center gap-3 rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3">
-              {selectedWordIds.size > 0 ? (
+              {selectedCount > 0 ? (
                 <>
                   <span className="text-sm text-[var(--color-ink-soft)]">
-                    已选 {selectedWordIds.size} 个未追踪词条
+                    已选 {selectedCount} 个未追踪词条
                   </span>
                   <Button
                     type="button"
@@ -501,14 +541,9 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                     disabled={isBatchPending}
                     onClick={handleBatchAdd}
                   >
-                    {isBatchPending ? "处理中..." : `批量加入复习 (${selectedWordIds.size})`}
+                    {isBatchPending ? "处理中..." : `批量加入复习 (${selectedCount})`}
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={clearSelection}
-                  >
+                  <Button type="button" size="sm" variant="ghost" onClick={clearSelection}>
                     取消选择
                   </Button>
                 </>
@@ -517,12 +552,7 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
                   <span className="text-sm text-[var(--color-ink-soft)]">
                     当前 {untrackedWords.length} 个词条未加入复习
                   </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={selectAllUntracked}
-                  >
+                  <Button type="button" size="sm" variant="ghost" onClick={selectAllUntracked}>
                     全选加入
                   </Button>
                 </>
@@ -530,17 +560,14 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
             </div>
           ) : null}
 
-          <div
-            aria-busy={isBusy}
-            className="grid gap-5 md:grid-cols-2 xl:grid-cols-3"
-          >
+          <div aria-busy={isBusy} className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {displayResult.words.map((word) => (
               <WordCard
                 key={word.id}
                 href={buildWordDetailHref(word.slug, new URLSearchParams(searchParamsString))}
                 word={word}
                 selectable={displayResult.isOwner}
-                selected={selectedWordIds.has(word.id)}
+                selected={visibleSelectedWordIds.has(word.id)}
                 onToggleSelect={toggleWordSelect}
               />
             ))}

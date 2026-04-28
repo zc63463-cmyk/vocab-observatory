@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { buildInitialSchedulerPayload } from "@/lib/review/fsrs-adapter";
 import {
-  buildInitialSchedulerPayload,
-} from "@/lib/review/fsrs-adapter";
+  buildBatchReviewInsertPlan,
+  uniqueWordIds,
+  type BatchReviewWord,
+} from "@/lib/review/batch-add";
 import { getUserDesiredRetention } from "@/lib/review/settings";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { batchAddToReviewSchema } from "@/lib/validation/schemas";
-import { asJson } from "@/types/database.types";
 
 export async function POST(request: NextRequest) {
   const ownerSession = await requireOwnerApiSession();
@@ -22,51 +24,63 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = ownerSession.supabase!;
-  const { wordIds } = body.data;
+  const userId = ownerSession.user!.id;
+  const requestedWordIds = uniqueWordIds(body.data.wordIds);
 
-  // Verify all words exist and are not deleted
   const { data: words, error: wordsError } = await supabase
     .from("words")
     .select("id, content_hash")
-    .in("id", wordIds)
+    .in("id", requestedWordIds)
     .eq("is_deleted", false);
 
   if (wordsError) {
     throw wordsError;
   }
 
-  const foundIds = new Set((words ?? []).map((w) => w.id));
-  const desiredRetention = await getUserDesiredRetention(
-    supabase,
-    ownerSession.user!.id,
-  );
-  const now = new Date().toISOString();
-  const initialPayload = buildInitialSchedulerPayload(new Date(now));
+  const foundWordIds = (words ?? []).map((word) => word.id);
+  const existingWordIds = new Set<string>();
+  if (foundWordIds.length > 0) {
+    const { data: existingProgress, error: existingProgressError } = await supabase
+      .from("user_word_progress")
+      .select("word_id")
+      .eq("user_id", userId)
+      .in("word_id", foundWordIds);
 
-  // Only upsert words that exist
-  const rows = (words ?? []).map((word) => ({
-    content_hash_snapshot: word.content_hash,
-    desired_retention: desiredRetention,
-    due_at: now,
-    schedule_algo: "fsrs",
-    scheduler_payload: asJson(initialPayload),
-    state: "new" as const,
-    updated_at: now,
-    user_id: ownerSession.user!.id,
-    word_id: word.id,
-  }));
+    if (existingProgressError) {
+      throw existingProgressError;
+    }
 
-  if (rows.length === 0) {
+    for (const progress of existingProgress ?? []) {
+      existingWordIds.add(progress.word_id);
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const desiredRetention = await getUserDesiredRetention(supabase, userId);
+  const initialPayload = buildInitialSchedulerPayload(new Date(nowIso));
+  const plan = buildBatchReviewInsertPlan({
+    desiredRetention,
+    existingWordIds,
+    initialPayload,
+    nowIso,
+    requestedWordIds,
+    userId,
+    words: (words ?? []) as BatchReviewWord[],
+  });
+
+  if (plan.rows.length === 0) {
     return NextResponse.json({
       addedCount: 0,
-      notFound: wordIds.filter((id) => !foundIds.has(id)),
+      alreadyTrackedCount: plan.alreadyTrackedCount,
+      notFound: plan.notFound,
       ok: true,
     });
   }
 
   const { data, error } = await supabase
     .from("user_word_progress")
-    .upsert(rows, {
+    .upsert(plan.rows, {
+      ignoreDuplicates: true,
       onConflict: "user_id,word_id",
     })
     .select("id, word_id");
@@ -75,9 +89,13 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
+  const addedCount = data?.length ?? 0;
+  const ignoredAsAlreadyTracked = Math.max(0, plan.rows.length - addedCount);
+
   return NextResponse.json({
-    addedCount: data?.length ?? 0,
-    notFound: wordIds.filter((id) => !foundIds.has(id)),
+    addedCount,
+    alreadyTrackedCount: plan.alreadyTrackedCount + ignoredAsAlreadyTracked,
+    notFound: plan.notFound,
     ok: true,
   });
 }

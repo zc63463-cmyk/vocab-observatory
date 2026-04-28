@@ -5,12 +5,14 @@ import type { Route } from "next";
 import Link from "next/link";
 import { useState } from "react";
 import { springs } from "@/components/motion";
+import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 const MotionLink = motion.create(Link);
 
 interface WordCardShellProps {
   children: ReactNode;
+  className?: string;
   href: string;
 }
 
@@ -26,7 +28,7 @@ const SPRING_CONFIG = { damping: 25, stiffness: 200 };
  * - Tap: subtle scale-down feedback
  * - Reduced-motion: disables tilt, keeps lift
  */
-export function WordCardShell({ children, href }: WordCardShellProps) {
+export function WordCardShell({ children, className, href }: WordCardShellProps) {
   const prefersReduced = useReducedMotion();
   const [shouldPrefetch, setShouldPrefetch] = useState(false);
 
@@ -69,7 +71,10 @@ export function WordCardShell({ children, href }: WordCardShellProps) {
     <MotionLink
       href={href as Route}
       prefetch={shouldPrefetch || undefined}
-      className="panel group flex h-full flex-col rounded-[1.75rem] p-6 transition-colors duration-200 hover:border-[var(--color-border-strong)]"
+      className={cn(
+        "panel group flex h-full flex-col rounded-[1.75rem] p-6 transition-colors duration-200 hover:border-[var(--color-border-strong)]",
+        className,
+      )}
       style={tiltStyle}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}

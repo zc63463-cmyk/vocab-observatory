@@ -17,6 +17,7 @@ export type VocabGraphNode = {
   type: VocabGraphNodeType;
   href?: string;
   weight?: number;
+  wordId?: string;
 };
 
 export type VocabGraphEdge = {
@@ -304,6 +305,9 @@ function createNodeFromCandidate(
     label: targetEntry ? getEntryLabel(targetEntry) : candidate.label,
     type: candidate.type,
     weight: candidate.weight,
+    ...(targetEntry && firstText(targetEntry.id)
+      ? { wordId: firstText(targetEntry.id) }
+      : {}),
   };
 }
 
@@ -341,6 +345,7 @@ export function buildLocalVocabGraph(
     label: getEntryLabel(entry),
     type: "current",
     weight: NODE_TYPE_WEIGHT.current,
+    ...(firstText(entry.id) ? { wordId: firstText(entry.id) } : {}),
   };
   const nodes = new Map<string, VocabGraphNode>([[centerId, centerNode]]);
   const edges = new Map<string, VocabGraphEdge>();

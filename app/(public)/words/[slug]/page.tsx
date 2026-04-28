@@ -14,7 +14,7 @@ import { WordHeader } from "@/components/words/WordHeader";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import { VocabTopologyGraphIsland } from "@/components/vocab/VocabTopologyGraphIsland";
-import { buildLocalVocabGraph } from "@/lib/vocab-graph";
+import { buildLocalVocabGraph, type VocabGraphData } from "@/lib/vocab-graph";
 import { buildWordsListHref } from "@/lib/words-routing";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
@@ -35,6 +35,17 @@ type WordDetailSearchParams = Promise<{
   review?: string | string[];
   semantic?: string | string[];
 }>;
+
+function getRelatedReviewWordIds(graphData: VocabGraphData) {
+  return [
+    ...new Set(
+      graphData.nodes
+        .filter((node) => node.id !== graphData.centerId)
+        .map((node) => node.wordId)
+        .filter((wordId): wordId is string => Boolean(wordId)),
+    ),
+  ];
+}
 
 export async function generateMetadata({
   params,
@@ -158,6 +169,7 @@ export async function WordDetailContent({
   // examples is stored as Json but is actually ParsedExample[] at runtime
   const legacyExamples = result.word.examples as unknown as ParsedExample[];
   const graphData = buildLocalVocabGraph(result.word, allEntries);
+  const relatedReviewWordIds = getRelatedReviewWordIds(graphData);
   const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
 
   return (
@@ -237,7 +249,10 @@ export async function WordDetailContent({
                 <SkeletonLine className="mt-4 h-10 rounded-2xl" />
               </div>
             }>
-              <OwnerWordSidebar wordId={result.word.id} />
+              <OwnerWordSidebar
+                wordId={result.word.id}
+                relatedReviewWordIds={relatedReviewWordIds}
+              />
             </Suspense>
           </div>
         </aside>

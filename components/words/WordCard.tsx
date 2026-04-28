@@ -13,7 +13,13 @@ interface WordCardProps {
   onToggleSelect?: (wordId: string) => void;
 }
 
-export function WordCard({ href, word, selectable, selected, onToggleSelect }: WordCardProps) {
+export function WordCard({
+  href,
+  onToggleSelect,
+  selectable,
+  selected = false,
+  word,
+}: WordCardProps) {
   const semanticField =
     typeof word.metadata === "object" &&
     word.metadata &&
@@ -29,78 +35,79 @@ export function WordCard({ href, word, selectable, selected, onToggleSelect }: W
   const isDue = word.progress?.is_due ?? false;
   const isTracked = word.progress !== null;
   const detailHref = href ?? `/words/${word.slug}`;
+  const showSelection = Boolean(selectable && !isTracked);
 
   return (
-    <WordCardShell href={detailHref}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0">
-          {selectable && !isTracked ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onToggleSelect?.(word.id);
-              }}
-              className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors"
-              style={{
-                borderColor: selected
-                  ? "var(--color-accent)"
-                  : "var(--color-border)",
-                backgroundColor: selected
-                  ? "var(--color-accent)"
-                  : "transparent",
-              }}
-              aria-label={selected ? "取消选择" : "选择"}
-              aria-pressed={selected}
+    <div className="relative h-full">
+      {showSelection ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleSelect?.(word.id);
+          }}
+          className="absolute left-6 top-7 z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors"
+          style={{
+            backgroundColor: selected ? "var(--color-accent)" : "transparent",
+            borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
+          }}
+          aria-label={selected ? "取消选择" : "选择"}
+          aria-pressed={selected}
+        >
+          {selected ? (
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              className="text-white"
+              aria-hidden="true"
             >
-              {selected ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  className="text-white"
-                >
-                  <path
-                    d="M2.5 6L5 8.5L9.5 3.5"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : null}
-            </button>
+              <path
+                d="M2.5 6L5 8.5L9.5 3.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           ) : null}
+        </button>
+      ) : null}
+
+      <WordCardShell href={detailHref} className={showSelection ? "pl-14" : undefined}>
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="section-title text-3xl font-semibold">{word.lemma}</p>
             {word.ipa ? (
-              <p className="mt-2 text-sm tracking-wide text-[var(--color-ink-soft)]">{word.ipa}</p>
+              <p className="mt-2 text-sm tracking-wide text-[var(--color-ink-soft)]">
+                {word.ipa}
+              </p>
             ) : null}
           </div>
+          {wordFrequency ? <Badge tone="warm">{wordFrequency}</Badge> : null}
         </div>
-        {wordFrequency ? <Badge tone="warm">{wordFrequency}</Badge> : null}
-      </div>
 
-      <p className="mt-5 text-sm leading-7 text-[var(--color-ink-soft)]">
-        {word.short_definition ?? "尚未解析核心释义。"}
-      </p>
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        {semanticField ? <Badge>{semanticField}</Badge> : null}
-        {word.progress ? (
-          <Badge tone={isDue ? "warm" : "default"}>
-            {isDue ? "今日到期" : `已加入 · ${word.progress.review_count}次`}
-          </Badge>
-        ) : null}
-      </div>
-
-      {word.progress?.due_at ? (
-        <p className="mt-4 text-xs text-[var(--color-ink-soft)]">
-          下次复习：{formatDateTime(word.progress.due_at)}
+        <p className="mt-5 text-sm leading-7 text-[var(--color-ink-soft)]">
+          {word.short_definition ?? "尚未解析核心释义。"}
         </p>
-      ) : null}
-    </WordCardShell>
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          {semanticField ? <Badge>{semanticField}</Badge> : null}
+          {word.progress ? (
+            <Badge tone={isDue ? "warm" : "default"}>
+              {isDue ? "今日到期" : `已加入 · ${word.progress.review_count}次`}
+            </Badge>
+          ) : null}
+        </div>
+
+        {word.progress?.due_at ? (
+          <p className="mt-4 text-xs text-[var(--color-ink-soft)]">
+            下次复习：{formatDateTime(word.progress.due_at)}
+          </p>
+        ) : null}
+      </WordCardShell>
+    </div>
   );
 }

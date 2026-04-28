@@ -4,8 +4,10 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { User } from "@supabase/supabase-js";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { SkeletonBlock } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
 import { AddToReviewButton } from "@/components/words/AddToReviewButton";
 import { WordNotes } from "@/components/words/WordNotes";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -28,6 +30,13 @@ interface SidebarPayload {
   history: NoteRevision[];
   note: NoteSnapshot;
   progress: OwnerWordProgressSummary | null;
+}
+
+interface BatchAddResponse {
+  addedCount: number;
+  alreadyTrackedCount?: number;
+  error?: string;
+  ok: boolean;
 }
 
 type SidebarState =
@@ -108,8 +117,89 @@ function scheduleIdleTask(callback: IdleCallbackFn) {
   };
 }
 
-export function OwnerWordSidebar({ wordId }: { wordId: string }) {
+function RelatedWordsReviewBatchButton({ wordIds }: { wordIds: string[] }) {
+  const [pending, setPending] = useState(false);
+  const [processed, setProcessed] = useState(false);
+  const { addToast } = useToast();
+
+  if (wordIds.length === 0) {
+    return null;
+  }
+
+  function handleAddRelated() {
+    if (pending || processed) {
+      return;
+    }
+
+    setPending(true);
+    void (async () => {
+      try {
+        const response = await fetch("/api/review/add-batch", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ wordIds }),
+        });
+        const payload = (await response.json()) as BatchAddResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "批量添加失败");
+        }
+
+        setProcessed(true);
+        addToast(
+          payload.alreadyTrackedCount
+            ? `已将 ${payload.addedCount} 个相关词加入复习，${payload.alreadyTrackedCount} 个已在复习中`
+            : `已将 ${payload.addedCount} 个相关词加入复习`,
+          "success",
+        );
+      } catch (error) {
+        addToast(error instanceof Error ? error.message : "批量添加失败", "error");
+      } finally {
+        setPending(false);
+      }
+    })();
+  }
+
+  return (
+    <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+        Related Review
+      </p>
+      <h3 className="section-title mt-2 text-2xl font-semibold">相关词复习</h3>
+      <p className="mt-3 text-sm leading-7 text-[var(--color-ink-soft)]">
+        将当前拓扑中的近义词、反义词和同根词加入复习队列。
+      </p>
+      <Button
+        type="button"
+        className="mt-5"
+        disabled={pending || processed}
+        fullWidth
+        onClick={handleAddRelated}
+      >
+        {processed
+          ? "相关词已处理"
+          : pending
+            ? "处理中..."
+            : `加入相关词复习 (${wordIds.length})`}
+      </Button>
+    </div>
+  );
+}
+
+export function OwnerWordSidebar({
+  relatedReviewWordIds = [],
+  wordId,
+}: {
+  relatedReviewWordIds?: string[];
+  wordId: string;
+}) {
   const pathname = usePathname();
+  const uniqueRelatedReviewWordIds = useMemo(
+    () => [...new Set(relatedReviewWordIds)].filter((id) => id !== wordId),
+    [relatedReviewWordIds, wordId],
+  );
   const [sidebarState, setSidebarState] = useState<SidebarState>({ status: "guest" });
   const abortRef = useRef<AbortController | null>(null);
   const idleHandleRef = useRef<IdleCallbackHandle | null>(null);
@@ -262,6 +352,7 @@ export function OwnerWordSidebar({ wordId }: { wordId: string }) {
         wordId={wordId}
         initialProgress={sidebarState.progress}
       />
+      <RelatedWordsReviewBatchButton wordIds={uniqueRelatedReviewWordIds} />
       <WordNotes
         wordId={wordId}
         initialContent={sidebarState.note.contentMd}
