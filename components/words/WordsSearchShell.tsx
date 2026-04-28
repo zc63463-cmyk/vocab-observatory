@@ -180,6 +180,8 @@ export function WordsSearchShell({ initialResult }: { initialResult: PublicWords
     initialResult,
     normalizeFilters: normalizeWordFilters,
     readResponse: readWordsResponse,
+    shouldSkipInitialFetch: (urlFilters, seededResult) =>
+      areWordFiltersEqual(urlFilters, seededResult.filters),
   });
 
   const baseResult = refreshedResult?.sourceResult === result
