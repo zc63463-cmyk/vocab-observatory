@@ -2,8 +2,12 @@
 -- Cause: RETURNS TABLE OUT parameters (progress_id, word_id) collided with column names
 --        used in WHERE / SELECT clauses inside the function body.
 -- Fix:   prefix OUT parameter names with `out_` so they cannot shadow real columns.
+-- Note:  must DROP first because changing OUT parameter names changes the return row type,
+--        which CREATE OR REPLACE cannot do.
 
-CREATE OR REPLACE FUNCTION public.undo_review_log(
+DROP FUNCTION IF EXISTS public.undo_review_log(uuid, uuid, uuid);
+
+CREATE FUNCTION public.undo_review_log(
   p_review_log_id uuid,
   p_user_id uuid,
   p_session_id uuid
