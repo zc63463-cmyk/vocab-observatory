@@ -434,7 +434,21 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      undo_review_log: {
+        Args: {
+          p_review_log_id: string;
+          p_user_id: string;
+          p_session_id: string;
+        };
+        Returns: {
+          success: boolean;
+          progress_id: string | null;
+          word_id: string | null;
+          error_message: string | null;
+        }[];
+      };
+    };
     Enums: {
       review_rating: ReviewRating;
     };

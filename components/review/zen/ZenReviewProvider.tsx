@@ -130,15 +130,20 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
     case "RESTORE_BACK":
       return { ...state, phase: "back", pending: false, lastRating: null };
 
-    case "RESTORE_CARD":
+    case "RESTORE_CARD": {
+      // Fix-6: Remove duplicate from items before inserting restored card at front
+      const dedupedItems = state.items.filter(
+        (i) => i.progress_id !== action.item.progress_id
+      );
       return {
         ...state,
         phase: "back",
         item: action.item,
-        items: [action.item, ...state.items],
+        items: [action.item, ...dedupedItems],
         pending: false,
         lastRating: null,
       };
+    }
 
     default:
       return state;
@@ -157,6 +162,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   const omni = useOmniStore();
   const [animationLock, setAnimationLock] = useState(false);
   const mountedRef = useRef(true);
+  const undoInFlightRef = useRef(false); // Synchronous guard for rapid-fire clicks (Fix-5)
   
   // UI state for history drawer (separate from core review state machine)
   const [uiState, setUiState] = useState<ZenUiState>({
@@ -340,10 +346,12 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     setUiState((prev) => ({ ...prev, isHistoryOpen: !prev.isHistoryOpen }));
   }, []);
 
-  // Undo the most recent rating
+  // Undo the most recent rating (Fix-5: added undoInFlightRef sync guard)
   const undo = useCallback(
     async (reviewLogId: string) => {
-      if (uiState.isUndoing) return;
+      // Synchronous ref check prevents race conditions from rapid-fire clicks
+      if (undoInFlightRef.current || uiState.isUndoing) return;
+      undoInFlightRef.current = true;
       setUiState((prev) => ({ ...prev, isUndoing: true }));
 
       try {
@@ -384,6 +392,8 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         setUiState((prev) => ({ ...prev, isUndoing: false }));
         const message = err instanceof Error ? err.message : "撤销失败";
         addToast(message, "error");
+      } finally {
+        undoInFlightRef.current = false; // Reset sync guard
       }
     },
     [uiState.isUndoing, submitUndo, setStats, setSession, addToast]

@@ -1,27 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import { reviewUndoSchema } from "@/lib/validation/schemas";
-import type { Json, ReviewRating } from "@/types/database.types";
 import type { ReviewQueueItem } from "@/lib/review/types";
-
-interface PreviousProgressSnapshot {
-  scheduler_payload: Json;
-  difficulty: number | null;
-  due_at: string | null;
-  interval_days: number | null;
-  lapse_count: number;
-  last_rating: string | null;
-  last_reviewed_at: string | null;
-  retrievability: number | null;
-  review_count: number;
-  stability: number | null;
-  state: string;
-  again_count: number;
-  hard_count: number;
-  good_count: number;
-  easy_count: number;
-  content_hash_snapshot: string | null;
-}
 
 export async function POST(request: NextRequest) {
   const ownerSession = await requireOwnerApiSession();
@@ -40,141 +20,75 @@ export async function POST(request: NextRequest) {
   const supabase = ownerSession.supabase!;
   const userId = ownerSession.user!.id;
 
-  // 1. Fetch the review log entry
-  const { data: logEntry, error: logError } = await supabase
-    .from("review_logs")
-    .select("id, user_id, word_id, progress_id, undone, previous_progress_snapshot, rating")
-    .eq("id", parsed.data.reviewLogId)
-    .single();
+  // Call atomic RPC function (Fix-1, Fix-3)
+  // All operations (progress restore, log mark undone, session decrement) are in one transaction
+  const { data: rpcResult, error: rpcError } = await supabase.rpc(
+    "undo_review_log",
+    {
+      p_review_log_id: parsed.data.reviewLogId,
+      p_user_id: userId,
+      p_session_id: parsed.data.sessionId,
+    }
+  );
 
-  if (logError) {
+  if (rpcError) {
     return NextResponse.json(
-      { error: "找不到该评分记录" },
-      { status: 404 },
+      { error: "撤销操作失败: " + rpcError.message },
+      { status: 500 },
     );
   }
 
-  // 2. Security checks
-  if (logEntry.user_id !== userId) {
+  // RPC returns an array with one row
+  const result = rpcResult?.[0];
+  if (!result) {
     return NextResponse.json(
-      { error: "无权撤销此评分" },
-      { status: 403 },
+      { error: "撤销操作返回无效结果" },
+      { status: 500 },
     );
   }
 
-  if (logEntry.undone) {
-    return NextResponse.json(
-      { error: "该评分已被撤销" },
-      { status: 409 },
-    );
+  if (!result.success) {
+    // Map error messages to appropriate status codes
+    const message = result.error_message || "撤销失败";
+    let status = 400;
+    if (message.includes("找不到")) status = 404;
+    else if (message.includes("无权")) status = 403;
+    else if (message.includes("已被撤销") || message.includes("只能撤销")) status = 409;
+    else if (message.includes("快照") || message.includes("进度关联")) status = 422;
+
+    return NextResponse.json({ error: message }, { status });
   }
 
-  if (!logEntry.previous_progress_snapshot) {
-    return NextResponse.json(
-      { error: "该评分记录不支持撤销（无快照）" },
-      { status: 422 },
-    );
+  // Fetch restored card data to return as ReviewQueueItem
+  if (!result.progress_id) {
+    // Should not happen since RPC validated this, but guard against null
+    return NextResponse.json({ ok: true, restoredItem: null });
   }
 
-  if (!logEntry.progress_id) {
-    return NextResponse.json(
-      { error: "该评分记录缺少进度关联" },
-      { status: 422 },
-    );
-  }
-
-  // 3. Verify this is the most recent non-undone log for this progress
-  const { data: latestLog, error: latestError } = await supabase
-    .from("review_logs")
-    .select("id")
-    .eq("progress_id", logEntry.progress_id)
-    .eq("undone", false)
-    .order("reviewed_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (latestError || !latestLog || latestLog.id !== logEntry.id) {
-    return NextResponse.json(
-      { error: "只能撤销最近一次评分" },
-      { status: 409 },
-    );
-  }
-
-  // 4. Restore progress from snapshot
-  const snapshot = logEntry.previous_progress_snapshot as unknown as PreviousProgressSnapshot;
-
-  const { error: restoreError } = await supabase
-    .from("user_word_progress")
-    .update({
-      scheduler_payload: snapshot.scheduler_payload,
-      difficulty: snapshot.difficulty,
-      due_at: snapshot.due_at,
-      interval_days: snapshot.interval_days,
-      lapse_count: snapshot.lapse_count,
-      last_rating: snapshot.last_rating as ReviewRating | null,
-      last_reviewed_at: snapshot.last_reviewed_at,
-      retrievability: snapshot.retrievability,
-      review_count: snapshot.review_count,
-      stability: snapshot.stability,
-      state: snapshot.state,
-      again_count: snapshot.again_count,
-      hard_count: snapshot.hard_count,
-      good_count: snapshot.good_count,
-      easy_count: snapshot.easy_count,
-      content_hash_snapshot: snapshot.content_hash_snapshot,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", logEntry.progress_id);
-
-  if (restoreError) {
-    throw restoreError;
-  }
-
-  // 5. Mark log as undone
-  const { error: markError } = await supabase
-    .from("review_logs")
-    .update({
-      undone: true,
-      undone_at: new Date().toISOString(),
-    })
-    .eq("id", logEntry.id);
-
-  if (markError) {
-    throw markError;
-  }
-
-  // 6. Decrement session cards_seen
-  const { data: sessionData, error: sessionFetchError } = await supabase
-    .from("sessions")
-    .select("cards_seen")
-    .eq("id", parsed.data.sessionId)
-    .single();
-
-  if (!sessionFetchError && sessionData) {
-    await supabase
-      .from("sessions")
-      .update({
-        cards_seen: Math.max(0, sessionData.cards_seen - 1),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", parsed.data.sessionId);
-  }
-
-  // 7. Fetch restored card data to return as ReviewQueueItem
   const { data: restoredProgress, error: fetchError } = await supabase
     .from("user_word_progress")
     .select(
       "id, word_id, state, review_count, due_at, content_hash_snapshot, scheduler_payload, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
     )
-    .eq("id", logEntry.progress_id)
+    .eq("id", result.progress_id)
     .single();
 
   if (fetchError || !restoredProgress) {
-    // Rollback succeeded but couldn't fetch display data — still a success
+    // Undo succeeded but couldn't fetch display data — still a success
     return NextResponse.json({ ok: true, restoredItem: null });
   }
 
-  const row = restoredProgress as {
+  // Runtime validation of scheduler_payload (Fix-4 partial check)
+  const payload = restoredProgress.scheduler_payload as unknown;
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    console.warn("Invalid scheduler_payload after undo for progress:", result.progress_id);
+  }
+
+  const row = restoredProgress as unknown as {
     content_hash_snapshot: string | null;
     due_at: string | null;
     id: string;

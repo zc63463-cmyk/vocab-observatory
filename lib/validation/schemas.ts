@@ -30,6 +30,26 @@ export const reviewUndoSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
+// Schema for validating previous_progress_snapshot at runtime (Fix-4)
+export const previousProgressSnapshotSchema = z.object({
+  scheduler_payload: z.record(z.string(), z.unknown()),
+  difficulty: z.number().nullable(),
+  due_at: z.string().nullable(),
+  interval_days: z.number().nullable(),
+  lapse_count: z.number().int().default(0),
+  last_rating: z.enum(["again", "hard", "good", "easy"]).nullable(),
+  last_reviewed_at: z.string().nullable(),
+  retrievability: z.number().nullable(),
+  review_count: z.number().int().default(0),
+  stability: z.number().nullable(),
+  state: z.string(),
+  again_count: z.number().int().default(0),
+  hard_count: z.number().int().default(0),
+  good_count: z.number().int().default(0),
+  easy_count: z.number().int().default(0),
+  content_hash_snapshot: z.string().nullable(),
+});
+
 export const reviewSuspendSchema = z.object({
   progressId: z.string().uuid(),
   sessionId: z.string().uuid(),
