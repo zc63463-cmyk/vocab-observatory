@@ -481,3 +481,58 @@ button {
     transition: none;
   }
 }
+
+/* ─── Zen Mode Styles ─── */
+
+body.zen-mode {
+  overflow: hidden;
+}
+
+body.zen-mode header,
+body.zen-mode [role="banner"],
+body.zen-mode .back-to-top {
+  display: none !important;
+}
+
+body.zen-mode main {
+  padding: 0 !important;
+}
+
+/* Zen review ambient background */
+.zen-ambient-bg {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(15, 111, 98, 0.04), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(178, 87, 47, 0.03), transparent 40%);
+}
+
+[data-theme="dark"] .zen-ambient-bg {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(62, 201, 180, 0.03), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(224, 144, 96, 0.02), transparent 40%);
+}
+
+/* Backface visibility for 3D card flip */
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Zen review container - remove layout padding */
+.zen-review-container {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+/* Reduced motion for zen mode */
+@media (prefers-reduced-motion: reduce) {
+  .zen-review-container * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .backface-hidden {
+    transition: none !important;
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { springs } from "@/components/motion";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -297,11 +298,21 @@ export function ReviewQueue() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
-        <MetricCard label="新卡" value={stats?.newCards ?? 0} />
-        <MetricCard label="已完成" value={completedCount} />
-        <MetricCard label="剩余" value={remainingCount} tone="warm" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid gap-4 sm:flex-1 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
+          <MetricCard label="新卡" value={stats?.newCards ?? 0} />
+          <MetricCard label="已完成" value={completedCount} />
+          <MetricCard label="剩余" value={remainingCount} tone="warm" />
+        </div>
+        
+        <a
+          href="/review/zen"
+          className="flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition hover:bg-[var(--color-surface-glass-hover)] sm:px-5"
+        >
+          <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
+          <span>禅意模式</span>
+        </a>
       </div>
 
       <ReviewProgressBar completed={completedCount} remaining={remainingCount} />

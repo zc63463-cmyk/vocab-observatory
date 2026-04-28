@@ -1,0 +1,197 @@
+"use client";
+
+import { motion, AnimatePresence } from "framer-motion";
+import { springs } from "@/components/motion";
+import { useZenReviewContext } from "./ZenReviewProvider";
+import type { ReviewQueueItem } from "@/lib/review/types";
+
+interface FlashcardFrontProps {
+  item: ReviewQueueItem;
+  onReveal: () => void;
+}
+
+function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
+  return (
+    <motion.div
+      key="front"
+      className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center backface-hidden"
+      style={{ backfaceVisibility: "hidden" }}
+      onClick={onReveal}
+      initial={{ rotateY: 0 }}
+      animate={{ rotateY: 0 }}
+      exit={{ rotateY: 180 }}
+      transition={{ type: "spring", ...springs.smooth }}
+    >
+      {/* Word Display */}
+      <div className="text-center">
+        <h1 
+          className="text-6xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-7xl md:text-8xl"
+          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        >
+          {item.lemma}
+        </h1>
+        
+        {item.ipa && (
+          <p className="mt-4 text-xl text-[var(--color-ink-soft)] sm:text-2xl">
+            {item.ipa}
+          </p>
+        )}
+      </div>
+
+      {/* Hint */}
+      <div className="absolute bottom-8 left-0 right-0 text-center">
+        <p className="text-sm text-[var(--color-ink-soft)] opacity-60">
+          按 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">Space</kbd> 或点击显示释义
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+interface FlashcardBackProps {
+  item: ReviewQueueItem;
+}
+
+function FlashcardBack({ item }: FlashcardBackProps) {
+  const semanticField =
+    typeof item.metadata === "object" &&
+    item.metadata &&
+    "semantic_field" in item.metadata
+      ? String(item.metadata.semantic_field)
+      : null;
+
+  return (
+    <motion.div
+      key="back"
+      className="absolute inset-0 flex flex-col items-center justify-center p-6 backface-hidden"
+      style={{ 
+        backfaceVisibility: "hidden",
+        transform: "rotateY(180deg)",
+      }}
+      initial={{ rotateY: -180 }}
+      animate={{ rotateY: 0 }}
+      exit={{ rotateY: -180 }}
+      transition={{ type: "spring", ...springs.smooth }}
+    >
+      {/* Answer Card */}
+      <div 
+        className="w-full max-w-2xl rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-lg backdrop-blur-lg sm:p-10"
+        style={{ 
+          background: "var(--color-panel)",
+          backdropFilter: "blur(18px)",
+        }}
+      >
+        {/* Tags */}
+        <div className="mb-6 flex flex-wrap gap-2">
+          {semanticField && (
+            <span className="rounded-full border border-[var(--color-pill-border)] bg-[var(--color-pill-bg)] px-3 py-1 text-xs text-[var(--color-pill-text)]">
+              {semanticField}
+            </span>
+          )}
+          <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1 text-xs text-[var(--color-ink-soft)]">
+            {item.queue_label}
+          </span>
+        </div>
+
+        {/* Word */}
+        <h2 
+          className="text-3xl font-semibold text-[var(--color-ink)] sm:text-4xl"
+          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        >
+          {item.lemma}
+        </h2>
+        
+        {item.ipa && (
+          <p className="mt-2 text-lg text-[var(--color-ink-soft)]">{item.ipa}</p>
+        )}
+
+        {/* Definition */}
+        <div className="mt-6 border-t border-[var(--color-border)] pt-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+            释义
+          </p>
+          <p className="mt-3 text-lg leading-relaxed text-[var(--color-ink)]">
+            {item.short_definition ?? item.definition_md}
+          </p>
+        </div>
+
+        {/* Review count hint */}
+        <div className="mt-6 flex items-center justify-between text-xs text-[var(--color-ink-soft)] opacity-60">
+          <span>已复习 {item.review_count} 次</span>
+          {item.retrievability !== null && (
+            <span>记忆留存度 {Math.round(item.retrievability * 100)}%</span>
+          )}
+        </div>
+      </div>
+
+      {/* Rating hint */}
+      <div className="absolute bottom-8 left-0 right-0 text-center">
+        <p className="text-sm text-[var(--color-ink-soft)] opacity-60">
+          <span className="hidden sm:inline">
+            <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">1</kbd> Again
+            {" "}<kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">2</kbd> Hard
+            {" "}<kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">3</kbd> Good
+            {" "}<kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">4</kbd> Easy
+          </span>
+          <span className="sm:hidden">
+            点击评分按钮或按数字键 1-4
+          </span>
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+export function ZenFlashcard() {
+  const { item, phase, reveal, rate } = useZenReviewContext();
+
+  if (!item) return null;
+
+  const showBack = phase === "back" || phase === "rating";
+
+  return (
+    <div 
+      className="relative mx-auto aspect-[4/3] w-full max-w-3xl cursor-pointer sm:aspect-[16/10]"
+      style={{ perspective: "1200px" }}
+      onClick={phase === "front" ? reveal : undefined}
+    >
+      <motion.div
+        className="relative h-full w-full"
+        style={{ 
+          transformStyle: "preserve-3d",
+        }}
+        animate={{ 
+          rotateY: showBack ? 180 : 0,
+        }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 150, 
+          damping: 20,
+        }}
+      >
+        {/* Front Face */}
+        <div 
+          className="absolute inset-0 rounded-[2.5rem] border border-[var(--color-border-strong)] bg-[var(--color-panel-strong)] shadow-[var(--shadow-panel-strong)]"
+          style={{ 
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+          }}
+        >
+          <FlashcardFront item={item} onReveal={reveal} />
+        </div>
+
+        {/* Back Face */}
+        <div 
+          className="absolute inset-0 rounded-[2.5rem] border border-[var(--color-border-strong)] bg-[var(--color-panel-strong)] shadow-[var(--shadow-panel-strong)]"
+          style={{ 
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+          }}
+        >
+          <FlashcardBack item={item} />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
