@@ -1217,7 +1217,7 @@ const getCachedPublicWordDetailRecord = unstable_cache(
         resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items),
         resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items),
         synonym_html: synonymHtml,
-        tags: ((tagRows ?? []) as Array<{ tags: { label: string; slug: string } }>).map(
+        tags: ((tagRows ?? []) as unknown as Array<{ tags: { label: string; slug: string } }>).map(
           (row) => row.tags,
         ),
       } satisfies CachedPublicWordDetail;

@@ -31,7 +31,7 @@ export async function GET() {
     throw error;
   }
 
-  const rawRows = (data ?? []) as Array<{
+  const rawRows = (data ?? []) as unknown as Array<{
     content_hash_snapshot: string | null;
     desired_retention: number | null;
     due_at: string | null;

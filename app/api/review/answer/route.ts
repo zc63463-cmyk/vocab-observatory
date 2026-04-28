@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     words: { content_hash: string };
   }
 
-  const progress = progressData as ProgressWithContentHash;
+  const progress = progressData as unknown as ProgressWithContentHash;
 
   const now = new Date();
   const scheduling = applyReviewAnswer(

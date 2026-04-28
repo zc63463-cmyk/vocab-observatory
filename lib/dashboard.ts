@@ -485,7 +485,7 @@ export async function getDashboardSummary() {
     reviewed_at: string;
     words: { lemma: string; metadata: Json; slug: string; title: string } | null;
   };
-  const reviewLogs30d = (reviewLogs30dWithWordsResult.data ?? []) as ReviewLogWithWords[];
+  const reviewLogs30d = (reviewLogs30dWithWordsResult.data ?? []) as unknown as ReviewLogWithWords[];
 
   const sevenDaysAgo = addDays(new Date(today), -6);
   const reviewLogs7d = reviewLogs30d.filter((row) => row.reviewed_at >= sevenDaysAgo.toISOString());
@@ -575,7 +575,7 @@ export async function getDashboardSummary() {
       todayNewCount,
       trackedWords,
     },
-    notes: (notesResult.data ?? []) as Array<{
+    notes: (notesResult.data ?? []) as unknown as Array<{
       content_md: string;
       updated_at: string;
       version: number;
