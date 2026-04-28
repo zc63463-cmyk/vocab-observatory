@@ -9,7 +9,8 @@ export function useOmniHotkeys() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Ignore keys during IME composition
-      if ((e as any).isComposing) return;
+      const event = e as KeyboardEvent & { isComposing?: boolean };
+      if (event.isComposing) return;
 
       // Ctrl+K / Cmd+K → toggle (case-insensitive)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OmniItem, OmniSection } from "./types";
 import { omniActions, scoreOmniItem } from "./omni-actions";
+import { safeSlug, shouldUpdateFromController } from "./omni-utils";
 
 /* ─── API response shapes (matching /api/words and /api/plaza) ─── */
 
@@ -18,13 +19,6 @@ interface ApiPlazaNote {
   title: string;
   kind?: string;
   summary?: string;
-}
-
-/* ─── Slug safety helper ─── */
-
-function safeSlug(slug: string | undefined | null): string {
-  if (!slug) return "";
-  return encodeURIComponent(slug);
 }
 
 /* ─── Hook ─── */
@@ -72,13 +66,13 @@ export function useOmniSearch(query: string) {
         ]);
 
         // Guard: skip state updates if this request is stale
-        if (controller.signal.aborted || abortRef.current !== controller) return;
+        if (!shouldUpdateFromController(controller, abortRef)) return;
 
         // Parse words (independent — one failure must not block the other)
         if (wordsRes.status === "fulfilled" && wordsRes.value.ok) {
           try {
             const data = await wordsRes.value.json();
-            if (controller.signal.aborted || abortRef.current !== controller) return;
+            if (!shouldUpdateFromController(controller, abortRef)) return;
             const items: OmniItem[] = (data?.words ?? [])
               .filter((w: ApiWord) => w.slug)
               .map((w: ApiWord) => ({
@@ -92,12 +86,12 @@ export function useOmniSearch(query: string) {
               }));
             setWords(items);
           } catch {
-            if (!controller.signal.aborted && abortRef.current === controller) {
+            if (shouldUpdateFromController(controller, abortRef)) {
               setWords([]);
             }
           }
         } else {
-          if (!controller.signal.aborted && abortRef.current === controller) {
+          if (shouldUpdateFromController(controller, abortRef)) {
             setWords([]);
           }
         }
@@ -106,7 +100,7 @@ export function useOmniSearch(query: string) {
         if (plazaRes.status === "fulfilled" && plazaRes.value.ok) {
           try {
             const data = await plazaRes.value.json();
-            if (controller.signal.aborted || abortRef.current !== controller) return;
+            if (!shouldUpdateFromController(controller, abortRef)) return;
             const groups = data?.groups ?? [];
             const items: OmniItem[] = [];
             for (const group of groups) {
@@ -125,24 +119,24 @@ export function useOmniSearch(query: string) {
             }
             setPlazaNotes(items);
           } catch {
-            if (!controller.signal.aborted && abortRef.current === controller) {
+            if (shouldUpdateFromController(controller, abortRef)) {
               setPlazaNotes([]);
             }
           }
         } else {
-          if (!controller.signal.aborted && abortRef.current === controller) {
+          if (shouldUpdateFromController(controller, abortRef)) {
             setPlazaNotes([]);
           }
         }
       } catch {
         // AbortError or network failure — keep static commands usable
-        if (!controller.signal.aborted && abortRef.current === controller) {
+        if (shouldUpdateFromController(controller, abortRef)) {
           setWords([]);
           setPlazaNotes([]);
         }
       } finally {
         // Only clear loading if this is still the active controller
-        if (!controller.signal.aborted && abortRef.current === controller) {
+        if (shouldUpdateFromController(controller, abortRef)) {
           setIsLoading(false);
         }
       }

@@ -11,12 +11,7 @@ import { OmniResultItem } from "./OmniResultItem";
 import { OmniSection } from "./OmniSection";
 import { OmniFooter } from "./OmniFooter";
 import { springs } from "@/components/motion";
-
-/* ─── Helpers ─── */
-
-function isInternalHref(href: string): boolean {
-  return href.startsWith("/") && !href.startsWith("//");
-}
+import { isInternalHref } from "./omni-utils";
 
 /* ─── Inner component (consumes context) ─── */
 
@@ -49,15 +44,24 @@ function OmniPaletteInner() {
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
 
+      const active = document.activeElement;
+
+      // If focus is outside the panel, redirect to first focusable element
+      if (!active || !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+
       if (e.shiftKey) {
         // Shift+Tab: if on first element, wrap to last
-        if (document.activeElement === first) {
+        if (active === first) {
           e.preventDefault();
           last.focus();
         }
       } else {
         // Tab: if on last element, wrap to first
-        if (document.activeElement === last) {
+        if (active === last) {
           e.preventDefault();
           first.focus();
         }

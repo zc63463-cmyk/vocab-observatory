@@ -65,7 +65,7 @@ export function OmniResultItem({
           flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
           ${
             selected
-              ? "text-[var(--color-accent)]"
+              ? "bg-[var(--color-surface-soft)] text-[var(--color-accent)]"
               : "bg-[var(--color-surface-soft)] text-[var(--color-ink-soft)]"
           }
         `}
