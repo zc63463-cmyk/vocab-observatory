@@ -10,21 +10,30 @@ interface AnimatedCounterProps {
 }
 
 /**
- * Counts from 0 to `target` using requestAnimationFrame,
- * with an ease-out-cubic curve for a premium feel.
+ * Shows the target value immediately for SSR / no-JS correctness,
+ * then animates only when the target changes dynamically.
  */
 export function AnimatedCounter({
   target,
   duration = 1600,
   className,
 }: AnimatedCounterProps) {
-  const [display, setDisplay] = useState(0);
+  // Initialize with target so SSR / no-JS shows the real value.
+  const [display, setDisplay] = useState(target);
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number>(0);
   const prefersReducedMotion = useReducedMotion();
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
     if (prefersReducedMotion) {
+      return;
+    }
+
+    // Skip the mount animation to avoid a flash from target → 0 → target
+    // and to keep SSR / hydration markup consistent.
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
       return;
     }
 
