@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const { data: progressData, error: progressError } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, again_count, desired_retention, easy_count, good_count, hard_count, lapse_count, review_count, scheduler_payload, words!inner(content_hash)",
+      "id, word_id, again_count, desired_retention, easy_count, good_count, hard_count, lapse_count, review_count, scheduler_payload, difficulty, due_at, interval_days, last_reviewed_at, last_rating, retrievability, stability, state, content_hash_snapshot, words!inner(content_hash)",
     )
     .eq("id", parsed.data.progressId)
     .single();
@@ -39,14 +39,23 @@ export async function POST(request: NextRequest) {
   // Supabase returns a flat row with a nested join — define the shape we actually selected
   interface ProgressWithContentHash {
     again_count: number;
+    content_hash_snapshot: string | null;
+    desired_retention: number;
+    difficulty: number | null;
+    due_at: string | null;
     easy_count: number;
     good_count: number;
     hard_count: number;
     id: string;
+    interval_days: number | null;
     lapse_count: number;
-    desired_retention: number;
+    last_rating: string | null;
+    last_reviewed_at: string | null;
+    retrievability: number | null;
     review_count: number;
     scheduler_payload: Json;
+    stability: number | null;
+    state: string;
     word_id: string;
     words: { content_hash: string };
   }
@@ -93,7 +102,26 @@ export async function POST(request: NextRequest) {
     throw updateError;
   }
 
-  const { error: logError } = await supabase.from("review_logs").insert({
+  const previousSnapshot = {
+    scheduler_payload: progress.scheduler_payload,
+    difficulty: progress.difficulty,
+    due_at: progress.due_at,
+    interval_days: progress.interval_days,
+    lapse_count: progress.lapse_count,
+    last_rating: progress.last_rating,
+    last_reviewed_at: progress.last_reviewed_at,
+    retrievability: progress.retrievability,
+    review_count: progress.review_count,
+    stability: progress.stability,
+    state: progress.state,
+    again_count: progress.again_count,
+    hard_count: progress.hard_count,
+    good_count: progress.good_count,
+    easy_count: progress.easy_count,
+    content_hash_snapshot: progress.content_hash_snapshot,
+  };
+
+  const { data: logData, error: logError } = await supabase.from("review_logs").insert({
     difficulty: scheduling.difficulty,
     due_at: scheduling.logDueAt,
     elapsed_days: scheduling.elapsedDays,
@@ -102,6 +130,8 @@ export async function POST(request: NextRequest) {
       progress_id: progress.id,
       retrievability: scheduling.retrievability,
     },
+    previous_progress_snapshot: previousSnapshot as unknown as Json,
+    progress_id: progress.id,
     rating: parsed.data.rating,
     reviewed_at: nowIso,
     scheduled_days: scheduling.scheduledDays,
@@ -109,7 +139,7 @@ export async function POST(request: NextRequest) {
     state: scheduling.state,
     user_id: ownerSession.user!.id,
     word_id: progress.word_id,
-  });
+  }).select("id").single();
 
   if (logError) {
     throw logError;
@@ -121,5 +151,6 @@ export async function POST(request: NextRequest) {
     ok: true,
     nextDueAt: scheduling.dueAt,
     state: scheduling.state,
+    reviewLogId: logData.id,
   });
 }

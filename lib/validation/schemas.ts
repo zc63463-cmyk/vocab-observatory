@@ -25,6 +25,11 @@ export const reviewSkipSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
+export const reviewUndoSchema = z.object({
+  reviewLogId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+});
+
 export const reviewSuspendSchema = z.object({
   progressId: z.string().uuid(),
   sessionId: z.string().uuid(),

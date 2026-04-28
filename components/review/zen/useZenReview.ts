@@ -22,7 +22,8 @@ interface UseZenReviewReturn {
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   fetchQueue: () => Promise<QueueResponse>;
-  submitRating: (item: ReviewQueueItem, rating: RatingKey) => Promise<void>;
+  submitRating: (item: ReviewQueueItem, rating: RatingKey) => Promise<string>;
+  submitUndo: (reviewLogId: string) => Promise<ReviewQueueItem | null>;
   skipItem: (item: ReviewQueueItem) => Promise<ReviewQueueItem | null>;
 }
 
@@ -46,8 +47,8 @@ export function useZenReview(): UseZenReviewReturn {
     };
   }, []);
 
-  const submitRating = useCallback(async (item: ReviewQueueItem, rating: RatingKey): Promise<void> => {
-    if (!session) return;
+  const submitRating = useCallback(async (item: ReviewQueueItem, rating: RatingKey): Promise<string> => {
+    if (!session) throw new Error("无活跃会话");
     
     const response = await fetch("/api/review/answer", {
       method: "POST",
@@ -63,6 +64,26 @@ export function useZenReview(): UseZenReviewReturn {
     if (!response.ok) {
       throw new Error(payload.error ?? "提交评分失败");
     }
+    return payload.reviewLogId as string;
+  }, [session]);
+
+  const submitUndo = useCallback(async (reviewLogId: string): Promise<ReviewQueueItem | null> => {
+    if (!session) throw new Error("无活跃会话");
+
+    const response = await fetch("/api/review/undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reviewLogId,
+        sessionId: session.id,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "撤销失败");
+    }
+    return (payload.restoredItem as ReviewQueueItem) ?? null;
   }, [session]);
 
   const skipItem = useCallback(async (item: ReviewQueueItem): Promise<ReviewQueueItem | null> => {
@@ -98,6 +119,7 @@ export function useZenReview(): UseZenReviewReturn {
     setError,
     fetchQueue,
     submitRating,
+    submitUndo,
     skipItem,
   };
 }
