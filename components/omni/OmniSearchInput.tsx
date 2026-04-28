@@ -9,6 +9,8 @@ interface OmniSearchInputProps {
   onArrowUp: () => void;
   onArrowDown: () => void;
   onEnter: () => void;
+  /** aria-activedescendant — id of the currently highlighted option */
+  activeDescendant?: string;
 }
 
 export function OmniSearchInput({
@@ -17,6 +19,7 @@ export function OmniSearchInput({
   onArrowUp,
   onArrowDown,
   onEnter,
+  activeDescendant,
 }: OmniSearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
@@ -54,7 +57,12 @@ export function OmniSearchInput({
         onCompositionEnd={() => {
           isComposingRef.current = false;
         }}
+        role="combobox"
         aria-label="搜索词条、功能或命令"
+        aria-controls="omni-results"
+        aria-activedescendant={activeDescendant || undefined}
+        aria-expanded="true"
+        aria-autocomplete="list"
         placeholder="搜索词条、功能或命令..."
         className="flex-1 bg-transparent text-[var(--color-ink)] placeholder:text-[var(--color-ink-soft)] focus:outline-none text-base"
         autoComplete="off"

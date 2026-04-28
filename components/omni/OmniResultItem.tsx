@@ -45,6 +45,7 @@ export function OmniResultItem({
     <button
       type="button"
       role="option"
+      id={`omni-option-${index}`}
       aria-selected={selected}
       data-omni-index={index}
       onMouseEnter={onMouseEnter}
@@ -64,10 +65,15 @@ export function OmniResultItem({
           flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
           ${
             selected
-              ? "bg-[var(--color-accent)]/12 text-[var(--color-accent)]"
+              ? "text-[var(--color-accent)]"
               : "bg-[var(--color-surface-soft)] text-[var(--color-ink-soft)]"
           }
         `}
+        style={
+          selected
+            ? { backgroundColor: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }
+            : undefined
+        }
       >
         <IconComponent className="h-4 w-4" />
       </span>

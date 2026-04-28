@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OmniItem, OmniSection } from "./types";
 import { omniActions, scoreOmniItem } from "./omni-actions";
 
@@ -18,6 +18,13 @@ interface ApiPlazaNote {
   title: string;
   kind?: string;
   summary?: string;
+}
+
+/* ─── Slug safety helper ─── */
+
+function safeSlug(slug: string | undefined | null): string {
+  if (!slug) return "";
+  return encodeURIComponent(slug);
 }
 
 /* ─── Hook ─── */
@@ -64,55 +71,80 @@ export function useOmniSearch(query: string) {
           }),
         ]);
 
-        if (controller.signal.aborted) return;
+        // Guard: skip state updates if this request is stale
+        if (controller.signal.aborted || abortRef.current !== controller) return;
 
-        // Parse words
+        // Parse words (independent — one failure must not block the other)
         if (wordsRes.status === "fulfilled" && wordsRes.value.ok) {
-          const data = await wordsRes.value.json();
-          const items: OmniItem[] = (data?.words ?? []).map(
-            (w: ApiWord, i: number) => ({
-              id: `word:${w.slug}`,
-              type: "word" as const,
-              title: w.title ?? w.lemma ?? w.slug,
-              subtitle: w.short_definition ?? undefined,
-              href: `/words/${w.slug}`,
-              icon: "BookOpen",
-              keywords: [w.slug, w.lemma, w.title].filter(Boolean),
-            }),
-          );
-          setWords(items);
-        } else {
-          setWords([]);
-        }
-
-        // Parse plaza
-        if (plazaRes.status === "fulfilled" && plazaRes.value.ok) {
-          const data = await plazaRes.value.json();
-          const groups = data?.groups ?? [];
-          const items: OmniItem[] = [];
-          for (const group of groups) {
-            for (const note of group.notes ?? []) {
-              items.push({
-                id: `sf:${note.slug}`,
-                type: "semantic-field" as const,
-                title: note.title ?? note.slug,
-                subtitle: note.summary ?? undefined,
-                href: `/plaza/${note.slug}`,
-                icon: "Grid3X3",
-                keywords: [note.slug, note.title, note.kind].filter(Boolean),
-              });
+          try {
+            const data = await wordsRes.value.json();
+            if (controller.signal.aborted || abortRef.current !== controller) return;
+            const items: OmniItem[] = (data?.words ?? [])
+              .filter((w: ApiWord) => w.slug)
+              .map((w: ApiWord) => ({
+                id: `word:${w.slug}`,
+                type: "word" as const,
+                title: w.title ?? w.lemma ?? w.slug,
+                subtitle: w.short_definition ?? undefined,
+                href: `/words/${safeSlug(w.slug)}`,
+                icon: "BookOpen",
+                keywords: [w.slug, w.lemma, w.title].filter(Boolean),
+              }));
+            setWords(items);
+          } catch {
+            if (!controller.signal.aborted && abortRef.current === controller) {
+              setWords([]);
             }
           }
-          setPlazaNotes(items);
         } else {
-          setPlazaNotes([]);
+          if (!controller.signal.aborted && abortRef.current === controller) {
+            setWords([]);
+          }
+        }
+
+        // Parse plaza (independent)
+        if (plazaRes.status === "fulfilled" && plazaRes.value.ok) {
+          try {
+            const data = await plazaRes.value.json();
+            if (controller.signal.aborted || abortRef.current !== controller) return;
+            const groups = data?.groups ?? [];
+            const items: OmniItem[] = [];
+            for (const group of groups) {
+              for (const note of group.notes ?? []) {
+                if (!note.slug) continue;
+                items.push({
+                  id: `sf:${note.slug}`,
+                  type: "semantic-field" as const,
+                  title: note.title ?? note.slug,
+                  subtitle: note.summary ?? undefined,
+                  href: `/plaza/${safeSlug(note.slug)}`,
+                  icon: "Grid3X3",
+                  keywords: [note.slug, note.title, note.kind].filter(Boolean),
+                });
+              }
+            }
+            setPlazaNotes(items);
+          } catch {
+            if (!controller.signal.aborted && abortRef.current === controller) {
+              setPlazaNotes([]);
+            }
+          }
+        } else {
+          if (!controller.signal.aborted && abortRef.current === controller) {
+            setPlazaNotes([]);
+          }
         }
       } catch {
         // AbortError or network failure — keep static commands usable
-        setWords([]);
-        setPlazaNotes([]);
+        if (!controller.signal.aborted && abortRef.current === controller) {
+          setWords([]);
+          setPlazaNotes([]);
+        }
       } finally {
-        setIsLoading(false);
+        // Only clear loading if this is still the active controller
+        if (!controller.signal.aborted && abortRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     }, 150);
 

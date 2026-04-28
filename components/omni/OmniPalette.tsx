@@ -12,6 +12,12 @@ import { OmniSection } from "./OmniSection";
 import { OmniFooter } from "./OmniFooter";
 import { springs } from "@/components/motion";
 
+/* ─── Helpers ─── */
+
+function isInternalHref(href: string): boolean {
+  return href.startsWith("/") && !href.startsWith("//");
+}
+
 /* ─── Inner component (consumes context) ─── */
 
 function OmniPaletteInner() {
@@ -21,9 +27,46 @@ function OmniPaletteInner() {
   const router = useRouter();
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Register global hotkeys
   useOmniHotkeys();
+
+  // Simple focus trap: prevent Tab from escaping the dialog
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function handleTabTrap(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const focusable = panel.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        // Shift+Tab: if on first element, wrap to last
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        // Tab: if on last element, wrap to first
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleTabTrap);
+    return () => window.removeEventListener("keydown", handleTabTrap);
+  }, [isOpen]);
 
   // Auto-focus input on open, restore focus on close
   useEffect(() => {
@@ -77,14 +120,18 @@ function OmniPaletteInner() {
   }, [flatItems.length, selectedIndex, setSelectedIndex]);
 
   const executeItem = useCallback(
-    (index: number) => {
+    async (index: number) => {
       const item = flatItems[index];
       if (!item) return;
-      if (item.action) {
-        item.action();
-      }
-      if (item.href) {
-        router.push(item.href as Parameters<typeof router.push>[0]);
+      try {
+        if (item.action) {
+          await item.action();
+        }
+        if (item.href && isInternalHref(item.href)) {
+          router.push(item.href as Parameters<typeof router.push>[0]);
+        }
+      } catch {
+        // Silently catch action errors to avoid panel crash
       }
       close();
     },
@@ -123,6 +170,7 @@ function OmniPaletteInner() {
         >
           <motion.div
             key="omni-panel"
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-label="全局搜索和命令面板"
@@ -151,6 +199,9 @@ function OmniPaletteInner() {
               onArrowDown={handleArrowDown}
               onArrowUp={handleArrowUp}
               onEnter={handleEnter}
+              activeDescendant={
+                selectedIndex >= 0 ? `omni-option-${selectedIndex}` : undefined
+              }
             />
 
             {/* Divider */}
@@ -159,6 +210,7 @@ function OmniPaletteInner() {
             {/* Results */}
             <div
               ref={listRef}
+              id="omni-results"
               role="listbox"
               aria-label="搜索结果"
               className="max-h-[60vh] overflow-y-auto px-2 py-1"

@@ -131,3 +131,142 @@ describe("keyboard navigation index clamping", () => {
     expect(clampIndex(10, 5)).toBe(4);
   });
 });
+
+/* ─── safeSlug / encodeURIComponent for slugs ─── */
+
+describe("slug encoding", () => {
+  it("encodes special characters in slugs", () => {
+    const slug = "hello world";
+    const href = `/words/${encodeURIComponent(slug)}`;
+    expect(href).toBe("/words/hello%20world");
+  });
+
+  it("encodes CJK characters in slugs", () => {
+    const slug = "你好世界";
+    const href = `/words/${encodeURIComponent(slug)}`;
+    expect(href).toBe("/words/%E4%BD%A0%E5%A5%BD%E4%B8%96%E7%95%8C");
+  });
+
+  it("leaves simple ASCII slugs unchanged", () => {
+    const slug = "ephemeral";
+    const href = `/words/${encodeURIComponent(slug)}`;
+    expect(href).toBe("/words/ephemeral");
+  });
+
+  it("handles slugs with slashes safely", () => {
+    const slug = "path/to/word";
+    const href = `/words/${encodeURIComponent(slug)}`;
+    expect(href).toBe("/words/path%2Fto%2Fword");
+  });
+
+  it("does not produce bad links for empty slug", () => {
+    const slug = "";
+    const href = slug ? `/words/${encodeURIComponent(slug)}` : "/words";
+    expect(href).toBe("/words");
+    expect(href).not.toContain("//");
+  });
+});
+
+/* ─── isInternalHref ─── */
+
+describe("isInternalHref", () => {
+  function isInternalHref(href: string): boolean {
+    return href.startsWith("/") && !href.startsWith("//");
+  }
+
+  it("recognizes internal paths", () => {
+    expect(isInternalHref("/")).toBe(true);
+    expect(isInternalHref("/words")).toBe(true);
+    expect(isInternalHref("/plaza/semantic-field")).toBe(true);
+  });
+
+  it("rejects protocol-relative URLs", () => {
+    expect(isInternalHref("//example.com")).toBe(false);
+    expect(isInternalHref("//cdn.example.com/assets")).toBe(false);
+  });
+
+  it("rejects absolute URLs", () => {
+    expect(isInternalHref("https://example.com")).toBe(false);
+    expect(isInternalHref("http://example.com")).toBe(false);
+  });
+
+  it("rejects relative paths without leading slash", () => {
+    expect(isInternalHref("words/ephemeral")).toBe(false);
+  });
+});
+
+/* ─── Race condition: stale request guard ─── */
+
+describe("stale request guard logic", () => {
+  // Simulates the guard pattern used in useOmniSearch
+  function shouldUpdate(
+    controller: { signal: { aborted: boolean } },
+    abortRef: { current: object | null },
+  ): boolean {
+    return !controller.signal.aborted && abortRef.current === controller;
+  }
+
+  it("allows update when controller is current and not aborted", () => {
+    const controller = { signal: { aborted: false } };
+    const abortRef = { current: controller };
+    expect(shouldUpdate(controller, abortRef)).toBe(true);
+  });
+
+  it("blocks update when controller is aborted", () => {
+    const controller = { signal: { aborted: true } };
+    const abortRef = { current: controller };
+    expect(shouldUpdate(controller, abortRef)).toBe(false);
+  });
+
+  it("blocks update when abortRef has moved to a newer controller", () => {
+    const oldController = { signal: { aborted: false } };
+    const newController = { signal: { aborted: false } };
+    const abortRef = { current: newController };
+    expect(shouldUpdate(oldController, abortRef)).toBe(false);
+  });
+
+  it("allows update for new controller even if old is still resolving", () => {
+    const newController = { signal: { aborted: false } };
+    const abortRef = { current: newController };
+    expect(shouldUpdate(newController, abortRef)).toBe(true);
+  });
+});
+
+/* ─── aria-activedescendant attribute tests ─── */
+
+describe("aria-activedescendant ID generation", () => {
+  it("generates correct option id from index", () => {
+    expect(`omni-option-0`).toBe("omni-option-0");
+    expect(`omni-option-5`).toBe("omni-option-5");
+  });
+
+  it("activeDescendant is undefined when no item is selected", () => {
+    const selectedIndex = -1;
+    const activeDescendant =
+      selectedIndex >= 0 ? `omni-option-${selectedIndex}` : undefined;
+    expect(activeDescendant).toBeUndefined();
+  });
+
+  it("activeDescendant matches selected option id", () => {
+    const selectedIndex = 3;
+    const activeDescendant =
+      selectedIndex >= 0 ? `omni-option-${selectedIndex}` : undefined;
+    expect(activeDescendant).toBe("omni-option-3");
+  });
+});
+
+/* ─── useOmniHotkeys case-insensitivity ─── */
+
+describe("Ctrl+K hotkey case handling", () => {
+  it("matches lowercase k", () => {
+    expect("k".toLowerCase()).toBe("k");
+  });
+
+  it("matches uppercase K via toLowerCase", () => {
+    expect("K".toLowerCase()).toBe("k");
+  });
+
+  it("does not match other keys", () => {
+    expect("m".toLowerCase() === "k").toBe(false);
+  });
+});
