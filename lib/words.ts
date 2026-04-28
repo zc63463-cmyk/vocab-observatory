@@ -1093,11 +1093,14 @@ const getCachedPublicWordsCountValue = unstable_cache(
 
     try {
       return await withTransientPublicReadRetry("public word count", async () => {
+        // Use select("id") + limit(1) instead of head:true to avoid
+        // PostgREST HEAD-request edge cases where Content-Range is omitted.
         const { count, error } = await supabase
           .from("words")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact" })
           .eq("is_published", true)
-          .eq("is_deleted", false);
+          .eq("is_deleted", false)
+          .limit(1);
 
         if (error) {
           throw error;
@@ -1110,7 +1113,7 @@ const getCachedPublicWordsCountValue = unstable_cache(
       return 0;
     }
   },
-  ["public-word-count"],
+  ["public-word-count-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.landing, PUBLIC_CACHE_TAGS.wordIndex],
@@ -1261,7 +1264,7 @@ export const getLandingSnapshot = unstable_cache(
       totalWords,
     };
   },
-  ["public-landing-snapshot"],
+  ["public-landing-snapshot-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.landing],
