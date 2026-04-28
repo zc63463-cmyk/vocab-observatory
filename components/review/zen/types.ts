@@ -31,7 +31,28 @@ export type ZenAction =
   | { type: "SET_PENDING"; pending: boolean }
   | { type: "REFRESH_QUEUE"; items: ReviewQueueItem[]; session: ReviewSessionSummary | null; stats: ReviewQueueStats | null }
   | { type: "RESTORE_BACK" }
+  | { type: "RESTORE_CARD"; item: ReviewQueueItem }
   | { type: "EXIT" };
+
+export interface ZenReviewedItem {
+  id: string;
+  cardId: string;
+  wordId: string;
+  word: string;
+  definition?: string | null;
+  rating: RatingKey;
+  ratingLabel: string;
+  answeredAt: string;
+  durationMs?: number;
+  canUndo: boolean;
+  undone?: boolean;
+}
+
+export interface ZenUiState {
+  isHistoryOpen: boolean;
+  isUndoing: boolean;
+  sessionHistory: ZenReviewedItem[];
+}
 
 export const RATING_CONFIG: Record<RatingKey, { label: string; key: string; vimKey: string; color: string }> = {
   again: { label: "Again", key: "1", vimKey: "j", color: "var(--color-accent-2)" },

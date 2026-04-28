@@ -8,8 +8,10 @@ interface UseZenShortcutsOptions {
   onReveal: () => void;
   onRate: (rating: RatingKey) => void;
   onExit: () => void;
+  onToggleHistory: () => void;
   isOmniOpen: boolean;
   isAnimating: boolean;
+  isHistoryOpen: boolean;
 }
 
 function isInputElement(target: EventTarget | null): boolean {
@@ -32,8 +34,10 @@ export function useZenShortcuts({
   onReveal,
   onRate,
   onExit,
+  onToggleHistory,
   isOmniOpen,
   isAnimating,
+  isHistoryOpen,
 }: UseZenShortcutsOptions) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -57,10 +61,29 @@ export function useZenShortcuts({
         return;
       }
 
-      // Handle Escape (always works)
+      // Handle Escape with priority: close drawer first, then exit
       if (e.key === "Escape") {
         e.preventDefault();
-        onExit();
+        if (isHistoryOpen) {
+          onToggleHistory();
+        } else {
+          onExit();
+        }
+        return;
+      }
+
+      // H: toggle history drawer (works in any non-loading phase)
+      if (e.key === "h" || e.key === "H") {
+        // Allow H during done state too, but not during loading/error
+        if (phase === "loading" || phase === "error") return;
+        e.preventDefault();
+        onToggleHistory();
+        return;
+      }
+
+      // When drawer is open, disable all other shortcuts (Space, rating keys)
+      // to prevent accidental interaction with the main card.
+      if (isHistoryOpen) {
         return;
       }
 
@@ -124,7 +147,7 @@ export function useZenShortcuts({
         onRate(rating);
       }
     },
-    [phase, onReveal, onRate, onExit, isOmniOpen, isAnimating]
+    [phase, onReveal, onRate, onExit, onToggleHistory, isOmniOpen, isAnimating, isHistoryOpen]
   );
 
   useEffect(() => {

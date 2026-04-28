@@ -7,6 +7,7 @@ import { ZenFlashcard } from "./ZenFlashcard";
 import { ZenProgress } from "./ZenProgress";
 import { ZenRatingButtons } from "./ZenRatingButtons";
 import { ZenExitButton } from "./ZenExitButton";
+import { ZenHistoryDrawer } from "./ZenHistoryDrawer";
 import { RatingFeedback } from "./RatingFeedback";
 import { useAutoHideCursor } from "./useAutoHideCursor";
 import { springs } from "@/components/motion";
@@ -179,10 +180,10 @@ function ZenContent() {
 }
 
 function ZenReviewInner() {
-  const { phase } = useZenReviewContext();
+  const { phase, uiState, toggleHistory, undo } = useZenReviewContext();
   const isActive = phase === "front" || phase === "back" || phase === "rating";
-  
-  useAutoHideCursor({ enabled: isActive, delay: 2000 });
+  // Pause cursor auto-hide when drawer is open so user can interact comfortably
+  useAutoHideCursor({ enabled: isActive && !uiState.isHistoryOpen, delay: 2000 });
 
   return (
     <div className="zen-review-container relative min-h-screen w-full overflow-hidden bg-[var(--color-canvas)]">
@@ -193,9 +194,28 @@ function ZenReviewInner() {
       <RatingFeedback />
       <ZenExitButton />
       
-      <main className="relative z-10">
+      <motion.main
+        className="relative z-10"
+        animate={{
+          scale: uiState.isHistoryOpen ? 0.98 : 1,
+          opacity: uiState.isHistoryOpen ? 0.85 : 1,
+        }}
+        transition={{ duration: 0.2 }}
+        // When drawer is open, prevent main area from receiving pointer events
+        // to avoid accidental clicks bleeding through.
+        style={{ pointerEvents: uiState.isHistoryOpen ? "none" : "auto" }}
+        aria-hidden={uiState.isHistoryOpen ? true : undefined}
+      >
         <ZenContent />
-      </main>
+      </motion.main>
+
+      <ZenHistoryDrawer
+        isOpen={uiState.isHistoryOpen}
+        onClose={toggleHistory}
+        history={uiState.sessionHistory}
+        onUndo={undo}
+        isUndoing={uiState.isUndoing}
+      />
     </div>
   );
 }

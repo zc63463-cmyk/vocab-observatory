@@ -17,7 +17,8 @@ import { useZenReview } from "./useZenReview";
 import { useZenShortcuts } from "./useZenShortcuts";
 import { useOmniStore } from "@/components/omni/useOmniStore";
 import type { ReviewQueueItem } from "@/lib/review/types";
-import type { ZenState, ZenAction, RatingKey } from "./types";
+import type { ZenState, ZenAction, RatingKey, ZenReviewedItem, ZenUiState } from "./types";
+import { RATING_CONFIG } from "./types";
 
 interface ZenContextValue extends ZenState {
   // Actions
@@ -25,11 +26,14 @@ interface ZenContextValue extends ZenState {
   rate: (rating: RatingKey) => void;
   exit: () => void;
   retry: () => void;
+  toggleHistory: () => void;
+  undo: (reviewLogId: string) => void;
   // Meta
   totalCount: number;
   completedCount: number;
   progress: number;
   isAnimating: boolean;
+  uiState: ZenUiState;
 }
 
 const initialState: ZenState = {
@@ -126,6 +130,16 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
     case "RESTORE_BACK":
       return { ...state, phase: "back", pending: false, lastRating: null };
 
+    case "RESTORE_CARD":
+      return {
+        ...state,
+        phase: "back",
+        item: action.item,
+        items: [action.item, ...state.items],
+        pending: false,
+        lastRating: null,
+      };
+
     default:
       return state;
   }
@@ -144,6 +158,13 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   const [animationLock, setAnimationLock] = useState(false);
   const mountedRef = useRef(true);
   
+  // UI state for history drawer (separate from core review state machine)
+  const [uiState, setUiState] = useState<ZenUiState>({
+    isHistoryOpen: false,
+    isUndoing: false,
+    sessionHistory: [],
+  });
+  
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -160,6 +181,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     setStats,
     fetchQueue,
     submitRating,
+    submitUndo,
   } = useZenReview();
 
   const [state, dispatch] = useReducer(zenReducer, initialState);
@@ -218,7 +240,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   // Rate action with API call
   const rate = useCallback(
     async (rating: RatingKey) => {
-      if (!state.item || !session || state.pending || animationLock) return;
+      if (!state.item || !session || state.pending || animationLock || uiState.isUndoing) return;
 
       dispatch({ type: "RATE", rating });
       setAnimationLock(true);
@@ -226,8 +248,28 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       let ratingTimeout: ReturnType<typeof setTimeout> | null = null;
 
       try {
-        await submitRating(state.item, rating);
+        const reviewLogId = await submitRating(state.item, rating);
         updateStatsAfterRemoval(state.item, true);
+
+        // Add to session history (only on API success)
+        const historyItem: ZenReviewedItem = {
+          id: reviewLogId,
+          cardId: state.item.progress_id,
+          wordId: state.item.word_id,
+          word: state.item.lemma,
+          definition: state.item.short_definition,
+          rating,
+          ratingLabel: RATING_CONFIG[rating].label,
+          answeredAt: new Date().toISOString(),
+          canUndo: true,
+        };
+        setUiState((prev) => ({
+          ...prev,
+          sessionHistory: [
+            { ...historyItem, canUndo: true },
+            ...prev.sessionHistory.map((h) => ({ ...h, canUndo: false })),
+          ],
+        }));
 
         // Trigger animation, then move to next
         const nextItems = state.items.slice(1);
@@ -283,7 +325,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         }
       }
     },
-    [state.item, state.items, state.pending, session, animationLock, submitRating, updateStatsAfterRemoval, fetchQueue, setItems, setSession, setStats, addToast]
+    [state.item, state.items, state.pending, session, animationLock, uiState.isUndoing, submitRating, updateStatsAfterRemoval, fetchQueue, setItems, setSession, setStats, addToast]
   );
 
   // Exit action
@@ -296,14 +338,70 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     window.location.reload();
   }, []);
 
+  // Toggle history drawer (UI-only state, separate from review phase)
+  const toggleHistory = useCallback(() => {
+    setUiState((prev) => ({ ...prev, isHistoryOpen: !prev.isHistoryOpen }));
+  }, []);
+
+  // Undo the most recent rating
+  const undo = useCallback(
+    async (reviewLogId: string) => {
+      if (uiState.isUndoing) return;
+      setUiState((prev) => ({ ...prev, isUndoing: true }));
+
+      try {
+        const restoredItem = await submitUndo(reviewLogId);
+
+        // Mark history item as undone; no item gets canUndo after undo
+        setUiState((prev) => ({
+          ...prev,
+          isUndoing: false,
+          sessionHistory: prev.sessionHistory.map((h) =>
+            h.id === reviewLogId
+              ? { ...h, undone: true, canUndo: false }
+              : h
+          ),
+        }));
+
+        if (restoredItem) {
+          dispatch({ type: "RESTORE_CARD", item: restoredItem });
+        }
+
+        // Roll back stats
+        setStats((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            completed: Math.max(current.completed - 1, 0),
+            remaining: current.remaining + 1,
+          };
+        });
+        setSession((current) => {
+          if (!current) return current;
+          return { ...current, cards_seen: Math.max(current.cards_seen - 1, 0) };
+        });
+
+        addToast("已撤销评分，可重新评分", "success");
+      } catch (err) {
+        if (!mountedRef.current) return;
+        setUiState((prev) => ({ ...prev, isUndoing: false }));
+        const message = err instanceof Error ? err.message : "撤销失败";
+        addToast(message, "error");
+      }
+    },
+    [uiState.isUndoing, submitUndo, setStats, setSession, addToast]
+  );
+
   // Keyboard shortcuts
   useZenShortcuts({
     phase: state.phase,
     onReveal: reveal,
     onRate: rate,
     onExit: exit,
+    onToggleHistory: toggleHistory,
     isOmniOpen: omni.isOpen,
     isAnimating: animationLock,
+    isHistoryOpen: uiState.isHistoryOpen,
   });
 
   // Calculate progress
@@ -318,12 +416,15 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       rate,
       exit,
       retry,
+      toggleHistory,
+      undo,
       totalCount,
       completedCount,
       progress,
       isAnimating: animationLock,
+      uiState,
     }),
-    [state, reveal, rate, exit, retry, totalCount, completedCount, progress, animationLock]
+    [state, reveal, rate, exit, retry, toggleHistory, undo, totalCount, completedCount, progress, animationLock, uiState]
   );
 
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>;
