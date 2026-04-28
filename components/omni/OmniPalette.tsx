@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { OmniProvider, useOmniStore } from "./useOmniStore";
+import { useOmniStore } from "./useOmniStore";
 import { useOmniHotkeys } from "./useOmniHotkeys";
 import { useOmniSearch } from "./useOmniSearch";
 import { OmniSearchInput } from "./OmniSearchInput";
@@ -267,12 +267,8 @@ function OmniPaletteInner() {
   );
 }
 
-/* ─── Exported wrapper with provider ─── */
+/* ─── Exported component (Provider now lives in app/layout.tsx) ─── */
 
 export function OmniPalette() {
-  return (
-    <OmniProvider>
-      <OmniPaletteInner />
-    </OmniProvider>
-  );
+  return <OmniPaletteInner />;
 }

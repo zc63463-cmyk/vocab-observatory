@@ -7,6 +7,7 @@ import { GlobalErrorBoundary } from "@/components/layout/GlobalErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ReducedMotionProvider } from "@/components/motion/ReducedMotionProvider";
 import { OmniPalette } from "@/components/omni";
+import { OmniProvider } from "@/components/omni/useOmniStore";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -65,13 +66,15 @@ export default function RootLayout({
         <ReducedMotionProvider>
           <ToastProvider>
             <GlobalErrorBoundary>
-              <div className="relative flex min-h-screen flex-col">
-                <Suspense fallback={null}>
-                  <GlobalAuthCodeHandler />
-                </Suspense>
-                {children}
-              </div>
-              <OmniPalette />
+              <OmniProvider>
+                <div className="relative flex min-h-screen flex-col">
+                  <Suspense fallback={null}>
+                    <GlobalAuthCodeHandler />
+                  </Suspense>
+                  {children}
+                </div>
+                <OmniPalette />
+              </OmniProvider>
             </GlobalErrorBoundary>
           </ToastProvider>
         </ReducedMotionProvider>
