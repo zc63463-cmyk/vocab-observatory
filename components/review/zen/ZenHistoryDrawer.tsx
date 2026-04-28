@@ -63,7 +63,7 @@ export function ZenHistoryDrawer({ isOpen, onClose, history, onUndo, isUndoing }
               stiffness: 300,
               duration: 0.3,
             }}
-            className="fixed right-0 top-0 z-[70] flex h-full w-full flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md md:w-[400px]"
+            className="fixed right-0 top-[calc(var(--header-height,4rem))] z-[100] flex h-[calc(100%-var(--header-height,4rem))] w-full flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md md:w-[400px]"
             role="dialog"
             aria-modal="true"
             aria-label="复习历史"
