@@ -6,6 +6,7 @@ import { GlobalAuthCodeHandler } from "@/components/auth/GlobalAuthCodeHandler";
 import { GlobalErrorBoundary } from "@/components/layout/GlobalErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ReducedMotionProvider } from "@/components/motion/ReducedMotionProvider";
+import { OmniPalette } from "@/components/omni";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -70,6 +71,7 @@ export default function RootLayout({
                 </Suspense>
                 {children}
               </div>
+              <OmniPalette />
             </GlobalErrorBoundary>
           </ToastProvider>
         </ReducedMotionProvider>
