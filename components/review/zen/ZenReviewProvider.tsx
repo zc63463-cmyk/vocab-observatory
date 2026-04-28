@@ -163,6 +163,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   const [animationLock, setAnimationLock] = useState(false);
   const mountedRef = useRef(true);
   const undoInFlightRef = useRef(false); // Synchronous guard for rapid-fire clicks (Fix-5)
+  const cardShownAtRef = useRef<number | null>(null); // Per-card shown timestamp for durationMs
   
   // UI state for history drawer (separate from core review state machine)
   const [uiState, setUiState] = useState<ZenUiState>({
@@ -191,6 +192,17 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   } = useZenReview();
 
   const [state, dispatch] = useReducer(zenReducer, initialState);
+
+  // Track when each card becomes visible so we can record durationMs on rating
+  const currentProgressId = state.item?.progress_id ?? null;
+  useEffect(() => {
+    if (currentProgressId && (state.phase === "front" || state.phase === "back")) {
+      cardShownAtRef.current = Date.now();
+    }
+    if (state.phase === "done" || state.phase === "error" || state.phase === "loading") {
+      cardShownAtRef.current = null;
+    }
+  }, [currentProgressId, state.phase]);
 
   // Initial load
   useEffect(() => {
@@ -269,6 +281,8 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         updateStatsAfterRemoval(state.item, true);
 
         // Add to session history (only on API success)
+        const shownAt = cardShownAtRef.current;
+        const durationMs = shownAt !== null ? Date.now() - shownAt : undefined;
         const historyItem: ZenReviewedItem = {
           id: reviewLogId,
           cardId: state.item.progress_id,
@@ -278,6 +292,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           rating,
           ratingLabel: RATING_CONFIG[rating].label,
           answeredAt: new Date().toISOString(),
+          durationMs,
           canUndo: true,
         };
         setUiState((prev) => ({

@@ -87,8 +87,18 @@ export function useZenShortcuts({
         return;
       }
 
-      // Don't process other keys during animation lock or when done/error
-      if (isAnimating || phase === "rating" || phase === "done" || phase === "error" || phase === "loading") {
+      // Phase 0.1 Session Summary: Enter at done phase returns to /review.
+      // No rating / Space at done; only Enter and Esc (handled above) are active.
+      if (phase === "done") {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onExit();
+        }
+        return;
+      }
+
+      // Don't process other keys during animation lock or when error/loading
+      if (isAnimating || phase === "rating" || phase === "error" || phase === "loading") {
         return;
       }
 

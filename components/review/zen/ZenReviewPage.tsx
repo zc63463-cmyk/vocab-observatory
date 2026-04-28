@@ -8,6 +8,7 @@ import { ZenProgress } from "./ZenProgress";
 import { ZenRatingButtons } from "./ZenRatingButtons";
 import { ZenExitButton } from "./ZenExitButton";
 import { ZenHistoryDrawer } from "./ZenHistoryDrawer";
+import { ZenSessionSummary } from "./ZenSessionSummary";
 import { RatingFeedback } from "./RatingFeedback";
 import { useAutoHideCursor } from "./useAutoHideCursor";
 import { springs } from "@/components/motion";
@@ -116,7 +117,8 @@ function ZenError() {
 }
 
 function ZenContent() {
-  const { phase, item } = useZenReviewContext();
+  const { phase, item, uiState } = useZenReviewContext();
+  const hasSessionHistory = uiState.sessionHistory.length > 0;
 
   return (
     <AnimatePresence mode="wait">
@@ -142,9 +144,20 @@ function ZenContent() {
         </motion.div>
       )}
       
-      {(phase === "done") && (
+      {phase === "done" && hasSessionHistory && (
         <motion.div
-          key="done"
+          key="summary"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <ZenSessionSummary />
+        </motion.div>
+      )}
+
+      {phase === "done" && !hasSessionHistory && (
+        <motion.div
+          key="empty"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
