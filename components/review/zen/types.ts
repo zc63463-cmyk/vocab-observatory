@@ -30,7 +30,7 @@ export type ZenAction =
   | { type: "SET_ERROR"; message: string }
   | { type: "SET_PENDING"; pending: boolean }
   | { type: "REFRESH_QUEUE"; items: ReviewQueueItem[]; session: ReviewSessionSummary | null; stats: ReviewQueueStats | null }
-  | { type: "SKIP" }
+  | { type: "RESTORE_BACK" }
   | { type: "EXIT" };
 
 export const RATING_CONFIG: Record<RatingKey, { label: string; key: string; vimKey: string; color: string }> = {

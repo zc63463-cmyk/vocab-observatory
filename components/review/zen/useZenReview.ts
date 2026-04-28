@@ -10,8 +10,6 @@ interface QueueResponse {
   stats: ReviewQueueStats | null;
 }
 
-type SetStateAction<T> = T | ((prev: T) => T);
-
 interface UseZenReviewReturn {
   items: ReviewQueueItem[];
   setItems: React.Dispatch<React.SetStateAction<ReviewQueueItem[]>>;

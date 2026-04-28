@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ZenReviewProvider, useZenReviewContext } from "./ZenReviewProvider";
 import { ZenFlashcard } from "./ZenFlashcard";
@@ -115,7 +115,7 @@ function ZenError() {
 }
 
 function ZenContent() {
-  const { phase, item, isAnimating } = useZenReviewContext();
+  const { phase, item } = useZenReviewContext();
 
   return (
     <AnimatePresence mode="wait">

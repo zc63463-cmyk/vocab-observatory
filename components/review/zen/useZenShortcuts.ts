@@ -8,7 +8,6 @@ interface UseZenShortcutsOptions {
   onReveal: () => void;
   onRate: (rating: RatingKey) => void;
   onExit: () => void;
-  onSkip: () => void;
   isOmniOpen: boolean;
   isAnimating: boolean;
 }
@@ -33,7 +32,6 @@ export function useZenShortcuts({
   onReveal,
   onRate,
   onExit,
-  onSkip,
   isOmniOpen,
   isAnimating,
 }: UseZenShortcutsOptions) {
@@ -121,19 +119,12 @@ export function useZenShortcuts({
         rating = "easy";
       }
 
-      // Skip: S key
-      if (e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        onSkip();
-        return;
-      }
-
       if (rating) {
         e.preventDefault();
         onRate(rating);
       }
     },
-    [phase, onReveal, onRate, onExit, onSkip, isOmniOpen, isAnimating]
+    [phase, onReveal, onRate, onExit, isOmniOpen, isAnimating]
   );
 
   useEffect(() => {

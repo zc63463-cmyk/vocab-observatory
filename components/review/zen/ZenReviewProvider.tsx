@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -15,14 +16,13 @@ import { useToast } from "@/components/ui/Toast";
 import { useZenReview } from "./useZenReview";
 import { useZenShortcuts } from "./useZenShortcuts";
 import { useOmniStore } from "@/components/omni/useOmniStore";
-import type { ReviewQueueItem, ReviewQueueStats, ReviewSessionSummary } from "@/lib/review/types";
-import type { ZenState, ZenAction, RatingKey, ZenPhase } from "./types";
+import type { ReviewQueueItem } from "@/lib/review/types";
+import type { ZenState, ZenAction, RatingKey } from "./types";
 
 interface ZenContextValue extends ZenState {
   // Actions
   reveal: () => void;
   rate: (rating: RatingKey) => void;
-  skip: () => void;
   exit: () => void;
   retry: () => void;
   // Meta
@@ -114,19 +114,6 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         pending: false,
       };
 
-    case "SKIP":
-      if (state.item && state.items.length > 1) {
-        const skipped = state.item;
-        const remaining = state.items.slice(1);
-        return {
-          ...state,
-          items: [...remaining, skipped],
-          item: remaining[0],
-          phase: "front",
-        };
-      }
-      return state;
-
     case "SET_MESSAGE":
       return { ...state, message: action.message };
 
@@ -135,6 +122,9 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
 
     case "SET_PENDING":
       return { ...state, pending: action.pending };
+
+    case "RESTORE_BACK":
+      return { ...state, phase: "back", pending: false, lastRating: null };
 
     default:
       return state;
@@ -152,6 +142,14 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   const { addToast } = useToast();
   const omni = useOmniStore();
   const [animationLock, setAnimationLock] = useState(false);
+  const mountedRef = useRef(true);
+  
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   
   const {
     items,
@@ -160,13 +158,8 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     setSession,
     stats,
     setStats,
-    loading,
-    setLoading,
-    error,
-    setError,
     fetchQueue,
     submitRating,
-    skipItem,
   } = useZenReview();
 
   const [state, dispatch] = useReducer(zenReducer, initialState);
@@ -177,7 +170,6 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     
     const load = async () => {
       try {
-        setLoading(true);
         const data = await fetchQueue();
         if (!mounted) return;
         
@@ -185,20 +177,17 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         setSession(data.session);
         setStats(data.stats);
         dispatch({ type: "INIT", items: data.items, session: data.session, stats: data.stats });
-        setLoading(false);
       } catch (err) {
         if (!mounted) return;
         const message = err instanceof Error ? err.message : "加载复习队列失败";
-        setError(message);
         dispatch({ type: "SET_ERROR", message });
-        setLoading(false);
       }
     };
 
     void load();
     
     return () => { mounted = false; };
-  }, [fetchQueue, setItems, setSession, setStats, setLoading, setError]);
+  }, [fetchQueue, setItems, setSession, setStats]);
 
   // Update stats helper
   const updateStatsAfterRemoval = useCallback((item: ReviewQueueItem, increment: boolean) => {
@@ -234,6 +223,8 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       dispatch({ type: "RATE", rating });
       setAnimationLock(true);
 
+      let ratingTimeout: ReturnType<typeof setTimeout> | null = null;
+
       try {
         await submitRating(state.item, rating);
         updateStatsAfterRemoval(state.item, true);
@@ -242,7 +233,17 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         const nextItems = state.items.slice(1);
         
         // Wait for card exit animation
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        await new Promise<void>((resolve) => {
+          ratingTimeout = setTimeout(() => {
+            if (mountedRef.current) {
+              resolve();
+            } else {
+              resolve();
+            }
+          }, 350);
+        });
+
+        if (!mountedRef.current) return;
 
         if (nextItems.length > 0) {
           dispatch({ type: "NEXT_CARD", item: nextItems[0] });
@@ -250,6 +251,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           // Need to fetch more
           try {
             const data = await fetchQueue();
+            if (!mountedRef.current) return;
             setItems(data.items);
             setSession(data.session);
             setStats(data.stats);
@@ -260,6 +262,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
               stats: data.stats 
             });
           } catch (err) {
+            if (!mountedRef.current) return;
             const message = err instanceof Error ? err.message : "刷新队列失败";
             dispatch({ type: "SET_ERROR", message });
           }
@@ -267,29 +270,21 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         
         addToast(`已记录 ${rating.toUpperCase()}`, "success");
       } catch (err) {
+        if (!mountedRef.current) return;
         const message = err instanceof Error ? err.message : "提交评分失败";
+        // Restore phase to "back" so user can retry
+        dispatch({ type: "RESTORE_BACK" });
         dispatch({ type: "SET_MESSAGE", message });
         addToast(message, "error");
       } finally {
-        setAnimationLock(false);
+        if (ratingTimeout) clearTimeout(ratingTimeout);
+        if (mountedRef.current) {
+          setAnimationLock(false);
+        }
       }
     },
     [state.item, state.items, state.pending, session, animationLock, submitRating, updateStatsAfterRemoval, fetchQueue, setItems, setSession, setStats, addToast]
   );
-
-  // Skip action
-  const skip = useCallback(async () => {
-    if (!state.item || !session || state.pending || animationLock) return;
-
-    try {
-      await skipItem(state.item);
-      dispatch({ type: "SKIP" });
-      addToast("已跳过，卡片已移到队尾", "info");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "跳过失败";
-      addToast(message, "error");
-    }
-  }, [state.item, session, state.pending, animationLock, skipItem, addToast]);
 
   // Exit action
   const exit = useCallback(() => {
@@ -307,7 +302,6 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     onReveal: reveal,
     onRate: rate,
     onExit: exit,
-    onSkip: skip,
     isOmniOpen: omni.isOpen,
     isAnimating: animationLock,
   });
@@ -322,7 +316,6 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       ...state,
       reveal,
       rate,
-      skip,
       exit,
       retry,
       totalCount,
@@ -330,7 +323,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       progress,
       isAnimating: animationLock,
     }),
-    [state, reveal, rate, skip, exit, retry, totalCount, completedCount, progress, animationLock]
+    [state, reveal, rate, exit, retry, totalCount, completedCount, progress, animationLock]
   );
 
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>;

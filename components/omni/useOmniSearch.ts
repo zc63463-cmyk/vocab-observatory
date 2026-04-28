@@ -14,13 +14,6 @@ interface ApiWord {
   short_definition?: string;
 }
 
-interface ApiPlazaNote {
-  slug: string;
-  title: string;
-  kind?: string;
-  summary?: string;
-}
-
 /* ─── Hook ─── */
 
 const MAX_ACTIONS = 6;
@@ -44,13 +37,17 @@ export function useOmniSearch(query: string) {
 
     const q = query.trim();
     if (!q) {
-      setWords([]);
-      setPlazaNotes([]);
-      setIsLoading(false);
-      return;
+      // Defer state reset to avoid synchronous setState in effect body
+      const timer = setTimeout(() => {
+        setWords([]);
+        setPlazaNotes([]);
+        setIsLoading(false);
+      }, 0);
+      return () => clearTimeout(timer);
     }
 
-    setIsLoading(true);
+    // Defer loading state to avoid synchronous setState in effect body
+    const loadingTimer = setTimeout(() => setIsLoading(true), 0);
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -143,6 +140,7 @@ export function useOmniSearch(query: string) {
     }, 150);
 
     return () => {
+      clearTimeout(loadingTimer);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       abortRef.current?.abort();
     };

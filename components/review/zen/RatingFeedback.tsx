@@ -2,7 +2,6 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
-import { RATING_CONFIG } from "./types";
 
 const RATING_COLORS = {
   again: "rgba(178, 87, 47, 0.15)",

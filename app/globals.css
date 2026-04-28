@@ -488,7 +488,6 @@ body.zen-mode {
   overflow: hidden;
 }
 
-body.zen-mode header,
 body.zen-mode [role="banner"],
 body.zen-mode .back-to-top {
   display: none !important;

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
@@ -143,7 +143,7 @@ function FlashcardBack({ item }: FlashcardBackProps) {
 }
 
 export function ZenFlashcard() {
-  const { item, phase, reveal, rate } = useZenReviewContext();
+  const { item, phase, reveal } = useZenReviewContext();
 
   if (!item) return null;
 
