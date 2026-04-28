@@ -248,7 +248,18 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       let ratingTimeout: ReturnType<typeof setTimeout> | null = null;
 
       try {
-        const reviewLogId = await submitRating(state.item, rating);
+        // Run API call and animation delay in PARALLEL.
+        // Total wait = max(API, 350ms) instead of API + 350ms.
+        const animationPromise = new Promise<void>((resolve) => {
+          ratingTimeout = setTimeout(() => resolve(), 350);
+        });
+        const [reviewLogId] = await Promise.all([
+          submitRating(state.item, rating),
+          animationPromise,
+        ]);
+
+        if (!mountedRef.current) return;
+
         updateStatsAfterRemoval(state.item, true);
 
         // Add to session history (only on API success)
@@ -271,21 +282,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           ],
         }));
 
-        // Trigger animation, then move to next
         const nextItems = state.items.slice(1);
-        
-        // Wait for card exit animation
-        await new Promise<void>((resolve) => {
-          ratingTimeout = setTimeout(() => {
-            if (mountedRef.current) {
-              resolve();
-            } else {
-              resolve();
-            }
-          }, 350);
-        });
-
-        if (!mountedRef.current) return;
 
         if (nextItems.length > 0) {
           dispatch({ type: "NEXT_CARD", item: nextItems[0] });
