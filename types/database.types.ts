@@ -442,10 +442,10 @@ export interface Database {
           p_session_id: string;
         };
         Returns: {
-          success: boolean;
-          progress_id: string | null;
-          word_id: string | null;
-          error_message: string | null;
+          out_success: boolean;
+          out_progress_id: string | null;
+          out_word_id: string | null;
+          out_error_message: string | null;
         }[];
       };
     };

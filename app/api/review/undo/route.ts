@@ -47,9 +47,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!result.success) {
+  if (!result.out_success) {
     // Map error messages to appropriate status codes
-    const message = result.error_message || "撤销失败";
+    const message = result.out_error_message || "撤销失败";
     let status = 400;
     if (message.includes("找不到")) status = 404;
     else if (message.includes("无权")) status = 403;
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Fetch restored card data to return as ReviewQueueItem
-  if (!result.progress_id) {
+  if (!result.out_progress_id) {
     // Should not happen since RPC validated this, but guard against null
     return NextResponse.json({ ok: true, restoredItem: null });
   }
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     .select(
       "id, word_id, state, review_count, due_at, content_hash_snapshot, scheduler_payload, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
     )
-    .eq("id", result.progress_id)
+    .eq("id", result.out_progress_id)
     .single();
 
   if (fetchError || !restoredProgress) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     payload === null ||
     Array.isArray(payload)
   ) {
-    console.warn("Invalid scheduler_payload after undo for progress:", result.progress_id);
+    console.warn("Invalid scheduler_payload after undo for progress:", result.out_progress_id);
   }
 
   const row = restoredProgress as unknown as {
