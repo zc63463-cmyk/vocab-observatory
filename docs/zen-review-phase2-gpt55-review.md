@@ -53,27 +53,27 @@
 
 ### 🔴 高风险：Undo 的数据一致性
 
-**文件**: `app/api/review/undo/route.ts` (第 26-218 行)
+**文件**: `app/api/review/undo/route.ts` (第 6-132 行)
 
-**关键校验链**:
+**架构**: route handler 仅做轻量代理，所有原子操作在 Postgres RPC 中完成。
 
-1. **用户归属** (第 49-61 行): `logEntry.user_id === userId` 防止跨用户撤销
-2. **已撤销检查** (第 65-70 行): `logEntry.undone === false` 防止重复撤销
-3. **快照存在** (第 72-77 行): `previous_progress_snapshot` 非空检查
-4. **Progress 关联** (第 79-84 行): `progress_id` 非空检查
-5. **最近一条** (第 86-101 行): 查询该 progress_id 最新未撤销 log，比对 ID
+1. **鉴权** (第 7-10 行): `requireOwnerApiSession()` 验证身份
+2. **输入校验** (第 12-18 行): Zod schema 校验 `reviewLogId`, `sessionId`
+3. **调用 RPC** (第 25-32 行): `supabase.rpc("undo_review_log", { p_review_log_id, p_user_id, p_session_id })`
+4. **错误映射** (第 34-59 行): 读取 `out_success` / `out_error_message`，按关键词映射 HTTP status (404/403/409/422)
+5. **恢复数据拼装** (第 62-131 行): RPC 成功后按 `out_progress_id` 查询 `user_word_progress`，拼回 `ReviewQueueItem`
 
-**回滚操作** (第 106-128 行):
-- 完整恢复 `user_word_progress` 所有 FSRS 字段 + 计数器 + 时间戳
-- `last_rating` 需要 `as ReviewRating | null` 类型断言
-
-**Stats 递减** (第 146-161 行):
-- `sessions.cards_seen` 递减（有下限保护 `Math.max(0, ...)`）
-- 即使 session 查询失败也不阻断主流程
+**RPC 内部事务** (`supabase/migrations/0010_undo_rpc.sql` → `0012_undo_rpc_enum_cast.sql`):
+- `BEGIN` → `FOR UPDATE` 锁定 `review_logs` 和 `user_word_progress`
+- 5 步校验（user_id / undone / snapshot / progress_id / 最新一条）
+- `UPDATE user_word_progress` 用 snapshot 回滚全部 FSRS 字段
+- `UPDATE review_logs SET undone=true WHERE undone=false`（仅匹配当前行，受行锁保护）
+- `UPDATE sessions SET cards_seen = GREATEST(cards_seen - 1, 0)`
+- `COMMIT`
 
 **疑问**: 
-- 第 86-101 行的「最近一条」检查是否足够？是否存在并发窗口？
-- 是否应该用数据库事务包裹全部操作（select + update + update）？
+- RPC 内部事务失败时 route handler 是否能正确区分 SQL 错误与业务校验错误？
+- `out_success = false` 时是否总是带有 `out_error_message`？
 
 ---
 
@@ -147,7 +147,7 @@ setUiState((prev) => ({
 
 ### 🟡 中风险：restoredItem 构建
 
-**文件**: `app/api/review/undo/route.ts` (第 196-217 行)
+**文件**: `app/api/review/undo/route.ts` (第 110-131 行)
 
 ```typescript
 const restoredItem: ReviewQueueItem = {
@@ -221,7 +221,7 @@ const restoredItem: ReviewQueueItem = {
 | 问题 | 严重程度 | 说明 |
 |------|----------|------|
 | Snapshot 类型断言 | 中 | 使用 `as unknown as Json` 和反向转换，依赖字段类型兼容性 |
-| 非事务性 Undo | 中 | 5 步校验后分步执行，理论上存在 partial failure 可能 |
+| Undo 全在 Postgres 事务内 | 低 | `undo_review_log` RPC 内完成，但 route handler 未再包外层事务（RPC 失败即回滚，无需外层） |
 | `queue_bucket` 硬编码 | 低 | 撤销恢复卡片的 bucket 标签为 "learning"，不影响功能 |
 | 刷新后无法 Undo | 低 | 符合设计：session-local history，刷新后只能看到新评分的卡 |
 | 刷新后无结算面板 | 低 | 符合设计：session-local summary，刷新后 sessionHistory 重置 |
@@ -235,10 +235,10 @@ const restoredItem: ReviewQueueItem = {
 
 请检查 `app/api/review/undo/route.ts`:
 
-1. [ ] 5 步校验是否遗漏了什么攻击向量？
-2. [ ] 是否应该用 `FOR UPDATE` 或事务锁定 progress 行？
-3. [ ] `previous_progress_snapshot` 反序列化时是否有注入风险？
-4. [ ] `cards_seen` 递减是否应该在事务中保证原子性？
+1. [ ] RPC 参数 `p_review_log_id` 是否存在枚举或类型注入风险？（已用 Zod 前置校验）
+2. [ ] `out_success = false` 时的错误消息是否可能泄露敏感信息？
+3. [ ] `previous_progress_snapshot` 在 RPC 内部反序列化时是否安全？（字段均为 string/number/null）
+4. [ ] RPC 事务内 `FOR UPDATE` 顺序是否合理（先 logs 后 progress），是否可能死锁？
 
 ### 4.2 前端状态审查
 
@@ -246,8 +246,8 @@ const restoredItem: ReviewQueueItem = {
 
 1. [ ] `RESTORE_CARD` 是否正确地恢复了 `items` 队列（队首插入）？
 2. [ ] stats 回退逻辑 (`completed - 1`, `remaining + 1`) 是否与真实数据一致？
-3. [ ] `mountedRef` 检查在 Undo 错误处理中是否有效（第 386 行）？
-4. [ ] `isUndoing` 锁是否在错误时正确释放（第 387 行）？
+3. [ ] `mountedRef` 检查在 Undo 错误处理中是否有效（第 405-406 行）？
+4. [ ] `undoInFlightRef` 是否在 finally 中正确重置（第 411 行），`isUndoing` state 是否在错误路径恢复（第 407 行）？
 
 ### 4.3 数据库设计审查
 
@@ -288,12 +288,12 @@ const restoredItem: ReviewQueueItem = {
 
 ## 六、关键代码引用
 
-### Undo API — 5 步安全校验
-```typescript@app/api/review/undo/route.ts:43-101
+### Undo API — Route handler (轻量代理)
+```typescript@app/api/review/undo/route.ts:6-132
 ```
 
-### Undo API — 回滚操作
-```typescript@app/api/review/undo/route.ts:103-128
+### Undo API — Postgres RPC 事务
+```sql@supabase/migrations/0012_undo_rpc_enum_cast.sql
 ```
 
 ### Rating API — 保存快照
@@ -301,7 +301,7 @@ const restoredItem: ReviewQueueItem = {
 ```
 
 ### Provider — Undo 逻辑
-```typescript@components/review/zen/ZenReviewProvider.tsx:346-393
+```typescript@components/review/zen/ZenReviewProvider.tsx:364-414
 ```
 
 ### Provider — RESTORE_CARD
@@ -335,6 +335,26 @@ const restoredItem: ReviewQueueItem = {
 ### ZenHistoryDrawer — z-index 修复
 ```typescript@components/review/zen/ZenHistoryDrawer.tsx:56-66
 ```
+
+---
+
+## 七、done 阶段快捷键优先级规则
+
+**文件**: `components/review/zen/useZenShortcuts.ts`
+
+```
+IF phase === "done":
+  ├─ drawer open + Esc     → 关闭 drawer，不退出
+  ├─ drawer open + H       → 关闭 drawer
+  ├─ drawer open + Enter   → 关闭 drawer（不退出到 /review）
+  ├─ drawer closed + Enter → 退出到 /review
+  ├─ drawer closed + Esc   → 退出到 /review
+  ├─ U (且 history 非空)    → 撤销最新 canUndo=true 的条目
+  └─ Space / 1 / 2 / 3 / 4 / J / K / L / ;
+     → 静默忽略（无 toast，无操作）
+```
+
+**注意**: `isUndoing || animationLock` 时所有按键均被忽略。
 
 ---
 
