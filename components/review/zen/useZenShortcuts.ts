@@ -10,6 +10,7 @@ interface UseZenShortcutsOptions {
   onExit: () => void;
   onToggleHistory: () => void;
   onOpenWordPage: () => void;
+  onSpeak: () => void;
   isOmniOpen: boolean;
   isAnimating: boolean;
   isHistoryOpen: boolean;
@@ -37,6 +38,7 @@ export function useZenShortcuts({
   onExit,
   onToggleHistory,
   onOpenWordPage,
+  onSpeak,
   isOmniOpen,
   isAnimating,
   isHistoryOpen,
@@ -107,6 +109,14 @@ export function useZenShortcuts({
         return;
       }
 
+      // P: Speak current lemma (front or back phase)
+      if (e.key === "p" || e.key === "P") {
+        if (phase !== "front" && phase !== "back") return;
+        e.preventDefault();
+        onSpeak();
+        return;
+      }
+
       // Don't process other keys during animation lock or when error/loading
       if (isAnimating || phase === "rating" || phase === "error" || phase === "loading") {
         return;
@@ -167,7 +177,7 @@ export function useZenShortcuts({
         onRate(rating);
       }
     },
-    [phase, onReveal, onRate, onExit, onToggleHistory, onOpenWordPage, isOmniOpen, isAnimating, isHistoryOpen]
+    [phase, onReveal, onRate, onExit, onToggleHistory, onOpenWordPage, onSpeak, isOmniOpen, isAnimating, isHistoryOpen]
   );
 
   useEffect(() => {

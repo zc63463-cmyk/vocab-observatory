@@ -1,9 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Volume2 } from "lucide-react";
 import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
+import { speakLemma, canSpeak } from "@/lib/tts";
 
 interface FlashcardFrontProps {
   item: ReviewQueueItem;
@@ -24,13 +26,28 @@ function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
     >
       {/* Word Display */}
       <div className="text-center">
-        <h1 
-          className="text-6xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-7xl md:text-8xl"
-          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            speakLemma(item.lemma);
+          }}
+          className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
+          title="点击朗读"
         >
-          {item.lemma}
-        </h1>
-        
+          <h1
+            className="text-6xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-7xl md:text-8xl"
+            style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+          >
+            {item.lemma}
+          </h1>
+          {canSpeak() && (
+            <span className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-70 sm:-right-10">
+              <Volume2 size={22} className="text-[var(--color-ink-soft)]" />
+            </span>
+          )}
+        </button>
+
         {item.ipa && (
           <p className="mt-4 text-xl text-[var(--color-ink-soft)] sm:text-2xl">
             {item.ipa}
@@ -42,6 +59,8 @@ function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
       <div className="absolute bottom-8 left-0 right-0 text-center">
         <p className="text-sm text-[var(--color-ink-soft)] opacity-60">
           按 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">Space</kbd> 或点击显示释义
+          <span className="mx-2">·</span>
+          <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">P</kbd> 朗读
         </p>
       </div>
     </motion.div>
@@ -94,13 +113,25 @@ function FlashcardBack({ item }: FlashcardBackProps) {
         </div>
 
         {/* Word */}
-        <h2 
-          className="text-3xl font-semibold text-[var(--color-ink)] sm:text-4xl"
-          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        <button
+          type="button"
+          onClick={() => speakLemma(item.lemma)}
+          className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
+          title="点击朗读"
         >
-          {item.lemma}
-        </h2>
-        
+          <h2
+            className="text-3xl font-semibold text-[var(--color-ink)] sm:text-4xl"
+            style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+          >
+            {item.lemma}
+          </h2>
+          {canSpeak() && (
+            <span className="absolute -right-7 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-70 sm:-right-9">
+              <Volume2 size={18} className="text-[var(--color-ink-soft)]" />
+            </span>
+          )}
+        </button>
+
         {item.ipa && (
           <p className="mt-2 text-lg text-[var(--color-ink-soft)]">{item.ipa}</p>
         )}
@@ -134,6 +165,8 @@ function FlashcardBack({ item }: FlashcardBackProps) {
             {" "}<kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">4</kbd> Easy
             <span className="mx-2">·</span>
             <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">D</kbd> 查看词条
+            <span className="mx-2">·</span>
+            <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">P</kbd> 朗读
           </span>
           <span className="sm:hidden">
             点击评分按钮或按数字键 1-4

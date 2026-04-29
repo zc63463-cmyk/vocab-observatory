@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import { speakLemma } from "@/lib/tts";
 import { useToast } from "@/components/ui/Toast";
 import { useZenReview } from "./useZenReview";
 import { useZenShortcuts } from "./useZenShortcuts";
@@ -357,6 +358,12 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     window.open(`/words/${state.item.slug}`, "_blank", "noopener,noreferrer");
   }, [state.item]);
 
+  // Speak current lemma
+  const speakWord = useCallback(() => {
+    if (!state.item) return;
+    speakLemma(state.item.lemma);
+  }, [state.item]);
+
   // Retry action
   const retry = useCallback(() => {
     window.location.reload();
@@ -428,6 +435,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     onExit: exit,
     onToggleHistory: toggleHistory,
     onOpenWordPage: openWordPage,
+    onSpeak: speakWord,
     isOmniOpen: omni.isOpen,
     isAnimating: animationLock,
     isHistoryOpen: uiState.isHistoryOpen,
