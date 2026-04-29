@@ -1,9 +1,9 @@
 # Zen Review Phase 2 — GPT-5.5 Review Request
 
 **提交者**: Cascade (Kimi 2.6)  
-**日期**: 2026-04-28  
-**分支**: main (Zen Review Phase 1 + Phase 2)  
-**范围**: 安全 Undo 最近一次评分功能完整实现
+**日期**: 2026-04-29  
+**分支**: main (Zen Review Phase 1 + Phase 2 + Session Summary v0.1)  
+**范围**: 安全 Undo 最近一次评分功能完整实现 + 会话结算面板 + UI 修复
 
 ---
 
@@ -17,6 +17,11 @@
 | `app/api/review/undo/route.ts` | 撤销评分 API：5 步安全校验 + 完整回滚 + stats 递减 |
 | `components/review/zen/ZenHistoryDrawer.tsx` | Phase 1 新增，但本次集成 Undo 功能 |
 | `components/review/zen/ZenHistoryItem.tsx` | Phase 1 新增，但本次启用 Undo 按钮 |
+| `components/review/zen/derive-session-summary.ts` | Session Summary 纯前端派生：从 `sessionHistory` 计算统计指标 |
+| `components/review/zen/ZenSessionMetric.tsx` | 单指标展示组件（支持不同语气样式） |
+| `components/review/zen/ZenRatingDistribution.tsx` | 评分分布细条组件（支持动画和无障碍标签） |
+| `components/review/zen/ZenSessionSummary.tsx` | 会话结算面板：淡入动画、响应式布局、键盘支持 |
+| `tests/zen-session-summary.test.ts` | Session Summary 派生逻辑单元测试（9 个场景） |
 
 ### 1.2 修改文件
 
@@ -24,11 +29,13 @@
 |------|------|
 | `types/database.types.ts` | `review_logs` Row/Insert 类型添加 `previous_progress_snapshot`, `progress_id`, `undone`, `undone_at` |
 | `app/api/review/answer/route.ts` | 扩展 select 捕获完整评分前状态；写入快照；返回 `reviewLogId` |
-| `lib/validation/schemas.ts` | 新增 `reviewUndoSchema` |
+| `lib/validation/schemas.ts` | 新增 `reviewUndoSchema` + `previousProgressSnapshotSchema` |
 | `components/review/zen/useZenReview.ts` | `submitRating` 返回 `reviewLogId`；新增 `submitUndo` |
-| `components/review/zen/types.ts` | 新增 `RESTORE_CARD` action |
-| `components/review/zen/ZenReviewProvider.tsx` | 新增 `undo()` 回调 + `RESTORE_CARD` reducer + stats 回退 |
-| `components/review/zen/ZenReviewPage.tsx` | 透传 `onUndo` + `isUndoing` 到 Drawer |
+| `components/review/zen/types.ts` | 新增 `RESTORE_CARD` action；`ZenReviewedItem` 包含 `durationMs` |
+| `components/review/zen/ZenReviewProvider.tsx` | 新增 `undo()` 回调 + `RESTORE_CARD` reducer + stats 回退 + `durationMs` 计算 + `undoInFlightRef` 防重入锁 |
+| `components/review/zen/ZenReviewPage.tsx` | 透传 `onUndo` + `isUndoing` 到 Drawer；`done` 阶段渲染 `ZenSessionSummary` |
+| `components/review/zen/useZenShortcuts.ts` | done 阶段禁用评分键；新增 `Enter/Esc` 退出、`H` 切换历史抽屉；保留 `U` 撤销 |
+| `components/review/zen/ZenHistoryDrawer.tsx` | z-index 和定位修复（`z-[100]` + `top-[calc(...)]`）防止被 header 遮挡 |
 | `docs/zen-review-gpt55-review.md` | 更新反映 skip 移除（Phase 1 已完成）|
 
 ### 1.3 验证结果
@@ -37,6 +44,7 @@
 ✅ npm run typecheck - PASS
 ✅ npm run lint - PASS (0 errors, 0 warnings)
 ✅ npm run build - PASS
+✅ npm run test - PASS (86 tests + 新增 Session Summary 测试)
 ```
 
 ---
@@ -157,12 +165,54 @@ const restoredItem: ReviewQueueItem = {
 
 ---
 
-### 🟢 低风险：UI 交互细节
+### 🟡 中风险：Session Summary 纯前端派生
+
+**文件**: `components/review/zen/derive-session-summary.ts`
+
+**设计决策**:
+- 所有统计完全从 `sessionHistory` 数组派生，不调用后端 API
+- `durationMs` 由 `ZenReviewProvider.tsx` 在每次评分时计算（`Date.now() - cardShownAt`）
+
+**问题**:
+- 刷新页面后 `sessionHistory` 重置，结算面板消失（符合设计，但用户可能困惑）
+- `durationMs` 包含用户犹豫时间，不代表实际思考时间
+- Undo 操作会删除历史条目，导致结算数据回退（正确行为）
+
+**需确认**:
+- 派生逻辑是否在边界条件（空数组、单条记录）下正确？
+- 单元测试 `tests/zen-session-summary.test.ts` 是否覆盖足够？
+
+---
+
+### � 中风险：done 阶段键盘快捷键冲突
+
+**文件**: `components/review/zen/useZenShortcuts.ts`
+
+**改动**:
+- `done` 阶段禁用 `1-4` 评分键和 `Space` 翻转键（防止误触）
+- 保留 `Enter` / `Esc` 退出结算回到 `/review`
+- 保留 `H` 切换历史抽屉，`U` 撤销（如果 history 非空）
+
+**问题**:
+- 用户在结算面板按 `1-4` 是否会有任何反馈？（当前是静默忽略）
+- 如果 history drawer 打开时按 `Enter`，会同时关闭 drawer 并退出结算吗？
+
+---
+
+### � 低风险：UI 交互细节
 
 **文件**: `components/review/zen/ZenHistoryItem.tsx` (第 72-82 行)
 
 - Undo 按钮使用 `animate-spin` 在 `isUndoing` 时旋转
 - 已撤销条目有视觉区分（opacity 降低 + "已撤销" 标签）
+
+### 🟢 低风险：历史抽屉 z-index 修复
+
+**文件**: `components/review/zen/ZenHistoryDrawer.tsx:66`
+
+- `z-[70]` → `z-[100]` 确保层级高于 sticky header (`z-40`)
+- `top-0` → `top-[calc(var(--header-height,4rem))]` 物理避开 header 区域
+- `h-full` → `h-[calc(100%-var(--header-height,4rem))]` 动态调整高度
 
 ---
 
@@ -174,6 +224,8 @@ const restoredItem: ReviewQueueItem = {
 | 非事务性 Undo | 中 | 5 步校验后分步执行，理论上存在 partial failure 可能 |
 | `queue_bucket` 硬编码 | 低 | 撤销恢复卡片的 bucket 标签为 "learning"，不影响功能 |
 | 刷新后无法 Undo | 低 | 符合设计：session-local history，刷新后只能看到新评分的卡 |
+| 刷新后无结算面板 | 低 | 符合设计：session-local summary，刷新后 sessionHistory 重置 |
+| `durationMs` 含犹豫时间 | 低 | 从卡片显示到评分的总时长，非纯思考时间 |
 
 ---
 
@@ -209,7 +261,7 @@ const restoredItem: ReviewQueueItem = {
 
 ## 五、测试建议
 
-### 5.1 必须测试场景
+### 5.1 必须测试场景（Undo）
 
 1. **正常撤销**: 评分 → H 打开 drawer → 撤销 → 卡片回到 back 面 → 可重新评分
 2. **连续撤销**: 评分 A → 评分 B → 撤销 B（应成功）→ 尝试撤销 A（应失败）
@@ -217,11 +269,20 @@ const restoredItem: ReviewQueueItem = {
 4. **撤销后评分**: 撤销后重新评分同一张卡 → 新 log 写入正常
 5. **并发模拟**: 两个标签页同时操作同一卡（验证 "最近一条" 校验）
 
-### 5.2 边界条件
+### 5.2 必须测试场景（Session Summary）
+
+1. **正常结算**: 完成所有卡片 → 显示结算面板 → 统计数据正确
+2. **Undo 后结算**: 完成评分 → 撤销 → 结算数据回退 → 重新评分后更新
+3. **快捷键测试**: done 阶段 `Enter/Esc` 退出；`1-4` 评分键被禁用；`H` 打开历史抽屉
+4. **空历史结算**: 直接进入 done 阶段（如空队列）→ 应显示空状态而非结算
+5. **移动端适配**: 结算面板在窄屏下布局正确，按钮可点击
+
+### 5.3 边界条件
 
 - 网络中断：API 失败时 toast 提示，history 状态不变
 - 空队列撤销：理论上不会发生（必须有评分才能撤销）
-- 刷新后：撤销按钮消失（session history 重置）
+- 刷新后：撤销按钮消失，结算面板消失（session history 重置）
+- 快速评分：验证 `durationMs` 计算合理（不应为负值或极大值）
 
 ---
 
@@ -245,6 +306,34 @@ const restoredItem: ReviewQueueItem = {
 
 ### Provider — RESTORE_CARD
 ```typescript@components/review/zen/ZenReviewProvider.tsx:133-141
+```
+
+### Provider — durationMs 跟踪
+```typescript@components/review/zen/ZenReviewProvider.tsx:263-294
+```
+
+### Provider — undoInFlightRef 防重入锁
+```typescript@components/review/zen/ZenReviewProvider.tsx:156-176
+```
+
+### Session Summary — 派生逻辑
+```typescript@components/review/zen/derive-session-summary.ts:1-74
+```
+
+### Session Summary — 面板组件
+```typescript@components/review/zen/ZenSessionSummary.tsx:1-178
+```
+
+### ZenReviewPage — done 阶段渲染
+```typescript@components/review/zen/ZenReviewPage.tsx:95-145
+```
+
+### useZenShortcuts — done 阶段键盘处理
+```typescript@components/review/zen/useZenShortcuts.ts:70-145
+```
+
+### ZenHistoryDrawer — z-index 修复
+```typescript@components/review/zen/ZenHistoryDrawer.tsx:56-66
 ```
 
 ---
