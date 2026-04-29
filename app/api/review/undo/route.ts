@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
     state: row.state,
     title: row.words.title,
     word_id: row.word_id,
+    previewExamples: [],
   };
 
   return NextResponse.json({ ok: true, restoredItem });

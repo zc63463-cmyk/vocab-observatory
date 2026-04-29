@@ -1,7 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Volume2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, Volume2 } from "lucide-react";
+import { useState } from "react";
 import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
@@ -72,6 +73,8 @@ interface FlashcardBackProps {
 }
 
 function FlashcardBack({ item }: FlashcardBackProps) {
+  const [examplesOpen, setExamplesOpen] = useState(false);
+
   const semanticField =
     typeof item.metadata === "object" &&
     item.metadata &&
@@ -142,9 +145,50 @@ function FlashcardBack({ item }: FlashcardBackProps) {
             释义
           </p>
           <p className="mt-3 text-lg leading-relaxed text-[var(--color-ink)]">
-            {item.short_definition ?? item.definition_md}
+            {item.short_definition || item.definition_md || "暂无释义"}
           </p>
         </div>
+
+        {/* Examples */}
+        {item.previewExamples && item.previewExamples.length > 0 && (
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <button
+              type="button"
+              onClick={() => setExamplesOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+                例句 ({item.previewExamples.length} 条)
+              </span>
+              <motion.span animate={{ rotate: examplesOpen ? 180 : 0 }}>
+                <ChevronDown className="h-4 w-4 text-[var(--color-ink-soft)]" />
+              </motion.span>
+            </button>
+            <AnimatePresence initial={false}>
+              {examplesOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                  animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                  exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                  className="overflow-hidden"
+                >
+                  <ul className="space-y-2 text-[var(--color-ink-soft)]">
+                    {item.previewExamples.map((ex, i) => (
+                      <li key={i} className="text-sm leading-relaxed">
+                        {ex.text}
+                        {ex.label && (
+                          <span className="ml-1 text-xs text-[var(--color-ink-muted)]">
+                            ({ex.label})
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Review count hint */}
         <div className="mt-6 flex items-center justify-between text-xs text-[var(--color-ink-soft)] opacity-60">

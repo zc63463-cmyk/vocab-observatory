@@ -6,6 +6,7 @@ import {
 import { getOrCreateReviewSession } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import type { ReviewQueueItem, StoredSchedulerCard } from "@/lib/review/types";
+import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 
 export async function GET() {
   const ownerSession = await requireOwnerApiSession();
@@ -18,7 +19,7 @@ export async function GET() {
   const { count, data, error } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
+      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata, examples)",
       { count: "exact" },
     )
     .eq("user_id", ownerSession.user!.id)
@@ -42,6 +43,7 @@ export async function GET() {
     word_id: string;
     words: {
       definition_md: string;
+      examples: unknown;
       ipa: string | null;
       lemma: string;
       metadata: unknown;
@@ -54,6 +56,13 @@ export async function GET() {
   const batch = buildReviewQueueBatch(rawRows);
   const dueToday = count ?? rawRows.length;
   const newCards = rawRows.filter((row) => row.state === "new").length;
+
+  function extractPreviewExamples(raw: unknown): ParsedExample[] | null {
+    const arr = Array.isArray(raw) ? (raw as ParsedExample[]) : null;
+    if (!arr || arr.length === 0) return null;
+    return arr.slice(0, 2);
+  }
+
   const items = batch.items.map(({ item: row, priority }): ReviewQueueItem => ({
     content_hash_snapshot: row.content_hash_snapshot,
     definition_md: row.words.definition_md,
@@ -69,6 +78,7 @@ export async function GET() {
     retrievability: priority.retrievability,
     review_count: row.review_count,
     short_definition: row.words.short_definition,
+    previewExamples: extractPreviewExamples(row.words.examples),
     slug: row.words.slug,
     state: row.state,
     title: row.words.title,

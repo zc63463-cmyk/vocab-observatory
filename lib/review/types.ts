@@ -1,4 +1,5 @@
 import type { Json, ReviewRating } from "@/types/database.types";
+import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 
 export type ReviewState = "new" | "learning" | "review" | "relearning";
 export type ReviewQueuePriorityBucket =
@@ -35,6 +36,7 @@ export interface ReviewQueueItem {
   review_count: number;
   retrievability: number | null;
   short_definition: string | null;
+  previewExamples: ParsedExample[] | null;
   slug: string;
   state: string;
   title: string;
