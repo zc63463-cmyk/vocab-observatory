@@ -155,8 +155,9 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
           items: [],
           item: null,
           session: action.session,
-          stats: { completed: 0, remaining: 0, dueToday: 0, newCards: 0, deferredNewCards: 0 },
+          stats: action.stats,
           pending: false,
+          lastRating: null,
           message: "没有更多卡片了",
         };
       }
@@ -166,8 +167,9 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         items: action.items,
         item: action.items[0],
         session: action.session,
-        stats: { completed: 0, remaining: action.items.length, dueToday: action.items.length, newCards: 0, deferredNewCards: 0 },
+        stats: action.stats,
         pending: false,
+        lastRating: null,
         message: "",
       };
     }
@@ -397,20 +399,20 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     setUiState((prev) => ({ ...prev, isHistoryOpen: false, sessionHistory: [] }));
     try {
       const res = await fetchQueue();
-      if (!res) {
-        dispatch({
-          type: "SET_ERROR",
-          message: "获取下一批失败，请重试",
-        });
-        return;
-      }
+      if (!mountedRef.current) return;
+      // Sync hook state so progress/stats stay consistent with reducer state
+      setItems(res.items);
+      setSession(res.session);
+      setStats(res.stats);
       dispatch({
         type: "NEXT_BATCH",
         items: res.items,
         session: res.session,
+        stats: res.stats,
       });
-      addToast?.("开始新批次", "success");
+      addToast(res.items.length === 0 ? "没有更多卡片了" : "开始新批次", "success");
     } catch (e) {
+      if (!mountedRef.current) return;
       dispatch({
         type: "SET_ERROR",
         message: e instanceof Error ? e.message : "获取下一批时出错",
@@ -420,7 +422,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         setAnimationLock(false);
       }
     }
-  }, [animationLock, fetchQueue, addToast]);
+  }, [animationLock, fetchQueue, setItems, setSession, setStats, addToast]);
 
   // Retry action
   const retry = useCallback(() => {
