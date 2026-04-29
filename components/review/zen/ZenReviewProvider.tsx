@@ -351,6 +351,12 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     router.push("/review");
   }, [router]);
 
+  // Open word page in new tab
+  const openWordPage = useCallback(() => {
+    if (!state.item) return;
+    window.open(`/words/${state.item.slug}`, "_blank", "noopener,noreferrer");
+  }, [state.item]);
+
   // Retry action
   const retry = useCallback(() => {
     window.location.reload();
@@ -421,6 +427,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     onRate: rate,
     onExit: exit,
     onToggleHistory: toggleHistory,
+    onOpenWordPage: openWordPage,
     isOmniOpen: omni.isOpen,
     isAnimating: animationLock,
     isHistoryOpen: uiState.isHistoryOpen,

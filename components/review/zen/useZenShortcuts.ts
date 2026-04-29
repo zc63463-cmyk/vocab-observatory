@@ -9,6 +9,7 @@ interface UseZenShortcutsOptions {
   onRate: (rating: RatingKey) => void;
   onExit: () => void;
   onToggleHistory: () => void;
+  onOpenWordPage: () => void;
   isOmniOpen: boolean;
   isAnimating: boolean;
   isHistoryOpen: boolean;
@@ -35,6 +36,7 @@ export function useZenShortcuts({
   onRate,
   onExit,
   onToggleHistory,
+  onOpenWordPage,
   isOmniOpen,
   isAnimating,
   isHistoryOpen,
@@ -94,6 +96,14 @@ export function useZenShortcuts({
           e.preventDefault();
           onExit();
         }
+        return;
+      }
+
+      // D: Open word page in new tab (only from back phase)
+      if (e.key === "d" || e.key === "D") {
+        if (phase !== "back") return;
+        e.preventDefault();
+        onOpenWordPage();
         return;
       }
 
@@ -157,7 +167,7 @@ export function useZenShortcuts({
         onRate(rating);
       }
     },
-    [phase, onReveal, onRate, onExit, onToggleHistory, isOmniOpen, isAnimating, isHistoryOpen]
+    [phase, onReveal, onRate, onExit, onToggleHistory, onOpenWordPage, isOmniOpen, isAnimating, isHistoryOpen]
   );
 
   useEffect(() => {
