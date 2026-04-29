@@ -29,6 +29,7 @@ interface ZenContextValue extends ZenState {
   retry: () => void;
   toggleHistory: () => void;
   undo: (reviewLogId: string) => void;
+  nextBatch: () => Promise<void>;
   // Meta
   totalCount: number;
   completedCount: number;
@@ -143,6 +144,31 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         items: [action.item, ...dedupedItems],
         pending: false,
         lastRating: null,
+      };
+    }
+
+    case "NEXT_BATCH": {
+      if (action.items.length === 0) {
+        return {
+          ...state,
+          phase: "done",
+          items: [],
+          item: null,
+          session: action.session,
+          stats: { completed: 0, remaining: 0, dueToday: 0, newCards: 0, deferredNewCards: 0 },
+          pending: false,
+          message: "没有更多卡片了",
+        };
+      }
+      return {
+        ...state,
+        phase: "front",
+        items: action.items,
+        item: action.items[0],
+        session: action.session,
+        stats: { completed: 0, remaining: action.items.length, dueToday: action.items.length, newCards: 0, deferredNewCards: 0 },
+        pending: false,
+        message: "",
       };
     }
 
@@ -364,6 +390,38 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     speakLemma(state.item.lemma);
   }, [state.item]);
 
+  // Next batch: fetch new queue, clear session history, start new session
+  const nextBatch = useCallback(async () => {
+    if (animationLock || !mountedRef.current) return;
+    setAnimationLock(true);
+    setUiState((prev) => ({ ...prev, isHistoryOpen: false, sessionHistory: [] }));
+    try {
+      const res = await fetchQueue();
+      if (!res) {
+        dispatch({
+          type: "SET_ERROR",
+          message: "获取下一批失败，请重试",
+        });
+        return;
+      }
+      dispatch({
+        type: "NEXT_BATCH",
+        items: res.items,
+        session: res.session,
+      });
+      addToast?.("开始新批次", "success");
+    } catch (e) {
+      dispatch({
+        type: "SET_ERROR",
+        message: e instanceof Error ? e.message : "获取下一批时出错",
+      });
+    } finally {
+      if (mountedRef.current) {
+        setAnimationLock(false);
+      }
+    }
+  }, [animationLock, fetchQueue, addToast]);
+
   // Retry action
   const retry = useCallback(() => {
     window.location.reload();
@@ -441,6 +499,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     isHistoryOpen: uiState.isHistoryOpen,
   });
 
+// ... (rest of the code remains the same)
   // Calculate progress
   const totalCount = (stats?.completed ?? 0) + (stats?.remaining ?? items.length);
   const completedCount = stats?.completed ?? 0;
@@ -455,13 +514,14 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       retry,
       toggleHistory,
       undo,
+      nextBatch,
       totalCount,
       completedCount,
       progress,
       isAnimating: animationLock,
       uiState,
     }),
-    [state, reveal, rate, exit, retry, toggleHistory, undo, totalCount, completedCount, progress, animationLock, uiState]
+    [state, reveal, rate, exit, retry, toggleHistory, undo, nextBatch, totalCount, completedCount, progress, animationLock, uiState]
   );
 
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>;

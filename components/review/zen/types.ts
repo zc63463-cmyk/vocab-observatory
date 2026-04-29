@@ -32,7 +32,8 @@ export type ZenAction =
   | { type: "REFRESH_QUEUE"; items: ReviewQueueItem[]; session: ReviewSessionSummary | null; stats: ReviewQueueStats | null }
   | { type: "RESTORE_BACK" }
   | { type: "RESTORE_CARD"; item: ReviewQueueItem }
-  | { type: "EXIT" };
+  | { type: "EXIT" }
+  | { type: "NEXT_BATCH"; items: ReviewQueueItem[]; session: ReviewSessionSummary | null };
 
 export interface ZenReviewedItem {
   id: string;

@@ -25,7 +25,7 @@ import {
  * - Reduced-motion: framer-motion's MotionConfig handles the global flag
  */
 export function ZenSessionSummary() {
-  const { uiState, session, exit, toggleHistory } = useZenReviewContext();
+  const { uiState, session, exit, toggleHistory, nextBatch } = useZenReviewContext();
   const { sessionHistory } = uiState;
 
   const summary = useMemo(
@@ -138,6 +138,18 @@ export function ZenSessionSummary() {
             title="按 H 打开记录"
           >
             查看记录
+          </button>
+          <button
+            type="button"
+            onClick={nextBatch}
+            className="
+              rounded-full border border-[var(--color-accent)]/50
+              bg-transparent px-5 py-2.5 text-sm
+              text-[var(--color-accent)] transition
+              hover:bg-[var(--color-accent)] hover:text-white
+            "
+          >
+            再来一组
           </button>
           <button
             type="button"
