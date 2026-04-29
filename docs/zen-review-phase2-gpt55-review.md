@@ -14,7 +14,7 @@
 | 文件 | 目的 |
 |------|------|
 | `supabase/migrations/0009_review_undo.sql` | DB 迁移：添加 `previous_progress_snapshot`, `undone`, `undone_at`, `progress_id` 到 `review_logs`，含部分索引 |
-| `app/api/review/undo/route.ts` | 撤销评分 API：5 步安全校验 + 完整回滚 + stats 递减 |
+| `app/api/review/undo/route.ts` | Undo API 轻量代理：鉴权、入参校验、调用 `undo_review_log` RPC、错误映射、拼装 `restoredItem` |
 | `components/review/zen/ZenHistoryDrawer.tsx` | Phase 1 新增，但本次集成 Undo 功能 |
 | `components/review/zen/ZenHistoryItem.tsx` | Phase 1 新增，但本次启用 Undo 按钮 |
 | `components/review/zen/derive-session-summary.ts` | Session Summary 纯前端派生：从 `sessionHistory` 计算统计指标 |
@@ -355,6 +355,47 @@ IF phase === "done":
 ```
 
 **注意**: `isUndoing || animationLock` 时所有按键均被忽略。
+
+---
+
+## 八、后续优化项 (P1/P2 maintenance)
+
+> 本轮不实现，仅记录供后续迭代参考。
+
+### P1 — 结构化错误码
+
+**目标**: 让 `undo_review_log` RPC 返回结构化 `out_error_code`，替代 route handler 层依赖 `out_error_message` 中文关键词 `includes()` 映射 HTTP status。
+
+**建议错误码**:
+- `NOT_FOUND` — 找不到 review_log
+- `FORBIDDEN` — 跨用户撤销
+- `ALREADY_UNDONE` — 该 log 已被撤销
+- `NOT_LATEST` — 不是该 progress 最新未撤销 log
+- `MISSING_SNAPSHOT` — `previous_progress_snapshot` 为空
+- `MISSING_PROGRESS` — `progress_id` 为空或关联 progress 不存在
+- `MALFORMED_SNAPSHOT` — snapshot 反序列化后缺少必要字段
+- `UNKNOWN` — 其他内部错误
+
+**收益**: route handler 错误映射不再依赖中文文案，可支持 i18n；便于前端按 code 做精细化 UI 提示。
+
+### P2 — 增强校验与复用
+
+1. **启用 `previousProgressSnapshotSchema` 显式校验**
+   - `lib/validation/schemas.ts` 中已定义，当前未在 route.ts 中使用
+   - 作为 RPC `jsonb` cast 之外的第二层保护
+
+2. **`restoredItem.queue_bucket: "learning"` 加注释**
+   - 说明这是撤销恢复的 UI 占位标签，不代表真实 FSRS queue bucket
+   - 避免维护者误以为是调度状态
+
+3. **复用 queue item builder 构造 `restoredItem`**
+   - 当前 route.ts 手动拼装 15+ 个字段，与 `ReviewQueueItem` 类型定义容易不同步
+   - 后续可抽象为 `buildQueueItemFromProgress(progressRow)` 函数
+
+4. **RPC 返回权威 session stats**
+   - 当前前端做 optimistic stats 回退（`completed - 1`, `remaining + 1`）
+   - 后续可考虑让 RPC 返回 `out_new_cards_seen`, `out_new_remaining` 等权威值
+   - 前端直接采用，减少乐观更新与实际数据偏差的风险
 
 ---
 
