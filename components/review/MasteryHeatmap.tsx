@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import * as d3 from "d3";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface MasteryCell {
   cefr: string;
@@ -18,23 +17,12 @@ interface MasteryHeatmapProps {
   relationGraph?: Record<string, { slug: string; lemma: string; relation: string }[]>;
 }
 
-const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "unknown"];
-const CEFR_LABELS: Record<string, string> = {
-  A1: "A1",
-  A2: "A2",
-  B1: "B1",
-  B2: "B2",
-  C1: "C1",
-  C2: "C2",
-  unknown: "?",
-};
-
 function getRetrievabilityColor(r: number): string {
-  if (r >= 0.9) return "#16a34a"; // green-600 牢固
-  if (r >= 0.75) return "#84cc16"; // lime-500 较好
-  if (r >= 0.6) return "#eab308"; // yellow-500 一般
-  if (r >= 0.4) return "#f97316"; // orange-500 薄弱
-  return "#ef4444"; // red-500 濒危
+  if (r >= 0.9) return "#16a34a";
+  if (r >= 0.75) return "#84cc16";
+  if (r >= 0.6) return "#eab308";
+  if (r >= 0.4) return "#f97316";
+  return "#ef4444";
 }
 
 function getRetrievabilityLabel(r: number): string {
@@ -45,188 +33,229 @@ function getRetrievabilityLabel(r: number): string {
   return "濒危";
 }
 
-function PreviewCard({
-  cell,
-  neighbors,
-}: {
-  cell: MasteryCell;
-  neighbors?: { slug: string; lemma: string; relation: string }[];
-}) {
-  return (
-    <div className="pointer-events-none w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl">
-      <div className="flex items-center gap-2">
-        <span
-          className="inline-block h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: getRetrievabilityColor(cell.retrievability) }}
-        />
-        <span className="text-sm font-semibold text-[var(--color-ink)]">{cell.lemma}</span>
-      </div>
-      <p className="mt-1.5 text-[11px] text-[var(--color-ink-soft)]">
-        {CEFR_LABELS[cell.cefr] ?? cell.cefr} · 记忆概率{" "}
-        <span className="font-semibold" style={{ color: getRetrievabilityColor(cell.retrievability) }}>
-          {Math.round(cell.retrievability * 100)}%
-        </span>
-        <span className="ml-1 opacity-70">({getRetrievabilityLabel(cell.retrievability)})</span>
-      </p>
-      {cell.dueAt ? (
-        <p className="mt-0.5 text-[10px] text-[var(--color-ink-soft)] opacity-60">
-          到期 {cell.dueAt.slice(0, 10)}
-        </p>
-      ) : null}
-      {neighbors && neighbors.length > 0 && (
-        <div className="mt-2 border-t border-[var(--color-border)] pt-2">
-          <p className="mb-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">关联词汇</p>
-          <div className="flex flex-wrap gap-1">
-            {neighbors.map((n) => (
-              <span
-                key={n.slug}
-                className="rounded bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-ink-soft)]"
-              >
-                {n.lemma}
-                <span className="ml-0.5 opacity-60">({n.relation})</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      <p className="mt-2 text-[10px] text-[var(--color-ink-soft)] opacity-40">点击打开词条页</p>
-    </div>
-  );
+const MAX_NODES = 150;
+const GRAPH_HEIGHT = 420;
+
+interface GraphNode extends d3.SimulationNodeDatum {
+  id: string;
+  slug: string;
+  lemma: string;
+  retrievability: number;
+  cefr: string;
+  dueAt: string | null;
 }
 
-function DotNode({
-  cell,
-  onHover,
-  isHighlighted,
-}: {
-  cell: MasteryCell;
-  onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
-  isHighlighted?: boolean;
-}) {
-  const ref = useRef<HTMLAnchorElement>(null);
-
-  return (
-    <Link
-      ref={ref}
-      href={`/words/${cell.slug}`}
-      className={`inline-block h-2 w-2 rounded-sm transition hover:scale-150 hover:z-10 hover:shadow-sm ${
-        isHighlighted ? "ring-[1.5px] ring-white/80 scale-125" : ""
-      }`}
-      style={{ backgroundColor: getRetrievabilityColor(cell.retrievability) }}
-      onMouseEnter={() => onHover(cell, ref.current?.getBoundingClientRect() ?? null)}
-      onMouseLeave={() => onHover(null, null)}
-      onFocus={() => onHover(cell, ref.current?.getBoundingClientRect() ?? null)}
-      onBlur={() => onHover(null, null)}
-    />
-  );
+interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
+  relation: string;
 }
 
-function CEFRRow({
-  label,
-  level,
-  items,
-  defaultOpen = true,
-  onHover,
-  highlightedSlugs,
-}: {
-  label: string;
-  level: string;
-  items: MasteryCell[];
-  defaultOpen?: boolean;
-  onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
-  highlightedSlugs?: Set<string>;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const avgR = items.reduce((s, c) => s + c.retrievability, 0) / items.length;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="mb-1 flex w-full items-center gap-2 text-left"
-      >
-        <span className="w-10 text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-soft)]">
-          {label}
-        </span>
-        <span className="text-[11px] tabular-nums text-[var(--color-ink-soft)] opacity-60">
-          {items.length} 词
-        </span>
-        <span
-          className="ml-auto text-[11px] font-medium tabular-nums"
-          style={{ color: getRetrievabilityColor(avgR) }}
-        >
-          均 {Math.round(avgR * 100)}%
-        </span>
-        <span className="text-[10px] text-[var(--color-ink-soft)] opacity-50">
-          {open ? "−" : "+"}
-        </span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="ml-10 flex flex-wrap gap-[3px]">
-              {items.map((cell) => (
-                <DotNode
-                  key={cell.slug}
-                  cell={cell}
-                  onHover={onHover}
-                  isHighlighted={highlightedSlugs?.has(cell.slug)}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+type SimEdge = Omit<GraphEdge, "source" | "target"> & { source: GraphNode; target: GraphNode };
 
 export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProps) {
-  const [hovered, setHovered] = useState<{ cell: MasteryCell; rect: DOMRect } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ width: 800, height: GRAPH_HEIGHT });
+  const [tooltip, setTooltip] = useState<{
+    cell: MasteryCell;
+    neighbors: { slug: string; lemma: string; relation: string }[];
+    x: number;
+    y: number;
+  } | null>(null);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, MasteryCell[]>();
-    for (const cell of cells) {
-      const key = CEFR_ORDER.includes(cell.cefr) ? cell.cefr : "unknown";
-      const list = map.get(key) ?? [];
-      list.push(cell);
-      map.set(key, list);
+  const { nodes, edges } = useMemo(() => {
+    const sorted = [...cells].sort((a, b) => a.retrievability - b.retrievability);
+    const visible = sorted.slice(0, MAX_NODES);
+    const visibleSet = new Set(visible.map((c) => c.slug));
+
+    const nodes: GraphNode[] = visible.map((c) => ({
+      id: c.slug,
+      slug: c.slug,
+      lemma: c.lemma,
+      retrievability: c.retrievability,
+      cefr: c.cefr,
+      dueAt: c.dueAt,
+    }));
+
+    const edgeMap = new Map<string, GraphEdge>();
+    for (const cell of visible) {
+      const neighbors = relationGraph[cell.slug] ?? [];
+      for (const n of neighbors) {
+        if (!visibleSet.has(n.slug) || n.slug === cell.slug) continue;
+        const key = [cell.slug, n.slug].sort().join("--");
+        if (!edgeMap.has(key)) {
+          edgeMap.set(key, { source: cell.slug, target: n.slug, relation: n.relation });
+        }
+      }
     }
-    return CEFR_ORDER.map((level) => ({
-      level,
-      label: CEFR_LABELS[level] ?? level,
-      items: map.get(level) ?? [],
-    })).filter((g) => g.items.length > 0);
-  }, [cells]);
+
+    return { nodes, edges: Array.from(edgeMap.values()) };
+  }, [cells, relationGraph]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setDims({ width: entry.contentRect.width, height: GRAPH_HEIGHT });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!svgRef.current || nodes.length === 0) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+
+    const width = dims.width;
+    const height = dims.height;
+    svg.attr("width", width).attr("height", height);
+
+    const viewport = svg.append("g");
+
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.4, 3])
+      .on("zoom", (event) => {
+        viewport.attr("transform", event.transform.toString());
+      });
+    svg.call(zoom).on("dblclick.zoom", null);
+
+    const simulation = d3
+      .forceSimulation<GraphNode>(nodes)
+      .force(
+        "link",
+        d3
+          .forceLink<GraphNode, GraphEdge>(edges)
+          .id((d) => d.id)
+          .distance(55)
+          .strength(0.35),
+      )
+      .force("charge", d3.forceManyBody().strength(-220))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide<GraphNode>().radius((d) => 6 + (1 - d.retrievability) * 6 + 4))
+      .alpha(0.9)
+      .alphaDecay(0.04);
+
+    const simEdges = edges as unknown as SimEdge[];
+
+    const edgeLayer = viewport.append("g").attr("class", "edges");
+    const linkSel = edgeLayer
+      .selectAll<SVGLineElement, SimEdge>("line")
+      .data(simEdges)
+      .join("line")
+      .attr("stroke", "#cbd5e1")
+      .attr("stroke-opacity", 0.35)
+      .attr("stroke-width", 1);
+
+    const nodeLayer = viewport.append("g").attr("class", "nodes");
+    const circleSel = nodeLayer
+      .selectAll("circle")
+      .data(nodes)
+      .join("circle")
+      .attr("r", (d) => 4 + (1 - d.retrievability) * 5)
+      .attr("fill", (d) => getRetrievabilityColor(d.retrievability))
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 1.8)
+      .attr("cursor", "pointer")
+      .style("transition", "filter 0.15s")
+      .on("mouseenter", (event, d) => {
+        d3.selectAll<SVGCircleElement, GraphNode>("circle").style("filter", (n) =>
+          n.id === d.id || simEdges.some((e) =>
+            (e.source.id === d.id && e.target.id === n.id) ||
+            (e.target.id === d.id && e.source.id === n.id)
+          )
+            ? "none"
+            : "opacity(0.25)",
+        );
+        const neighbors = (relationGraph[d.slug] ?? []).filter((n) =>
+          nodes.some((node) => node.slug === n.slug),
+        );
+        setTooltip({
+          cell: d as unknown as MasteryCell,
+          neighbors,
+          x: event.pageX,
+          y: event.pageY,
+        });
+      })
+      .on("mousemove", (event, d) => {
+        setTooltip((prev) =>
+          prev && prev.cell.slug === d.slug ? { ...prev, x: event.pageX, y: event.pageY } : prev,
+        );
+      })
+      .on("mouseleave", () => {
+        d3.selectAll("circle").style("filter", null);
+        setTooltip(null);
+      })
+      .on("click", (_event, d) => {
+        window.open(`/words/${d.slug}`, "_self");
+      });
+
+    const drag = d3
+      .drag<SVGCircleElement, GraphNode>()
+      .on("start", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on("drag", (event, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on("end", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    circleSel.call(drag as any);
+
+    const labelLayer = viewport.append("g").attr("class", "labels");
+    const labelSel = labelLayer
+      .selectAll("text")
+      .data(nodes.filter((d) => d.retrievability < 0.45 || simEdges.some((e) => e.source.id === d.id || e.target.id === d.id)))
+      .join("text")
+      .text((d) => d.lemma)
+      .attr("font-size", "10px")
+      .attr("fill", "#475569")
+      .attr("text-anchor", "middle")
+      .attr("dy", (d) => 4 + (1 - d.retrievability) * 5 + 10)
+      .attr("pointer-events", "none");
+
+    simulation.on("tick", () => {
+      linkSel
+        .attr("x1", (d) => d.source.x!)
+        .attr("y1", (d) => d.source.y!)
+        .attr("x2", (d) => d.target.x!)
+        .attr("y2", (d) => d.target.y!);
+      circleSel.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      labelSel.attr("x", (d) => d.x ?? 0).attr("y", (d) => d.y ?? 0);
+    });
+
+    return () => {
+      simulation.stop();
+    };
+  }, [nodes, edges, dims, relationGraph]);
 
   const stats = useMemo(() => {
     const total = cells.length;
     const atRisk = cells.filter((c) => c.retrievability < 0.4).length;
     const solid = cells.filter((c) => c.retrievability >= 0.9).length;
-    return { atRisk, solid, total };
-  }, [cells]);
+    return { atRisk, solid, total, visible: nodes.length };
+  }, [cells, nodes.length]);
 
-  if (cells.length === 0) {
-    return null;
-  }
+  if (cells.length === 0) return null;
 
   return (
-    <section className="panel relative rounded-[1.75rem] p-6" ref={containerRef}>
-      {/* Header */}
+    <section className="panel relative rounded-[1.75rem] p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
             词汇掌握度
           </p>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">记忆热力图</h2>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">词汇网络图</h2>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-[var(--color-ink-soft)]">
           {[
@@ -237,17 +266,19 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
             { color: "#ef4444", label: "濒危" },
           ].map((item) => (
             <span key={item.label} className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: item.color }} />
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
               {item.label}
             </span>
           ))}
         </div>
       </div>
 
-      {/* Mini stats */}
-      <div className="mt-4 flex gap-4 text-[11px] text-[var(--color-ink-soft)]">
+      <div className="mt-3 flex gap-4 text-[11px] text-[var(--color-ink-soft)]">
         <span>
           总 <strong className="text-[var(--color-ink)]">{stats.total}</strong> 词
+          {stats.visible < stats.total ? (
+            <span className="ml-1 opacity-60">（显示 {stats.visible} 个节点）</span>
+          ) : null}
         </span>
         <span style={{ color: "#ef4444" }}>
           濒危 <strong>{stats.atRisk}</strong>
@@ -257,52 +288,62 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
         </span>
       </div>
 
-      {/* Compact CEFR rows */}
-      <div className="mt-4 space-y-3">
-        {groups.map((group) => (
-          <CEFRRow
-            key={group.level}
-            label={group.label}
-            level={group.level}
-            items={group.items}
-            highlightedSlugs={
-              hovered
-                ? new Set([
-                    hovered.cell.slug,
-                    ...(relationGraph[hovered.cell.slug] ?? []).map((n) => n.slug),
-                  ])
-                : undefined
-            }
-            onHover={(cell, rect) => {
-              if (cell && rect) setHovered({ cell, rect });
-              else setHovered(null);
-            }}
-          />
-        ))}
+      <div
+        ref={wrapRef}
+        className="mt-4 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)]"
+      >
+        <svg ref={svgRef} className="block w-full" />
       </div>
 
-      <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-ink-soft)] opacity-60">
-        每个节点 = 一个词条，颜色 = FSRS 记忆概率，悬浮预览详情，点击跳转词条页。
+      <p className="mt-3 text-[11px] leading-relaxed text-[var(--color-ink-soft)] opacity-60">
+        每个圆点 = 一个词条，颜色 = FSRS 记忆概率，大小反比于记忆强度（濒危更大）。连线表示近义/反义/词根关联。可拖拽节点、滚轮缩放。
       </p>
 
-      {/* Floating preview */}
-      <AnimatePresence>
-        {hovered && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 4 }}
-            transition={{ duration: 0.12 }}
-            className="pointer-events-none fixed z-50"
-            style={{
-              left: hovered.rect.left + hovered.rect.width / 2 - 104,
-              top: hovered.rect.top - 110,
-            }}
-          >
-            <PreviewCard cell={hovered.cell} neighbors={relationGraph[hovered.cell.slug]} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {tooltip && (
+        <div
+          className="pointer-events-none fixed z-50 w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl"
+          style={{ left: tooltip.x + 14, top: tooltip.y - 90 }}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: getRetrievabilityColor(tooltip.cell.retrievability) }}
+            />
+            <span className="text-sm font-semibold text-[var(--color-ink)]">{tooltip.cell.lemma}</span>
+          </div>
+          <p className="mt-1.5 text-[11px] text-[var(--color-ink-soft)]">
+            {tooltip.cell.cefr} · 记忆概率{" "}
+            <span
+              className="font-semibold"
+              style={{ color: getRetrievabilityColor(tooltip.cell.retrievability) }}
+            >
+              {Math.round(tooltip.cell.retrievability * 100)}%
+            </span>
+            <span className="ml-1 opacity-70">({getRetrievabilityLabel(tooltip.cell.retrievability)})</span>
+          </p>
+          {tooltip.cell.dueAt ? (
+            <p className="mt-0.5 text-[10px] text-[var(--color-ink-soft)] opacity-60">
+              到期 {tooltip.cell.dueAt.slice(0, 10)}
+            </p>
+          ) : null}
+          {tooltip.neighbors.length > 0 && (
+            <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+              <p className="mb-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">关联词汇</p>
+              <div className="flex flex-wrap gap-1">
+                {tooltip.neighbors.map((n) => (
+                  <span
+                    key={n.slug}
+                    className="rounded bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-ink-soft)]"
+                  >
+                    {n.lemma}
+                    <span className="ml-0.5 opacity-60">({n.relation})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
