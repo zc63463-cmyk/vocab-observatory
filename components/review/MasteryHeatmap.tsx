@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 interface MasteryCell {
   cefr: string;
   lemma: string;
+  metadata: unknown;
   slug: string;
   retrievability: number;
   dueAt: string | null;
@@ -14,6 +15,7 @@ interface MasteryCell {
 
 interface MasteryHeatmapProps {
   cells: MasteryCell[];
+  relationGraph?: Record<string, { slug: string; lemma: string; relation: string }[]>;
 }
 
 const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "unknown"];
@@ -43,9 +45,15 @@ function getRetrievabilityLabel(r: number): string {
   return "濒危";
 }
 
-function PreviewCard({ cell }: { cell: MasteryCell }) {
+function PreviewCard({
+  cell,
+  neighbors,
+}: {
+  cell: MasteryCell;
+  neighbors?: { slug: string; lemma: string; relation: string }[];
+}) {
   return (
-    <div className="pointer-events-none w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl">
+    <div className="pointer-events-none w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl">
       <div className="flex items-center gap-2">
         <span
           className="inline-block h-2.5 w-2.5 rounded-full"
@@ -65,6 +73,22 @@ function PreviewCard({ cell }: { cell: MasteryCell }) {
           到期 {cell.dueAt.slice(0, 10)}
         </p>
       ) : null}
+      {neighbors && neighbors.length > 0 && (
+        <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+          <p className="mb-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">关联词汇</p>
+          <div className="flex flex-wrap gap-1">
+            {neighbors.map((n) => (
+              <span
+                key={n.slug}
+                className="rounded bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-ink-soft)]"
+              >
+                {n.lemma}
+                <span className="ml-0.5 opacity-60">({n.relation})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="mt-2 text-[10px] text-[var(--color-ink-soft)] opacity-40">点击打开词条页</p>
     </div>
   );
@@ -73,9 +97,11 @@ function PreviewCard({ cell }: { cell: MasteryCell }) {
 function DotNode({
   cell,
   onHover,
+  isHighlighted,
 }: {
   cell: MasteryCell;
   onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
+  isHighlighted?: boolean;
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
 
@@ -83,7 +109,9 @@ function DotNode({
     <Link
       ref={ref}
       href={`/words/${cell.slug}`}
-      className="inline-block h-2 w-2 rounded-sm transition hover:scale-150 hover:z-10 hover:shadow-sm"
+      className={`inline-block h-2 w-2 rounded-sm transition hover:scale-150 hover:z-10 hover:shadow-sm ${
+        isHighlighted ? "ring-[1.5px] ring-white/80 scale-125" : ""
+      }`}
       style={{ backgroundColor: getRetrievabilityColor(cell.retrievability) }}
       onMouseEnter={() => onHover(cell, ref.current?.getBoundingClientRect() ?? null)}
       onMouseLeave={() => onHover(null, null)}
@@ -95,14 +123,20 @@ function DotNode({
 
 function CEFRRow({
   label,
+  level,
   items,
+  defaultOpen = true,
   onHover,
+  highlightedSlugs,
 }: {
   label: string;
+  level: string;
   items: MasteryCell[];
+  defaultOpen?: boolean;
   onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
+  highlightedSlugs?: Set<string>;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const avgR = items.reduce((s, c) => s + c.retrievability, 0) / items.length;
 
   return (
@@ -139,7 +173,12 @@ function CEFRRow({
           >
             <div className="ml-10 flex flex-wrap gap-[3px]">
               {items.map((cell) => (
-                <DotNode key={cell.slug} cell={cell} onHover={onHover} />
+                <DotNode
+                  key={cell.slug}
+                  cell={cell}
+                  onHover={onHover}
+                  isHighlighted={highlightedSlugs?.has(cell.slug)}
+                />
               ))}
             </div>
           </motion.div>
@@ -149,7 +188,7 @@ function CEFRRow({
   );
 }
 
-export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
+export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProps) {
   const [hovered, setHovered] = useState<{ cell: MasteryCell; rect: DOMRect } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -224,7 +263,16 @@ export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
           <CEFRRow
             key={group.level}
             label={group.label}
+            level={group.level}
             items={group.items}
+            highlightedSlugs={
+              hovered
+                ? new Set([
+                    hovered.cell.slug,
+                    ...(relationGraph[hovered.cell.slug] ?? []).map((n) => n.slug),
+                  ])
+                : undefined
+            }
             onHover={(cell, rect) => {
               if (cell && rect) setHovered({ cell, rect });
               else setHovered(null);
@@ -251,7 +299,7 @@ export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
               top: hovered.rect.top - 110,
             }}
           >
-            <PreviewCard cell={hovered.cell} />
+            <PreviewCard cell={hovered.cell} neighbors={relationGraph[hovered.cell.slug]} />
           </motion.div>
         )}
       </AnimatePresence>

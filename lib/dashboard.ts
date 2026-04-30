@@ -17,7 +17,7 @@ type DashboardProgressRow = {
   due_at: string | null;
   scheduler_payload: Json;
   state: string;
-  words: { cefr: string | null; lemma: string; slug: string } | null;
+  words: { cefr: string | null; lemma: string; metadata: Json | null; slug: string } | null;
 };
 
 type DashboardReviewLogRow = {
@@ -332,6 +332,84 @@ export function buildDailyForecastCalendar(
   });
 }
 
+function readMetadataStrings(metadata: unknown, keys: string[]): string[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const record = metadata as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (value == null) continue;
+    if (typeof value === "string") {
+      return value.split(/[,;，、\n]/).map((s) => s.trim()).filter(Boolean);
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => {
+        if (typeof item === "string") return item.trim();
+        if (item && typeof item === "object") {
+          const r = item as Record<string, unknown>;
+          return [
+            typeof r.word === "string" ? r.word : null,
+            typeof r.lemma === "string" ? r.lemma : null,
+            typeof r.label === "string" ? r.label : null,
+            typeof r.title === "string" ? r.title : null,
+          ].filter((v): v is string => typeof v === "string");
+        }
+        return [];
+      }).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function buildRelationGraph(
+  rows: DashboardProgressRow[],
+): Record<string, { slug: string; lemma: string; relation: string }[]> {
+  const lemmaToSlug = new Map<string, string>();
+  const slugToLemma = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.words) continue;
+    slugToLemma.set(row.words.slug, row.words.lemma);
+    lemmaToSlug.set(row.words.lemma.toLowerCase(), row.words.slug);
+    lemmaToSlug.set(row.words.slug.toLowerCase(), row.words.slug);
+  }
+
+  const graph: Record<string, { slug: string; lemma: string; relation: string }[]> = {};
+  for (const row of rows) {
+    if (!row.words?.metadata) continue;
+    const slug = row.words.slug;
+    const neighbors: { slug: string; lemma: string; relation: string }[] = [];
+
+    for (const label of readMetadataStrings(row.words.metadata, [
+      "synonyms", "synonym_items", "synonym_words",
+    ])) {
+      const neighborSlug = lemmaToSlug.get(label.toLowerCase());
+      if (neighborSlug && neighborSlug !== slug) {
+        neighbors.push({ slug: neighborSlug, lemma: slugToLemma.get(neighborSlug) ?? label, relation: "近义" });
+      }
+    }
+    for (const label of readMetadataStrings(row.words.metadata, [
+      "antonyms", "antonym_items", "antonym_words",
+    ])) {
+      const neighborSlug = lemmaToSlug.get(label.toLowerCase());
+      if (neighborSlug && neighborSlug !== slug) {
+        neighbors.push({ slug: neighborSlug, lemma: slugToLemma.get(neighborSlug) ?? label, relation: "反义" });
+      }
+    }
+    for (const label of readMetadataStrings(row.words.metadata, [
+      "roots", "root", "root_family", "rootFamily", "word_roots",
+    ])) {
+      const neighborSlug = lemmaToSlug.get(label.toLowerCase());
+      if (neighborSlug && neighborSlug !== slug) {
+        neighbors.push({ slug: neighborSlug, lemma: slugToLemma.get(neighborSlug) ?? label, relation: "词根" });
+      }
+    }
+
+    if (neighbors.length > 0) {
+      graph[slug] = neighbors;
+    }
+  }
+  return graph;
+}
+
 export async function getDashboardSummary() {
   const emptyForecast = buildRetentionForecast([], DEFAULT_DESIRED_RETENTION);
   const emptyPresetForecasts = buildRetentionForecasts([]);
@@ -394,9 +472,11 @@ export async function getDashboardSummary() {
         cefr: string;
         dueAt: string | null;
         lemma: string;
+        metadata: unknown;
         retrievability: number;
         slug: string;
       }>,
+      relationGraph: {} as Record<string, { slug: string; lemma: string; relation: string }[]>,
     };
   }
 
@@ -417,7 +497,7 @@ export async function getDashboardSummary() {
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("state, due_at, desired_retention, scheduler_payload, words!inner(cefr, lemma, slug)")
+      .select("state, due_at, desired_retention, scheduler_payload, words!inner(cefr, lemma, slug, metadata)")
       .eq("user_id", owner.id),
     supabase
       .from("review_logs")
@@ -571,6 +651,7 @@ export async function getDashboardSummary() {
       return {
         cefr: row.words!.cefr ?? "unknown",
         lemma: row.words!.lemma,
+        metadata: row.words!.metadata,
         slug: row.words!.slug,
         retrievability: retrievability ?? 0,
         dueAt: row.due_at,
@@ -632,5 +713,6 @@ export async function getDashboardSummary() {
       nowDate,
     ),
     masteryCells,
+    relationGraph: buildRelationGraph(progressRows),
   };
 }

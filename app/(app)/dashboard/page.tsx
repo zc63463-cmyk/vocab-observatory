@@ -520,7 +520,7 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <MasteryHeatmap cells={summary.masteryCells} />
+      <MasteryHeatmap cells={summary.masteryCells} relationGraph={summary.relationGraph} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="panel rounded-[1.75rem] p-6">
