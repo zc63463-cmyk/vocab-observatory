@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface MasteryCell {
   cefr: string;
@@ -17,13 +18,13 @@ interface MasteryHeatmapProps {
 
 const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "unknown"];
 const CEFR_LABELS: Record<string, string> = {
-  A1: "初级 A1",
-  A2: "初级 A2",
-  B1: "中级 B1",
-  B2: "中高级 B2",
-  C1: "高级 C1",
-  C2: "精通 C2",
-  unknown: "未分级",
+  A1: "A1",
+  A2: "A2",
+  B1: "B1",
+  B2: "B2",
+  C1: "C1",
+  C2: "C2",
+  unknown: "?",
 };
 
 function getRetrievabilityColor(r: number): string {
@@ -42,7 +43,116 @@ function getRetrievabilityLabel(r: number): string {
   return "濒危";
 }
 
+function PreviewCard({ cell }: { cell: MasteryCell }) {
+  return (
+    <div className="pointer-events-none w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl">
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: getRetrievabilityColor(cell.retrievability) }}
+        />
+        <span className="text-sm font-semibold text-[var(--color-ink)]">{cell.lemma}</span>
+      </div>
+      <p className="mt-1.5 text-[11px] text-[var(--color-ink-soft)]">
+        {CEFR_LABELS[cell.cefr] ?? cell.cefr} · 记忆概率{" "}
+        <span className="font-semibold" style={{ color: getRetrievabilityColor(cell.retrievability) }}>
+          {Math.round(cell.retrievability * 100)}%
+        </span>
+        <span className="ml-1 opacity-70">({getRetrievabilityLabel(cell.retrievability)})</span>
+      </p>
+      {cell.dueAt ? (
+        <p className="mt-0.5 text-[10px] text-[var(--color-ink-soft)] opacity-60">
+          到期 {cell.dueAt.slice(0, 10)}
+        </p>
+      ) : null}
+      <p className="mt-2 text-[10px] text-[var(--color-ink-soft)] opacity-40">点击打开词条页</p>
+    </div>
+  );
+}
+
+function DotNode({
+  cell,
+  onHover,
+}: {
+  cell: MasteryCell;
+  onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
+}) {
+  const ref = useRef<HTMLAnchorElement>(null);
+
+  return (
+    <Link
+      ref={ref}
+      href={`/words/${cell.slug}`}
+      className="inline-block h-2 w-2 rounded-sm transition hover:scale-150 hover:z-10 hover:shadow-sm"
+      style={{ backgroundColor: getRetrievabilityColor(cell.retrievability) }}
+      onMouseEnter={() => onHover(cell, ref.current?.getBoundingClientRect() ?? null)}
+      onMouseLeave={() => onHover(null, null)}
+      onFocus={() => onHover(cell, ref.current?.getBoundingClientRect() ?? null)}
+      onBlur={() => onHover(null, null)}
+    />
+  );
+}
+
+function CEFRRow({
+  label,
+  items,
+  onHover,
+}: {
+  label: string;
+  items: MasteryCell[];
+  onHover: (cell: MasteryCell | null, rect: DOMRect | null) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const avgR = items.reduce((s, c) => s + c.retrievability, 0) / items.length;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mb-1 flex w-full items-center gap-2 text-left"
+      >
+        <span className="w-10 text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-soft)]">
+          {label}
+        </span>
+        <span className="text-[11px] tabular-nums text-[var(--color-ink-soft)] opacity-60">
+          {items.length} 词
+        </span>
+        <span
+          className="ml-auto text-[11px] font-medium tabular-nums"
+          style={{ color: getRetrievabilityColor(avgR) }}
+        >
+          均 {Math.round(avgR * 100)}%
+        </span>
+        <span className="text-[10px] text-[var(--color-ink-soft)] opacity-50">
+          {open ? "−" : "+"}
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="ml-10 flex flex-wrap gap-[3px]">
+              {items.map((cell) => (
+                <DotNode key={cell.slug} cell={cell} onHover={onHover} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
+  const [hovered, setHovered] = useState<{ cell: MasteryCell; rect: DOMRect } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const groups = useMemo(() => {
     const map = new Map<string, MasteryCell[]>();
     for (const cell of cells) {
@@ -58,22 +168,28 @@ export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
     })).filter((g) => g.items.length > 0);
   }, [cells]);
 
+  const stats = useMemo(() => {
+    const total = cells.length;
+    const atRisk = cells.filter((c) => c.retrievability < 0.4).length;
+    const solid = cells.filter((c) => c.retrievability >= 0.9).length;
+    return { atRisk, solid, total };
+  }, [cells]);
+
   if (cells.length === 0) {
     return null;
   }
 
   return (
-    <section className="panel rounded-[1.75rem] p-6">
-      <div className="flex items-center justify-between">
+    <section className="panel relative rounded-[1.75rem] p-6" ref={containerRef}>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
             词汇掌握度
           </p>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">
-            记忆热力图
-          </h2>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">记忆热力图</h2>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-[var(--color-ink-soft)]">
+        <div className="flex items-center gap-2 text-[11px] text-[var(--color-ink-soft)]">
           {[
             { color: "#16a34a", label: "牢固" },
             { color: "#84cc16", label: "较好" },
@@ -82,52 +198,63 @@ export function MasteryHeatmap({ cells }: MasteryHeatmapProps) {
             { color: "#ef4444", label: "濒危" },
           ].map((item) => (
             <span key={item.label} className="flex items-center gap-1">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{ backgroundColor: item.color }}
-              />
+              <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: item.color }} />
               {item.label}
             </span>
           ))}
         </div>
       </div>
 
-      <div className="mt-6 space-y-6">
+      {/* Mini stats */}
+      <div className="mt-4 flex gap-4 text-[11px] text-[var(--color-ink-soft)]">
+        <span>
+          总 <strong className="text-[var(--color-ink)]">{stats.total}</strong> 词
+        </span>
+        <span style={{ color: "#ef4444" }}>
+          濒危 <strong>{stats.atRisk}</strong>
+        </span>
+        <span style={{ color: "#16a34a" }}>
+          牢固 <strong>{stats.solid}</strong>
+        </span>
+      </div>
+
+      {/* Compact CEFR rows */}
+      <div className="mt-4 space-y-3">
         {groups.map((group) => (
-          <div key={group.level}>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-soft)]">
-                {group.label}
-              </span>
-              <span className="text-[11px] text-[var(--color-ink-soft)] opacity-60">
-                {group.items.length} 词
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {group.items.map((cell) => {
-                const color = getRetrievabilityColor(cell.retrievability);
-                const label = getRetrievabilityLabel(cell.retrievability);
-                return (
-                  <Link
-                    key={cell.slug}
-                    href={`/words/${cell.slug}`}
-                    className="group relative inline-flex h-7 min-w-[2rem] items-center justify-center rounded-md px-1.5 text-[11px] font-medium text-white transition hover:scale-110 hover:shadow-md"
-                    style={{ backgroundColor: color }}
-                    title={`${cell.lemma} — 记忆概率 ${Math.round(cell.retrievability * 100)}% (${label})${cell.dueAt ? ` · 到期 ${cell.dueAt.slice(0, 10)}` : ""}`}
-                  >
-                    {cell.lemma.slice(0, 3)}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
+          <CEFRRow
+            key={group.level}
+            label={group.label}
+            items={group.items}
+            onHover={(cell, rect) => {
+              if (cell && rect) setHovered({ cell, rect });
+              else setHovered(null);
+            }}
+          />
         ))}
       </div>
 
-      <p className="mt-5 text-[11px] leading-relaxed text-[var(--color-ink-soft)] opacity-60">
-        每个色块代表一个复习词条，颜色深浅反映 FSRS 算法计算的记忆概率（retrievability）。
-        点击可跳转词条详情页。
+      <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-ink-soft)] opacity-60">
+        每个节点 = 一个词条，颜色 = FSRS 记忆概率，悬浮预览详情，点击跳转词条页。
       </p>
+
+      {/* Floating preview */}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 4 }}
+            transition={{ duration: 0.12 }}
+            className="pointer-events-none fixed z-50"
+            style={{
+              left: hovered.rect.left + hovered.rect.width / 2 - 104,
+              top: hovered.rect.top - 110,
+            }}
+          >
+            <PreviewCard cell={hovered.cell} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
