@@ -1,6 +1,7 @@
 "use client";
 
 import * as d3 from "d3";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 interface MasteryCell {
@@ -54,6 +55,7 @@ type SimEdge = Omit<GraphEdge, "source" | "target"> & { source: GraphNode; targe
 export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const [dims, setDims] = useState({ width: 800, height: GRAPH_HEIGHT });
   const [tooltip, setTooltip] = useState<{
     cell: MasteryCell;
@@ -63,7 +65,9 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
   } | null>(null);
 
   const { nodes, edges } = useMemo(() => {
-    const sorted = [...cells].sort((a, b) => a.retrievability - b.retrievability);
+    const sorted = [...cells]
+      .filter((c) => c.lemma && c.lemma.trim().length > 0)
+      .sort((a, b) => a.retrievability - b.retrievability);
     const visible = sorted.slice(0, MAX_NODES);
     const visibleSet = new Set(visible.map((c) => c.slug));
 
@@ -173,16 +177,22 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
         const neighbors = (relationGraph[d.slug] ?? []).filter((n) =>
           nodes.some((node) => node.slug === n.slug),
         );
+        const rect = wrapRef.current?.getBoundingClientRect();
+        const x = rect ? event.clientX - rect.left : event.clientX;
+        const y = rect ? event.clientY - rect.top : event.clientY;
         setTooltip({
           cell: d as unknown as MasteryCell,
           neighbors,
-          x: event.pageX,
-          y: event.pageY,
+          x,
+          y,
         });
       })
       .on("mousemove", (event, d) => {
+        const rect = wrapRef.current?.getBoundingClientRect();
+        const x = rect ? event.clientX - rect.left : event.clientX;
+        const y = rect ? event.clientY - rect.top : event.clientY;
         setTooltip((prev) =>
-          prev && prev.cell.slug === d.slug ? { ...prev, x: event.pageX, y: event.pageY } : prev,
+          prev && prev.cell.slug === d.slug ? { ...prev, x, y } : prev,
         );
       })
       .on("mouseleave", () => {
@@ -190,7 +200,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
         setTooltip(null);
       })
       .on("click", (_event, d) => {
-        window.open(`/words/${d.slug}`, "_self");
+        router.push(`/words/${d.slug}`);
       });
 
     const drag = d3
@@ -215,12 +225,13 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     const labelLayer = viewport.append("g").attr("class", "labels");
     const labelSel = labelLayer
       .selectAll("text")
-      .data(nodes.filter((d) => d.retrievability < 0.45 || simEdges.some((e) => e.source.id === d.id || e.target.id === d.id)))
+      .data(nodes)
       .join("text")
       .text((d) => d.lemma)
-      .attr("font-size", "10px")
+      .attr("font-size", (d) => (d.retrievability < 0.45 || simEdges.some((e) => e.source.id === d.id || e.target.id === d.id) ? "10px" : "9px"))
       .attr("fill", "#475569")
       .attr("text-anchor", "middle")
+      .attr("opacity", (d) => (d.retrievability < 0.45 || simEdges.some((e) => e.source.id === d.id || e.target.id === d.id) ? 1 : 0.45))
       .attr("dy", (d) => 4 + (1 - d.retrievability) * 5 + 10)
       .attr("pointer-events", "none");
 
@@ -237,7 +248,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     return () => {
       simulation.stop();
     };
-  }, [nodes, edges, dims, relationGraph]);
+  }, [nodes, edges, dims, relationGraph, router]);
 
   const stats = useMemo(() => {
     const total = cells.length;
@@ -290,60 +301,61 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
 
       <div
         ref={wrapRef}
-        className="mt-4 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)]"
+        className="relative mt-4 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)]"
       >
         <svg ref={svgRef} className="block w-full" />
+
+        {tooltip && (
+          <div
+            className="pointer-events-none absolute z-50 w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl"
+            style={{ left: tooltip.x + 14, top: tooltip.y - 90 }}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: getRetrievabilityColor(tooltip.cell.retrievability) }}
+              />
+              <span className="text-sm font-semibold text-[var(--color-ink)]">{tooltip.cell.lemma}</span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-[var(--color-ink-soft)]">
+              {tooltip.cell.cefr} · 记忆概率{" "}
+              <span
+                className="font-semibold"
+                style={{ color: getRetrievabilityColor(tooltip.cell.retrievability) }}
+              >
+                {Math.round(tooltip.cell.retrievability * 100)}%
+              </span>
+              <span className="ml-1 opacity-70">({getRetrievabilityLabel(tooltip.cell.retrievability)})</span>
+            </p>
+            {tooltip.cell.dueAt ? (
+              <p className="mt-0.5 text-[10px] text-[var(--color-ink-soft)] opacity-60">
+                到期 {tooltip.cell.dueAt.slice(0, 10)}
+              </p>
+            ) : null}
+            {tooltip.neighbors.length > 0 && (
+              <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+                <p className="mb-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">关联词汇</p>
+                <div className="flex flex-wrap gap-1">
+                  {tooltip.neighbors.map((n) => (
+                    <span
+                      key={n.slug}
+                      className="rounded bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-ink-soft)]"
+                    >
+                      {n.lemma}
+                      <span className="ml-0.5 opacity-60">({n.relation})</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-[var(--color-ink-soft)] opacity-60">
         每个圆点 = 一个词条，颜色 = FSRS 记忆概率，大小反比于记忆强度（濒危更大）。连线表示近义/反义/词根关联。可拖拽节点、滚轮缩放。
       </p>
 
-      {tooltip && (
-        <div
-          className="pointer-events-none fixed z-50 w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-strong)] p-3 shadow-xl"
-          style={{ left: tooltip.x + 14, top: tooltip.y - 90 }}
-        >
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: getRetrievabilityColor(tooltip.cell.retrievability) }}
-            />
-            <span className="text-sm font-semibold text-[var(--color-ink)]">{tooltip.cell.lemma}</span>
-          </div>
-          <p className="mt-1.5 text-[11px] text-[var(--color-ink-soft)]">
-            {tooltip.cell.cefr} · 记忆概率{" "}
-            <span
-              className="font-semibold"
-              style={{ color: getRetrievabilityColor(tooltip.cell.retrievability) }}
-            >
-              {Math.round(tooltip.cell.retrievability * 100)}%
-            </span>
-            <span className="ml-1 opacity-70">({getRetrievabilityLabel(tooltip.cell.retrievability)})</span>
-          </p>
-          {tooltip.cell.dueAt ? (
-            <p className="mt-0.5 text-[10px] text-[var(--color-ink-soft)] opacity-60">
-              到期 {tooltip.cell.dueAt.slice(0, 10)}
-            </p>
-          ) : null}
-          {tooltip.neighbors.length > 0 && (
-            <div className="mt-2 border-t border-[var(--color-border)] pt-2">
-              <p className="mb-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">关联词汇</p>
-              <div className="flex flex-wrap gap-1">
-                {tooltip.neighbors.map((n) => (
-                  <span
-                    key={n.slug}
-                    className="rounded bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-ink-soft)]"
-                  >
-                    {n.lemma}
-                    <span className="ml-0.5 opacity-60">({n.relation})</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </section>
   );
 }
