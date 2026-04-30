@@ -7,6 +7,7 @@ import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
 import { speakLemma, canSpeak } from "@/lib/tts";
+import { WordRelationLinks } from "./WordRelationLinks";
 
 interface FlashcardFrontProps {
   item: ReviewQueueItem;
@@ -189,6 +190,9 @@ function FlashcardBack({ item }: FlashcardBackProps) {
             </AnimatePresence>
           </div>
         )}
+
+        {/* Word relations from metadata */}
+        <WordRelationLinks metadata={item.metadata} />
 
         {/* Review count hint */}
         <div className="mt-6 flex items-center justify-between text-xs text-[var(--color-ink-soft)] opacity-60">
