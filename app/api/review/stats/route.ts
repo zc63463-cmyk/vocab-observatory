@@ -26,13 +26,14 @@ export async function GET() {
   const supabase = ownerSession.supabase!;
   const userId = ownerSession.user!.id;
 
-  // Fetch last 30 days of review logs to compute 7-day trend + streak
+  // Fetch last 30 days of review logs (capped at 5000 rows to protect performance)
   const { data: logs, error } = await supabase
     .from("review_logs")
     .select("rating, reviewed_at")
     .eq("user_id", userId)
     .gte("reviewed_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-    .order("reviewed_at", { ascending: false });
+    .order("reviewed_at", { ascending: false })
+    .limit(5000);
 
   if (error) {
     return jsonError("Failed to fetch review stats", 500);

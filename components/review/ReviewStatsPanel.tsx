@@ -22,8 +22,9 @@ interface ReviewStats {
 }
 
 function formatDateLabel(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  // Parse as UTC to avoid timezone shifts (e.g. UTC-5 showing previous day)
+  const [y, m, day] = dateStr.split("-").map(Number);
+  return `${m}/${day}`;
 }
 
 function maxBarValue(days: DayStat[]): number {
@@ -34,6 +35,7 @@ function maxBarValue(days: DayStat[]): number {
 export function ReviewStatsPanel() {
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -44,7 +46,7 @@ export function ReviewStatsPanel() {
         const data = (await res.json()) as ReviewStats;
         if (mounted) setStats(data);
       } catch {
-        // Silently fail; panel is decorative
+        if (mounted) setError(true);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -59,6 +61,10 @@ export function ReviewStatsPanel() {
         <div className="h-32 animate-pulse rounded-xl bg-[var(--color-surface-muted)]" />
       </div>
     );
+  }
+
+  if (error) {
+    return null; // Gracefully hide on error; avoid broken UI
   }
 
   if (!stats || stats.totalReviewed === 0) {
@@ -105,20 +111,23 @@ export function ReviewStatsPanel() {
             <div key={day.date} className="flex flex-1 flex-col items-center gap-1.5">
               <div className="relative w-full rounded-md bg-[var(--color-surface-muted)]" style={{ height: 96 }}>
                 {/* Filled portion */}
-                <motion.div
-                  className="absolute bottom-0 left-0 right-0 rounded-md"
-                  style={{
-                    height: `${heightPct}%`,
-                    background:
-                      againPct > 40
-                        ? "var(--color-accent-2)"
-                        : "var(--color-accent)",
-                    opacity: 0.8,
-                  }}
-                  initial={{ scaleY: 0 }}
-                  animate={{ scaleY: 1 }}
-                  transition={{ type: "spring", ...springs.smooth, delay: 0.1 }}
-                />
+                {heightPct > 0 && (
+                  <motion.div
+                    className="absolute bottom-0 left-0 right-0 rounded-md"
+                    style={{
+                      height: `${heightPct}%`,
+                      background:
+                        againPct > 40
+                          ? "var(--color-accent-2)"
+                          : "var(--color-accent)",
+                      opacity: 0.8,
+                      transformOrigin: "bottom",
+                    }}
+                    initial={{ scaleY: 0 }}
+                    animate={{ scaleY: 1 }}
+                    transition={{ type: "spring", ...springs.smooth, delay: 0.1 }}
+                  />
+                )}
               </div>
               <span className="text-[10px] text-[var(--color-ink-soft)] opacity-60">
                 {formatDateLabel(day.date)}
