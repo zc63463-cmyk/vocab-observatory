@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   const { data: restoredProgress, error: fetchError } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, state, review_count, due_at, content_hash_snapshot, scheduler_payload, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata)",
+      "id, word_id, state, review_count, due_at, content_hash_snapshot, scheduler_payload, words!inner(slug, title, lemma, lang_code, ipa, short_definition, definition_md, metadata)",
     )
     .eq("id", result.out_progress_id)
     .single();
@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
     words: {
       definition_md: string;
       ipa: string | null;
+      lang_code: string;
       lemma: string;
       metadata: unknown;
       short_definition: string | null;
@@ -122,6 +123,7 @@ export async function POST(request: NextRequest) {
     retrievability: null,
     review_count: row.review_count,
     short_definition: row.words.short_definition,
+    lang_code: row.words.lang_code ?? "en",
     slug: row.words.slug,
     state: row.state,
     title: row.words.title,

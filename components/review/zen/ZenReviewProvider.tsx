@@ -386,10 +386,10 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     window.open(`/words/${state.item.slug}`, "_blank", "noopener,noreferrer");
   }, [state.item]);
 
-  // Speak current lemma
+  // Speak current lemma (with language detection from DB)
   const speakWord = useCallback(() => {
     if (!state.item) return;
-    speakLemma(state.item.lemma);
+    speakLemma(state.item.lemma, state.item.lang_code);
   }, [state.item]);
 
   // Next batch: fetch new queue, clear session history, start new session

@@ -31,7 +31,7 @@ function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            speakLemma(item.lemma);
+            speakLemma(item.lemma, item.lang_code);
           }}
           className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
           title="点击朗读"
@@ -118,7 +118,7 @@ function FlashcardBack({ item }: FlashcardBackProps) {
         {/* Word */}
         <button
           type="button"
-          onClick={() => speakLemma(item.lemma)}
+          onClick={() => speakLemma(item.lemma, item.lang_code)}
           className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
           title="点击朗读"
         >

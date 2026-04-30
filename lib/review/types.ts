@@ -36,6 +36,7 @@ export interface ReviewQueueItem {
   review_count: number;
   retrievability: number | null;
   short_definition: string | null;
+  lang_code: string;
   previewExamples: ParsedExample[] | null;
   slug: string;
   state: string;

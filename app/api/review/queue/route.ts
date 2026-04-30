@@ -19,7 +19,7 @@ export async function GET() {
   const { count, data, error } = await supabase
     .from("user_word_progress")
     .select(
-      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, ipa, short_definition, definition_md, metadata, examples)",
+      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, lang_code, ipa, short_definition, definition_md, metadata, examples)",
       { count: "exact" },
     )
     .eq("user_id", ownerSession.user!.id)
@@ -45,6 +45,7 @@ export async function GET() {
       definition_md: string;
       examples: unknown;
       ipa: string | null;
+      lang_code: string;
       lemma: string;
       metadata: unknown;
       short_definition: string | null;
@@ -78,6 +79,7 @@ export async function GET() {
     retrievability: priority.retrievability,
     review_count: row.review_count,
     short_definition: row.words.short_definition,
+    lang_code: row.words.lang_code ?? "en",
     previewExamples: extractPreviewExamples(row.words.examples),
     slug: row.words.slug,
     state: row.state,
