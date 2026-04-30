@@ -2,7 +2,7 @@
 
 import * as d3 from "d3";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 interface MasteryCell {
   cefr: string;
@@ -68,6 +68,46 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     y: number;
   } | null>(null);
   const [previewSlug, setPreviewSlug] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const prefetchedRef = useRef<Set<string>>(new Set());
+
+  const prefetchWord = useCallback(
+    (slug: string) => {
+      if (!slug || prefetchedRef.current.has(slug)) return;
+      prefetchedRef.current.add(slug);
+      router.prefetch(`/words/${slug}`);
+    },
+    [router],
+  );
+
+  const navigateToWord = useCallback(
+    (slug: string) => {
+      setPreviewSlug(null);
+      startTransition(() => {
+        router.push(`/words/${slug}`);
+      });
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!previewSlug) return;
+    const neighbors = relationGraph[previewSlug] ?? [];
+    if (neighbors.length === 0) return;
+    const win = typeof window !== "undefined" ? window : null;
+    const schedule =
+      win && "requestIdleCallback" in win
+        ? (cb: () => void) => (win as Window & typeof globalThis).requestIdleCallback(cb, { timeout: 1500 })
+        : (cb: () => void) => window.setTimeout(cb, 200);
+    const cancel =
+      win && "cancelIdleCallback" in win
+        ? (id: number) => (win as Window & typeof globalThis).cancelIdleCallback(id)
+        : (id: number) => window.clearTimeout(id);
+    const handle = schedule(() => {
+      neighbors.forEach((n) => prefetchWord(n.slug));
+    });
+    return () => cancel(handle as number);
+  }, [previewSlug, relationGraph, prefetchWord]);
 
   const { nodes, edges } = useMemo(() => {
     const sorted = [...cells]
@@ -171,6 +211,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
       .attr("cursor", "pointer")
       .style("transition", "filter 0.15s")
       .on("mouseenter", (event, d) => {
+        prefetchWord(d.slug);
         d3.selectAll<SVGCircleElement, GraphNode>("circle").style("filter", (n) =>
           n.id === d.id || simEdges.some((e) =>
             (e.source.id === d.id && e.target.id === n.id) ||
@@ -200,6 +241,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
       })
       .on("click", (_event, d) => {
         setTooltip(null);
+        prefetchWord(d.slug);
         setPreviewSlug(d.slug);
       });
 
@@ -248,7 +290,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     return () => {
       simulation.stop();
     };
-  }, [nodes, edges, dims, relationGraph, router]);
+  }, [nodes, edges, dims, relationGraph, router, prefetchWord]);
 
   const stats = useMemo(() => {
     const total = cells.length;
@@ -413,7 +455,10 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
                       <button
                         key={n.slug}
                         className="rounded-lg bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)]"
+                        onMouseEnter={() => prefetchWord(n.slug)}
+                        onFocus={() => prefetchWord(n.slug)}
                         onClick={() => {
+                          prefetchWord(n.slug);
                           setPreviewSlug(n.slug);
                         }}
                       >
@@ -436,11 +481,9 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
               <button
                 className="rounded-xl px-5 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
                 style={{ backgroundColor: getRetrievabilityColor(previewCell.retrievability) }}
-                onClick={() => {
-                  const slug = previewCell.slug;
-                  setPreviewSlug(null);
-                  router.push(`/words/${slug}`);
-                }}
+                onMouseEnter={() => prefetchWord(previewCell.slug)}
+                onFocus={() => prefetchWord(previewCell.slug)}
+                onClick={() => navigateToWord(previewCell.slug)}
               >
                 查看完整详情 →
               </button>
