@@ -5,6 +5,7 @@ import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { AnimatedMetricCard as MetricCard } from "@/components/ui/AnimatedMetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
+import { MasteryHeatmap } from "@/components/review/MasteryHeatmap";
 import type { DailyForecastDay } from "@/lib/dashboard";
 import { getDashboardSummary } from "@/lib/dashboard";
 import { getNearestReviewRetentionPreset } from "@/lib/review/settings";
@@ -518,6 +519,8 @@ export default async function DashboardPage() {
           </>
         )}
       </section>
+
+      <MasteryHeatmap cells={summary.masteryCells} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="panel rounded-[1.75rem] p-6">

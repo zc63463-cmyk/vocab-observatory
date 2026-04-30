@@ -17,6 +17,7 @@ type DashboardProgressRow = {
   due_at: string | null;
   scheduler_payload: Json;
   state: string;
+  words: { cefr: string | null; lemma: string; slug: string } | null;
 };
 
 type DashboardReviewLogRow = {
@@ -389,6 +390,13 @@ export async function getDashboardSummary() {
         total: number;
       }>,
       dailyForecast: [] as DailyForecastDay[],
+      masteryCells: [] as Array<{
+        cefr: string;
+        dueAt: string | null;
+        lemma: string;
+        retrievability: number;
+        slug: string;
+      }>,
     };
   }
 
@@ -409,7 +417,7 @@ export async function getDashboardSummary() {
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("state, due_at, desired_retention, scheduler_payload")
+      .select("state, due_at, desired_retention, scheduler_payload, words!inner(cefr, lemma, slug)")
       .eq("user_id", owner.id),
     supabase
       .from("review_logs")
@@ -444,7 +452,7 @@ export async function getDashboardSummary() {
     supabase.from("profiles").select("settings").eq("id", owner.id).maybeSingle(),
   ]);
 
-  const progressRows = (progressResult.data ?? []) as DashboardProgressRow[];
+  const progressRows = (progressResult.data ?? []) as unknown as DashboardProgressRow[];
   const trackedWords = progressRows.length;
   const dueToday = progressRows.filter(
     (row) => row.state !== "suspended" && row.due_at && row.due_at <= nowIso,
@@ -551,6 +559,29 @@ export async function getDashboardSummary() {
     reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0;
   const fsrsCalibrationGap30d = forgettingRate30d - fsrsForgettingRate;
 
+  // Build mastery heatmap: per-card retrievability grouped by CEFR
+  const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "unknown"];
+  const masteryCells = progressRows
+    .filter((row) => row.state !== "suspended" && row.words)
+    .map((row) => {
+      const retrievability = getCurrentRetrievability(
+        row.scheduler_payload as StoredSchedulerCard | null,
+        row.desired_retention ?? DEFAULT_DESIRED_RETENTION,
+      );
+      return {
+        cefr: row.words!.cefr ?? "unknown",
+        lemma: row.words!.lemma,
+        slug: row.words!.slug,
+        retrievability: retrievability ?? 0,
+        dueAt: row.due_at,
+      };
+    })
+    .sort((a, b) => {
+      const cefrDiff = CEFR_ORDER.indexOf(a.cefr) - CEFR_ORDER.indexOf(b.cefr);
+      if (cefrDiff !== 0) return cefrDiff;
+      return b.retrievability - a.retrievability;
+    });
+
   return {
     activeSession: activeSessionResult.data ?? null,
     averageDesiredRetention,
@@ -600,5 +631,6 @@ export async function getDashboardSummary() {
       reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
       nowDate,
     ),
+    masteryCells,
   };
 }

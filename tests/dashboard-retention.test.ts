@@ -76,18 +76,21 @@ describe("dashboard retention helpers", () => {
           state: State.Review,
         },
         state: "review",
+        words: { cefr: "B2", lemma: "forecast1", slug: "forecast1" },
       },
       {
         desired_retention: 0.9,
         due_at: "2026-05-03T10:00:00.000Z",
         scheduler_payload: null,
         state: "learning",
+        words: { cefr: "A2", lemma: "forecast2", slug: "forecast2" },
       },
       {
         desired_retention: 0.9,
         due_at: "2026-04-30T10:00:00.000Z",
         scheduler_payload: null,
         state: "suspended",
+        words: { cefr: "C1", lemma: "forecast3", slug: "forecast3" },
       },
     ];
 
@@ -124,12 +127,14 @@ describe("dashboard retention helpers", () => {
           due_at: new Date(2026, 4, 3, 0, 30, 0).toISOString(),
           scheduler_payload: null,
           state: "learning",
+          words: { cefr: "B1", lemma: "test", slug: "test" },
         },
         {
           desired_retention: 0.9,
           due_at: new Date(2026, 4, 4, 0, 30, 0).toISOString(),
           scheduler_payload: null,
           state: "learning",
+          words: { cefr: "B1", lemma: "test2", slug: "test2" },
         },
       ],
       0.9,
