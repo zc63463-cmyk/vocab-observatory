@@ -496,6 +496,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     onToggleHistory: toggleHistory,
     onOpenWordPage: openWordPage,
     onSpeak: speakWord,
+    onNextBatch: nextBatch,
     isOmniOpen: omni.isOpen,
     isAnimating: animationLock,
     isHistoryOpen: uiState.isHistoryOpen,

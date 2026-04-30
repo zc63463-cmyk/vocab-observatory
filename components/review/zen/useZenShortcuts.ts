@@ -11,6 +11,7 @@ interface UseZenShortcutsOptions {
   onToggleHistory: () => void;
   onOpenWordPage: () => void;
   onSpeak: () => void;
+  onNextBatch: () => void;
   isOmniOpen: boolean;
   isAnimating: boolean;
   isHistoryOpen: boolean;
@@ -39,6 +40,7 @@ export function useZenShortcuts({
   onToggleHistory,
   onOpenWordPage,
   onSpeak,
+  onNextBatch,
   isOmniOpen,
   isAnimating,
   isHistoryOpen,
@@ -92,11 +94,17 @@ export function useZenShortcuts({
       }
 
       // Phase 0.1 Session Summary: Enter at done phase returns to /review.
-      // No rating / Space at done; only Enter and Esc (handled above) are active.
+      // No rating / Space at done; only Enter, Esc (handled above), and N are active.
       if (phase === "done") {
         if (e.key === "Enter") {
           e.preventDefault();
           onExit();
+          return;
+        }
+        if (e.key === "n" || e.key === "N") {
+          e.preventDefault();
+          onNextBatch();
+          return;
         }
         return;
       }
@@ -177,7 +185,7 @@ export function useZenShortcuts({
         onRate(rating);
       }
     },
-    [phase, onReveal, onRate, onExit, onToggleHistory, onOpenWordPage, onSpeak, isOmniOpen, isAnimating, isHistoryOpen]
+    [phase, onReveal, onRate, onExit, onToggleHistory, onOpenWordPage, onSpeak, onNextBatch, isOmniOpen, isAnimating, isHistoryOpen]
   );
 
   useEffect(() => {

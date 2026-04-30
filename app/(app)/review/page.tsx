@@ -1,4 +1,5 @@
 import { ReviewQueue } from "@/components/review/ReviewQueue";
+import { ReviewStatsPanel } from "@/components/review/ReviewStatsPanel";
 
 export default function ReviewPage() {
   return (
@@ -12,6 +13,7 @@ export default function ReviewPage() {
           这里展示当前到期的词条。点击 Again / Hard / Good / Easy 后，会写入复习日志并更新下一次到期时间。
         </p>
       </section>
+      <ReviewStatsPanel />
       <ReviewQueue />
     </div>
   );

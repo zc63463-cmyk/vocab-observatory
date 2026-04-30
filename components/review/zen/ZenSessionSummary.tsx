@@ -179,6 +179,11 @@ export function ZenSessionSummary() {
             H
           </kbd>
           <span className="ml-2">查看记录</span>
+          <span className="mx-2">·</span>
+          <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-[10px]">
+            N
+          </kbd>
+          <span className="ml-2">再来一组</span>
         </p>
       </div>
     </motion.div>
