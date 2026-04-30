@@ -11,6 +11,10 @@ interface MasteryCell {
   slug: string;
   retrievability: number;
   dueAt: string | null;
+  ipa: string | null;
+  shortDefinition: string | null;
+  pos: string | null;
+  title: string | null;
 }
 
 interface MasteryHeatmapProps {
@@ -433,8 +437,9 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
                 className="rounded-xl px-5 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
                 style={{ backgroundColor: getRetrievabilityColor(previewCell.retrievability) }}
                 onClick={() => {
+                  const slug = previewCell.slug;
                   setPreviewSlug(null);
-                  router.push(`/words/${previewCell.slug}`);
+                  router.push(`/words/${slug}`);
                 }}
               >
                 查看完整详情 →

@@ -17,7 +17,7 @@ type DashboardProgressRow = {
   due_at: string | null;
   scheduler_payload: Json;
   state: string;
-  words: { cefr: string | null; lemma: string; metadata: Json | null; slug: string } | null;
+  words: { cefr: string | null; lemma: string; metadata: Json | null; slug: string; ipa: string | null; short_definition: string | null; pos: string | null; title: string | null } | null;
 };
 
 type DashboardReviewLogRow = {
@@ -475,6 +475,10 @@ export async function getDashboardSummary() {
         metadata: unknown;
         retrievability: number;
         slug: string;
+        ipa: string | null;
+        shortDefinition: string | null;
+        pos: string | null;
+        title: string | null;
       }>,
       relationGraph: {} as Record<string, { slug: string; lemma: string; relation: string }[]>,
     };
@@ -497,7 +501,7 @@ export async function getDashboardSummary() {
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("state, due_at, desired_retention, scheduler_payload, words!inner(cefr, lemma, slug, metadata)")
+      .select("state, due_at, desired_retention, scheduler_payload, words!inner(cefr, lemma, slug, metadata, ipa, short_definition, pos, title)")
       .eq("user_id", owner.id),
     supabase
       .from("review_logs")
@@ -655,6 +659,10 @@ export async function getDashboardSummary() {
         slug: row.words!.slug,
         retrievability: retrievability ?? 0,
         dueAt: row.due_at,
+        ipa: row.words!.ipa,
+        shortDefinition: row.words!.short_definition,
+        pos: row.words!.pos,
+        title: row.words!.title,
       };
     })
     .sort((a, b) => {

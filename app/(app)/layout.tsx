@@ -3,8 +3,14 @@ import { SiteFrame } from "@/components/layout/SiteFrame";
 
 export default async function ProtectedAppLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+  modal,
+}: Readonly<{ children: React.ReactNode; modal: React.ReactNode }>) {
   await requireOwnerUser();
 
-  return <SiteFrame>{children}</SiteFrame>;
+  return (
+    <SiteFrame>
+      {children}
+      {modal}
+    </SiteFrame>
+  );
 }
