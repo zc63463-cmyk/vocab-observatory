@@ -347,23 +347,24 @@ describe("buildWeekGrid", () => {
   });
 
   it("leaves non-review days with log=null", () => {
+    // Threshold for switching to weekGrid view (sortedLogs.length >= 30) is
+    // enforced at the component layer; the builder itself works with any
+    // non-empty valid input, so we assert non-null unconditionally.
     const logs = [
       mkLog({ reviewed_at: "2026-04-01T12:00:00Z" }),
       mkLog({ reviewed_at: "2026-04-30T12:00:00Z" }),
     ];
     const grid = buildWeekGrid(logs, today, 52);
-    // Only 2 logs -> might be < threshold at call site, but builder still works
-    // when given valid input at the analytics layer (threshold is enforced by component)
-    if (grid) {
-      const cellApril2 = grid.weeks
-        .flat()
-        .find(
-          (d) =>
-            d.date.getFullYear() === 2026 &&
-            d.date.getMonth() === 3 &&
-            d.date.getDate() === 2,
-        );
-      expect(cellApril2?.log).toBeNull();
-    }
+    expect(grid).not.toBeNull();
+    const cellApril2 = grid!.weeks
+      .flat()
+      .find(
+        (d) =>
+          d.date.getFullYear() === 2026 &&
+          d.date.getMonth() === 3 &&
+          d.date.getDate() === 2,
+      );
+    expect(cellApril2).toBeDefined();
+    expect(cellApril2!.log).toBeNull();
   });
 });

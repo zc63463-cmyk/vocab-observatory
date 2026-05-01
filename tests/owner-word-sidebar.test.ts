@@ -34,8 +34,12 @@ interface MockHandle {
 /**
  * Builds a Supabase-like fluent mock that:
  * - records every chain method invocation per table for assertions
- * - returns the configured Result on terminal `.maybeSingle()` or thenable resolution
- * - throws if the same table is queried twice (each test uses a fresh mock)
+ * - intentionally differentiates terminal shape so misuse fails loudly:
+ *     * single-row chains expose `.maybeSingle()` only (no thenable)
+ *     * list chains expose thenable only (no `.maybeSingle()`)
+ *   This catches regressions like "forgot maybeSingle on a single-row query"
+ *   or "called maybeSingle on a list query" — both would silently work with
+ *   a unified mock that exposes both terminals.
  */
 function createMockSupabase(responses: TableResponses): MockHandle {
   const callsByTable: Record<string, ChainCallLog> = {};
@@ -53,22 +57,23 @@ function createMockSupabase(responses: TableResponses): MockHandle {
       log.eq.push([column, value]);
       return chain;
     });
-    chain.order = vi.fn((column: string, opts: { ascending: boolean }) => {
-      log.order = { column, ascending: opts.ascending };
-      return chain;
-    });
-    chain.limit = vi.fn((n: number) => {
-      log.limit = n;
-      return chain;
-    });
-    chain.maybeSingle = vi.fn(async () => terminal);
-    chain.then = (
-      onFulfilled?: (value: unknown) => unknown,
-      onRejected?: (reason: unknown) => unknown,
-    ) => {
-      const value = isList ? terminal : terminal;
-      return Promise.resolve(value).then(onFulfilled, onRejected);
-    };
+
+    if (isList) {
+      chain.order = vi.fn((column: string, opts: { ascending: boolean }) => {
+        log.order = { column, ascending: opts.ascending };
+        return chain;
+      });
+      chain.limit = vi.fn((n: number) => {
+        log.limit = n;
+        return chain;
+      });
+      chain.then = (
+        onFulfilled?: (value: unknown) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) => Promise.resolve(terminal).then(onFulfilled, onRejected);
+    } else {
+      chain.maybeSingle = vi.fn(async () => terminal);
+    }
 
     return chain;
   }
