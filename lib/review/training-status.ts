@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MIN_REVIEWS_FOR_TRAINING } from "@/lib/review/fsrs-optimizer";
 import {
+  MIN_REVIEWS_FOR_TRAINING,
   getUserFsrsWeights,
   type FsrsWeightsSetting,
 } from "@/lib/review/settings";

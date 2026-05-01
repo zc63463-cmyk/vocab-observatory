@@ -18,13 +18,12 @@
  * so callers don't need to import the native binding directly.
  */
 
-/**
- * Minimum review count we require before offering training. FSRS optimizer
- * docs suggest ≥1000 reviews for a good fit; we pick a slightly looser 500
- * so personal users don't have to wait forever to try it. Below this the
- * UI should keep the retrain button disabled.
- */
-export const MIN_REVIEWS_FOR_TRAINING = 500;
+import { MIN_REVIEWS_FOR_TRAINING } from "@/lib/review/settings";
+
+// Re-export so existing internal callers that grabbed the constant from
+// here keep compiling. New code should import directly from
+// `@/lib/review/settings` to avoid bundling the optimizer's WASI binding.
+export { MIN_REVIEWS_FOR_TRAINING };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 

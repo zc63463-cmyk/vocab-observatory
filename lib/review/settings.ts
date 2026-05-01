@@ -31,6 +31,18 @@ const FSRS_WEIGHTS_MIN_LENGTH = 17;
 const FSRS_WEIGHTS_MAX_LENGTH = 25;
 export const FSRS_WEIGHTS_SETTING_VERSION = 1;
 
+/**
+ * Minimum review count we require before offering training. FSRS optimizer
+ * docs suggest ≥1000 reviews for a good fit; we pick a slightly looser 500
+ * so personal users don't have to wait forever to try it.
+ *
+ * Lives in this binding-free module so dashboard server components can read
+ * it without dragging the @open-spaced-repetition/binding NAPI artifact
+ * through the bundler. Only the route handler that actually trains needs to
+ * import the optimizer.
+ */
+export const MIN_REVIEWS_FOR_TRAINING = 500;
+
 type AppSupabaseClient = SupabaseClient<Database>;
 type JsonObject = { [key: string]: Json | undefined };
 
