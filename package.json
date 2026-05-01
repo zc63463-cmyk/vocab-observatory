@@ -13,6 +13,7 @@
     "sync:vault": "tsx scripts/sync-vault.ts"
   },
   "dependencies": {
+    "@open-spaced-repetition/binding": "^0.3.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
     "clsx": "^2.1.1",
