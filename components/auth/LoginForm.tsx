@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export function LoginForm({
   initialError,
@@ -29,23 +28,30 @@ export function LoginForm({
       setSuccess("");
 
       try {
-        const supabase = createBrowserSupabaseClient();
-        const origin = window.location.origin;
-        const redirectTo = new URL("/auth/callback", origin);
-        redirectTo.searchParams.set("next", target);
-
-        const { error: signInError } = await supabase.auth.signInWithOtp({
-          email,
-          options: {
-            emailRedirectTo: redirectTo.toString(),
-          },
+        // Delegate to /api/auth/magic-link so the PKCE code_verifier is
+        // written via Set-Cookie response headers rather than via
+        // document.cookie from a client-side supabase singleton. The
+        // server-side flow is the pattern @supabase/ssr documents and
+        // is the only one that survives the email round-trip reliably
+        // (browser-side document.cookie writes were vanishing between
+        // form submit and /auth/callback in some browsers, leaving
+        // exchangeCodeForSession with no verifier to redeem).
+        const response = await fetch("/api/auth/magic-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, next: target }),
         });
 
-        if (signInError) {
-          throw new Error(signInError.message);
+        const data = (await response.json()) as {
+          error?: string;
+          success?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "发送失败");
         }
 
-        setSuccess(`登录链接已发送到 ${email}。`);
+        setSuccess(data.success ?? `登录链接已发送到 ${email}。`);
         router.refresh();
       } catch (submissionError) {
         setError(

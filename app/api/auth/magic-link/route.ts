@@ -35,8 +35,13 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ success: `登录链接已发送到 ${email}。` });
   const supabase = createRouteHandlerSupabaseClient(request, response);
-  const origin = env.siteUrl ?? request.nextUrl.origin;
-  const redirectTo = new URL("/auth/callback", origin);
+
+  // Always use the request's own origin so the email link comes back to
+  // the exact host the form was submitted from. Using env.siteUrl here
+  // would break Vercel preview deploys where the preview domain doesn't
+  // match the configured prod URL — the verifier cookie would be set on
+  // one host but the callback would land on another, killing PKCE.
+  const redirectTo = new URL("/auth/callback", request.nextUrl.origin);
   redirectTo.searchParams.set("next", nextPath);
 
   const { error } = await supabase.auth.signInWithOtp({
