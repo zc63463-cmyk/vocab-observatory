@@ -6,7 +6,22 @@ export const DEFAULT_DESIRED_RETENTION = 0.9;
 export const MIN_DESIRED_RETENTION = 0.7;
 export const MAX_DESIRED_RETENTION = 0.99;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const schedulerCache = new Map<number, ReturnType<typeof fsrs>>();
+/**
+ * Scheduler cache keyed by the pair (retention, weights-signature). A string
+ * key is used instead of the previous `Map<number, ...>` because different
+ * users can now supply different `w` arrays; caching by retention alone
+ * would cause scheduler instances to silently serve the wrong weights.
+ *
+ * The signature is a JSON of the rounded weights. Cheap and collision-free
+ * for realistic values; avoids depending on a hashing lib.
+ */
+const schedulerCache = new Map<string, ReturnType<typeof fsrs>>();
+
+function signWeights(weights: readonly number[] | null | undefined): string {
+  if (!weights || weights.length === 0) return "default";
+  // Round to 6 decimals to keep the key stable across tiny float jitter.
+  return weights.map((w) => w.toFixed(6)).join(",");
+}
 
 const ratingMap: Record<ReviewRating, 1 | 2 | 3 | 4> = {
   again: Rating.Again,
@@ -33,9 +48,13 @@ export function normalizeDesiredRetention(value?: number | null) {
   );
 }
 
-function getScheduler(desiredRetention = DEFAULT_DESIRED_RETENTION) {
+function getScheduler(
+  desiredRetention = DEFAULT_DESIRED_RETENTION,
+  weights?: readonly number[] | null,
+) {
   const normalizedRetention = normalizeDesiredRetention(desiredRetention);
-  const cacheKey = Number(normalizedRetention.toFixed(3));
+  const rounded = Number(normalizedRetention.toFixed(3));
+  const cacheKey = `${rounded}|${signWeights(weights)}`;
   const cached = schedulerCache.get(cacheKey);
 
   if (cached) {
@@ -44,7 +63,10 @@ function getScheduler(desiredRetention = DEFAULT_DESIRED_RETENTION) {
 
   const scheduler = fsrs({
     maximum_interval: 36500,
-    request_retention: cacheKey,
+    request_retention: rounded,
+    // Only pass w when the caller has explicit weights; letting ts-fsrs fall
+    // back to its built-in defaults is the correct "untrained" behavior.
+    ...(weights && weights.length > 0 ? { w: [...weights] } : {}),
   });
   schedulerCache.set(cacheKey, scheduler);
   return scheduler;
@@ -92,6 +114,7 @@ export function retuneScheduledReviewCard(
   payload: StoredSchedulerCard | null | undefined,
   desiredRetention = DEFAULT_DESIRED_RETENTION,
   now = new Date(),
+  weights?: readonly number[] | null,
 ) {
   if (!payload) {
     return null;
@@ -109,7 +132,7 @@ export function retuneScheduledReviewCard(
     return null;
   }
 
-  const scheduler = getScheduler(desiredRetention);
+  const scheduler = getScheduler(desiredRetention, weights);
   const elapsedDays = Number.isFinite(card.elapsed_days)
     ? Math.max(0, card.elapsed_days)
     : Math.max(0, card.scheduled_days);
@@ -129,6 +152,7 @@ export function getCurrentRetrievability(
   payload: StoredSchedulerCard | null | undefined,
   desiredRetention = DEFAULT_DESIRED_RETENTION,
   now = new Date(),
+  weights?: readonly number[] | null,
 ) {
   if (!payload) {
     return null;
@@ -139,7 +163,11 @@ export function getCurrentRetrievability(
     return null;
   }
 
-  return getScheduler(desiredRetention).get_retrievability(card, now, false);
+  return getScheduler(desiredRetention, weights).get_retrievability(
+    card,
+    now,
+    false,
+  );
 }
 
 export function applyReviewAnswer(
@@ -147,8 +175,9 @@ export function applyReviewAnswer(
   rating: ReviewRating,
   now = new Date(),
   desiredRetention = DEFAULT_DESIRED_RETENTION,
+  weights?: readonly number[] | null,
 ): SchedulerUpdate {
-  const scheduler = getScheduler(desiredRetention);
+  const scheduler = getScheduler(desiredRetention, weights);
   const currentCard = toCard(payload);
   const result = scheduler.next(currentCard, now, ratingMap[rating]);
   const retrievability =

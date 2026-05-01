@@ -6,6 +6,31 @@ import {
 import type { Database, Json } from "@/types/database.types";
 import { asJson } from "@/types/database.types";
 
+/**
+ * Serializable payload for user-trained FSRS weights. Kept minimal and
+ * versioned so we can evolve the shape without breaking existing profiles.
+ *
+ * - `weights`: the 17–21 parameters returned by the FSRS optimizer. We do
+ *   not constrain the length here because FSRS v4 (17), v5 (19), and v6 (21)
+ *   all use different array sizes; validation happens at read time.
+ * - `trainedAt`: ISO timestamp of when these weights were fit, for UI display
+ *   and invalidation policies.
+ * - `sampleSize`: number of review logs fed to the optimizer. Consumers can
+ *   use this to gate confidence ("trained on 2000 reviews" vs "120 reviews").
+ * - `version`: schema version for forward compatibility. Start at 1.
+ */
+export interface FsrsWeightsSetting {
+  sampleSize: number;
+  trainedAt: string;
+  version: number;
+  weights: readonly number[];
+}
+
+/** FSRS w-array sane length window: v4 has 17, v5 has 19, v6 has 21. */
+const FSRS_WEIGHTS_MIN_LENGTH = 17;
+const FSRS_WEIGHTS_MAX_LENGTH = 25;
+export const FSRS_WEIGHTS_SETTING_VERSION = 1;
+
 type AppSupabaseClient = SupabaseClient<Database>;
 type JsonObject = { [key: string]: Json | undefined };
 
@@ -75,6 +100,88 @@ export function writeDesiredRetentionSetting(
   });
 }
 
+/**
+ * Reads a stored FSRS weights payload out of the settings JSON, returning
+ * null for any malformed / missing / corrupt variant. Callers pass the
+ * result directly into `getScheduler(...)`'s optional `weights` argument;
+ * returning null there disables personalisation and falls back to library
+ * defaults, which is the safe behaviour for a never-trained user.
+ */
+export function readFsrsWeightsSetting(
+  settings: Json | null | undefined,
+): FsrsWeightsSetting | null {
+  if (!isJsonObject(settings)) return null;
+  const reviewSettings = settings.review;
+  if (!isJsonObject(reviewSettings)) return null;
+  const raw = reviewSettings.fsrs_weights;
+  if (!isJsonObject(raw)) return null;
+
+  const { weights, trained_at, sample_size, version } = raw;
+  if (!Array.isArray(weights)) return null;
+  if (
+    weights.length < FSRS_WEIGHTS_MIN_LENGTH ||
+    weights.length > FSRS_WEIGHTS_MAX_LENGTH
+  ) {
+    return null;
+  }
+  // Every entry must be a finite number — corrupt JSON shouldn't silently
+  // poison the scheduler.
+  const parsed: number[] = [];
+  for (const w of weights) {
+    if (typeof w !== "number" || !Number.isFinite(w)) return null;
+    parsed.push(w);
+  }
+  if (typeof trained_at !== "string" || trained_at.length === 0) return null;
+  if (
+    typeof sample_size !== "number" ||
+    !Number.isFinite(sample_size) ||
+    sample_size < 0
+  ) {
+    return null;
+  }
+  const v = typeof version === "number" && Number.isFinite(version) ? version : 1;
+
+  return {
+    sampleSize: sample_size,
+    trainedAt: trained_at,
+    version: v,
+    weights: parsed,
+  };
+}
+
+/**
+ * Writes (or clears) the FSRS weights payload on the settings JSON. Passing
+ * `null` clears the saved weights, reverting the user to library defaults.
+ * The "review" sub-object is preserved so we don't stomp on desired_retention
+ * or other review settings stored alongside it.
+ */
+export function writeFsrsWeightsSetting(
+  settings: Json | null | undefined,
+  payload: FsrsWeightsSetting | null,
+) {
+  const baseSettings = isJsonObject(settings) ? settings : {};
+  const reviewSettings = isJsonObject(baseSettings.review)
+    ? baseSettings.review
+    : {};
+
+  const nextReview = { ...reviewSettings };
+  if (payload === null) {
+    delete nextReview.fsrs_weights;
+  } else {
+    nextReview.fsrs_weights = {
+      sample_size: payload.sampleSize,
+      trained_at: payload.trainedAt,
+      version: payload.version,
+      weights: [...payload.weights],
+    };
+  }
+
+  return asJson({
+    ...baseSettings,
+    review: nextReview,
+  });
+}
+
 export function getNearestReviewRetentionPreset(value?: number | null) {
   const normalized = normalizeDesiredRetention(value);
 
@@ -138,4 +245,64 @@ export async function updateUserDesiredRetentionSetting(
   }
 
   return readDesiredRetentionSetting(data.settings);
+}
+
+/**
+ * Async fetcher for user-trained FSRS weights. Mirrors `getUserDesiredRetention`
+ * so consumers (answer route, queue route, dashboard builder) read both
+ * personalisation knobs through a single supabase call pattern.
+ */
+export async function getUserFsrsWeights(
+  supabase: AppSupabaseClient,
+  userId: string,
+): Promise<FsrsWeightsSetting | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("settings")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return readFsrsWeightsSetting(data?.settings ?? null);
+}
+
+export async function updateUserFsrsWeightsSetting(
+  supabase: AppSupabaseClient,
+  userId: string,
+  payload: FsrsWeightsSetting | null,
+  nowIso: string,
+) {
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("settings")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw profileError;
+  }
+
+  const nextSettings = writeFsrsWeightsSetting(
+    profile?.settings ?? null,
+    payload,
+  );
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      settings: nextSettings,
+      updated_at: nowIso,
+    })
+    .eq("id", userId)
+    .select("settings")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return readFsrsWeightsSetting(data.settings);
 }
