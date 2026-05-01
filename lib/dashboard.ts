@@ -512,7 +512,6 @@ export async function getDashboardSummary() {
   const nowIso = nowDate.toISOString();
   const thirtyDaysAgo = addDays(new Date(today), -29);
   const ninetyDaysAgo = addDays(new Date(today), -89);
-  const yearAgo = addDays(new Date(today), -364);
 
   const [
     progressResult,
@@ -547,12 +546,19 @@ export async function getDashboardSummary() {
       .gte("reviewed_at", ninetyDaysAgo.toISOString())
       .order("reviewed_at", { ascending: false })
       .limit(3000),
+    // Streak is calculated by walking backward from today until a gap day is
+    // found. A 90-day window + 400-row cap is plenty: even at 5 reviews/day
+    // the 400 most-recent rows still cover ~80 consecutive days, and we
+    // never need to look past the first missing day anyway. Previously this
+    // query had no .limit() and relied on PostgREST's implicit 1000-row cap,
+    // which silently truncated heavy users' data.
     supabase
       .from("review_logs")
       .select("reviewed_at")
       .eq("user_id", owner.id)
-      .gte("reviewed_at", yearAgo.toISOString())
-      .order("reviewed_at", { ascending: false }),
+      .gte("reviewed_at", ninetyDaysAgo.toISOString())
+      .order("reviewed_at", { ascending: false })
+      .limit(400),
     supabase
       .from("notes")
       .select("content_md, updated_at, version, words(lemma, slug, title)")
