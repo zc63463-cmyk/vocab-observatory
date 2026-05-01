@@ -32,6 +32,35 @@ const FSRS_WEIGHTS_MAX_LENGTH = 25;
 export const FSRS_WEIGHTS_SETTING_VERSION = 1;
 
 /**
+ * Shape-validates a raw weights array before we either persist it or hand it
+ * to the scheduler. Single source of truth for both the read path (inside
+ * `readFsrsWeightsSetting`) and the write path (inside the train-weights
+ * route handler) — keeping them in sync prevents the silent failure mode
+ * where training completes, writes a malformed array, and the next read
+ * quietly falls back to defaults without the user knowing.
+ *
+ * Returns a finite-number array on success; `null` when the input is not a
+ * plausible FSRS w-vector.
+ */
+export function validateFsrsWeightsArray(
+  weights: unknown,
+): number[] | null {
+  if (!Array.isArray(weights)) return null;
+  if (
+    weights.length < FSRS_WEIGHTS_MIN_LENGTH ||
+    weights.length > FSRS_WEIGHTS_MAX_LENGTH
+  ) {
+    return null;
+  }
+  const out: number[] = [];
+  for (const w of weights) {
+    if (typeof w !== "number" || !Number.isFinite(w)) return null;
+    out.push(w);
+  }
+  return out;
+}
+
+/**
  * Minimum review count we require before offering training. FSRS optimizer
  * docs suggest ≥1000 reviews for a good fit; we pick a slightly looser 500
  * so personal users don't have to wait forever to try it.
@@ -129,20 +158,8 @@ export function readFsrsWeightsSetting(
   if (!isJsonObject(raw)) return null;
 
   const { weights, trained_at, sample_size, version } = raw;
-  if (!Array.isArray(weights)) return null;
-  if (
-    weights.length < FSRS_WEIGHTS_MIN_LENGTH ||
-    weights.length > FSRS_WEIGHTS_MAX_LENGTH
-  ) {
-    return null;
-  }
-  // Every entry must be a finite number — corrupt JSON shouldn't silently
-  // poison the scheduler.
-  const parsed: number[] = [];
-  for (const w of weights) {
-    if (typeof w !== "number" || !Number.isFinite(w)) return null;
-    parsed.push(w);
-  }
+  const parsed = validateFsrsWeightsArray(weights);
+  if (!parsed) return null;
   if (typeof trained_at !== "string" || trained_at.length === 0) return null;
   if (
     typeof sample_size !== "number" ||

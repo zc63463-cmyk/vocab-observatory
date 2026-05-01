@@ -65,7 +65,18 @@ export async function POST(request: NextRequest) {
 
   // Personalised weights are loaded once per request — passing null falls
   // back to ts-fsrs defaults, which is correct for users who haven't trained.
-  const fsrsWeights = await getUserFsrsWeights(supabase, ownerSession.user!.id);
+  // A failure reading the weights must NOT block rating persistence: the
+  // user's answer is the critical path, personalisation is a nicety. On
+  // error we log and proceed with defaults.
+  let fsrsWeights: Awaited<ReturnType<typeof getUserFsrsWeights>> = null;
+  try {
+    fsrsWeights = await getUserFsrsWeights(supabase, ownerSession.user!.id);
+  } catch (error) {
+    console.warn(
+      "[review/answer] failed to load personalised weights, falling back to defaults:",
+      error,
+    );
+  }
 
   const now = new Date();
   const scheduling = applyReviewAnswer(

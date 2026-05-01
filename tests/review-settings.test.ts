@@ -4,6 +4,7 @@ import {
   getNearestReviewRetentionPreset,
   readDesiredRetentionSetting,
   readFsrsWeightsSetting,
+  validateFsrsWeightsArray,
   writeDesiredRetentionSetting,
   writeFsrsWeightsSetting,
   type FsrsWeightsSetting,
@@ -217,5 +218,47 @@ describe("fsrs weights settings", () => {
     const read = baseRead(payload);
     expect(read?.weights.length).toBe(19);
     expect(read?.trainedAt).toBe(payload.trainedAt);
+  });
+});
+
+describe("validateFsrsWeightsArray", () => {
+  it("accepts a canonical 19-element finite array", () => {
+    expect(validateFsrsWeightsArray(SAMPLE_W_19)).toEqual(SAMPLE_W_19);
+  });
+
+  it("rejects non-arrays", () => {
+    expect(validateFsrsWeightsArray(null)).toBeNull();
+    expect(validateFsrsWeightsArray(undefined)).toBeNull();
+    expect(validateFsrsWeightsArray("foo")).toBeNull();
+    expect(validateFsrsWeightsArray({ length: 19 })).toBeNull();
+  });
+
+  it("rejects arrays outside the length window (17..25)", () => {
+    expect(validateFsrsWeightsArray(new Array(16).fill(0.5))).toBeNull();
+    expect(validateFsrsWeightsArray(new Array(26).fill(0.5))).toBeNull();
+  });
+
+  it("accepts arrays at the length window boundaries", () => {
+    expect(validateFsrsWeightsArray(new Array(17).fill(0.5))).toHaveLength(17);
+    expect(validateFsrsWeightsArray(new Array(25).fill(0.5))).toHaveLength(25);
+  });
+
+  it("rejects arrays containing non-finite numbers", () => {
+    const withNaN = [...SAMPLE_W_19];
+    withNaN[0] = Number.NaN;
+    expect(validateFsrsWeightsArray(withNaN)).toBeNull();
+
+    const withInf = [...SAMPLE_W_19];
+    withInf[1] = Number.POSITIVE_INFINITY;
+    expect(validateFsrsWeightsArray(withInf)).toBeNull();
+  });
+
+  it("rejects arrays with non-number entries (string, object, null)", () => {
+    expect(
+      validateFsrsWeightsArray([...SAMPLE_W_19.slice(0, 18), "0.5"]),
+    ).toBeNull();
+    expect(
+      validateFsrsWeightsArray([...SAMPLE_W_19.slice(0, 18), null]),
+    ).toBeNull();
   });
 });

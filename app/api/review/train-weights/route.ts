@@ -7,6 +7,7 @@ import {
 } from "@/lib/review/fsrs-optimizer";
 import {
   updateUserFsrsWeightsSetting,
+  validateFsrsWeightsArray,
   type FsrsWeightsSetting,
   FSRS_WEIGHTS_SETTING_VERSION,
 } from "@/lib/review/settings";
@@ -155,12 +156,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
+  // Guard against a malformed binding response (wrong length, NaN, etc.).
+  // Without this check the read path later would silently reject the saved
+  // payload and revert the user to defaults — the UI would have already told
+  // them training succeeded, producing a confusing mismatch.
+  const validatedWeights = validateFsrsWeightsArray(trained.weights);
+  if (!validatedWeights) {
+    return NextResponse.json(
+      {
+        error:
+          "Optimizer returned an unusable weights vector (wrong length or non-finite values). Training not persisted.",
+      },
+      { status: 500 },
+    );
+  }
+
   const nowIso = new Date().toISOString();
   const payload: FsrsWeightsSetting = {
     sampleSize: trained.sampleSize,
     trainedAt: nowIso,
     version: FSRS_WEIGHTS_SETTING_VERSION,
-    weights: trained.weights,
+    weights: validatedWeights,
   };
 
   await updateUserFsrsWeightsSetting(supabase, userId, payload, nowIso);
