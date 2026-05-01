@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RetentionDiagnostics } from "@/components/review/RetentionDiagnostics";
 import { ReviewRetentionSettings } from "@/components/review/ReviewRetentionSettings";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
@@ -170,6 +171,8 @@ export default async function DashboardPage() {
             averageDesiredRetention={summary.averageDesiredRetention}
             trackedWords={summary.metrics.trackedWords}
           />
+
+          <RetentionDiagnostics diagnostic={summary.retentionDiagnostic} />
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-[1.2rem] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-ink-soft)]">

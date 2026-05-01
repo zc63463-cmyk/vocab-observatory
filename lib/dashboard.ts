@@ -6,6 +6,11 @@ import {
   normalizeDesiredRetention,
   retuneScheduledReviewCard,
 } from "@/lib/review/fsrs-adapter";
+import {
+  computeRetentionDiagnostic,
+  type RetentionDiagnostic,
+  type RetentionDiagnosticLog,
+} from "@/lib/review/retention-diagnostics";
 import { REVIEW_RETENTION_PRESETS, readDesiredRetentionSetting } from "@/lib/review/settings";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
@@ -458,6 +463,10 @@ export async function getDashboardSummary() {
         reviewed_at: string;
         words: { lemma: string; slug: string; title: string } | null;
       }>,
+      retentionDiagnostic: computeRetentionDiagnostic({
+        desiredRetention: DEFAULT_DESIRED_RETENTION,
+        logs: [],
+      }),
       retentionForecasts: emptyPresetForecasts,
       retentionGapSeries14d: [] as RetentionGapPoint[],
       reviewVolume30d: [] as Array<{ count: number; date: string }>,
@@ -488,11 +497,13 @@ export async function getDashboardSummary() {
   const nowDate = new Date();
   const nowIso = nowDate.toISOString();
   const thirtyDaysAgo = addDays(new Date(today), -29);
+  const ninetyDaysAgo = addDays(new Date(today), -89);
   const yearAgo = addDays(new Date(today), -364);
 
   const [
     progressResult,
     reviewLogs30dWithWordsResult,
+    reviewLogs90dDiagnosticResult,
     streakResult,
     notesResult,
     notesCountResult,
@@ -510,6 +521,17 @@ export async function getDashboardSummary() {
       .gte("reviewed_at", thirtyDaysAgo.toISOString())
       .order("reviewed_at", { ascending: false })
       .limit(500),
+    // Separate slim query for the 90-day retention diagnostic. Excludes undone
+    // logs (reverted by the undo RPC) since they don't represent real memory
+    // state. Kept narrow (4 columns) so the higher limit is cheap.
+    supabase
+      .from("review_logs")
+      .select("rating, reviewed_at, elapsed_days, scheduled_days")
+      .eq("user_id", owner.id)
+      .eq("undone", false)
+      .gte("reviewed_at", ninetyDaysAgo.toISOString())
+      .order("reviewed_at", { ascending: false })
+      .limit(3000),
     supabase
       .from("review_logs")
       .select("reviewed_at")
@@ -643,6 +665,14 @@ export async function getDashboardSummary() {
     reviewLogs30d.length > 0 ? ratingDistribution.again / reviewLogs30d.length : 0;
   const fsrsCalibrationGap30d = forgettingRate30d - fsrsForgettingRate;
 
+  const diagnosticLogs =
+    (reviewLogs90dDiagnosticResult.data ?? []) as unknown as RetentionDiagnosticLog[];
+  const retentionDiagnostic: RetentionDiagnostic = computeRetentionDiagnostic({
+    desiredRetention: configuredDesiredRetention,
+    logs: diagnosticLogs,
+    now: nowDate,
+  });
+
   // Build mastery heatmap: per-card retrievability grouped by CEFR
   const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "unknown"];
   const masteryCells = progressRows
@@ -703,6 +733,7 @@ export async function getDashboardSummary() {
     }>,
     ratingDistribution,
     recentLogs,
+    retentionDiagnostic,
     retentionForecasts: buildRetentionForecasts(progressRows, nowDate),
     retentionGapSeries14d: buildRetentionGapSeries(
       14,
