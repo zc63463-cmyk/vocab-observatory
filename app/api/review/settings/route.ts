@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { retuneScheduledReviewCard } from "@/lib/review/fsrs-adapter";
 import {
   getUserDesiredRetention,
+  getUserFsrsWeights,
   updateUserDesiredRetentionSetting,
 } from "@/lib/review/settings";
 import type { StoredSchedulerCard } from "@/lib/review/types";
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
 
   let retunedCount = 0;
   if (parsed.data.retuneExisting) {
+    // Personalised weights are baked into every retune call so the new
+    // intervals reflect both the new desired retention AND the user's fitted w.
+    const fsrsWeights = await getUserFsrsWeights(supabase, userId);
     const { data: progressRows, error: progressRowsError } = await supabase
       .from("user_word_progress")
       .select("id, scheduler_payload")
@@ -81,6 +85,7 @@ export async function POST(request: NextRequest) {
         row.scheduler_payload as StoredSchedulerCard | null,
         desiredRetention,
         now,
+        fsrsWeights?.weights ?? null,
       );
 
       if (!retuned) {

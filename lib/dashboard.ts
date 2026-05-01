@@ -11,7 +11,11 @@ import {
   type RetentionDiagnostic,
   type RetentionDiagnosticLog,
 } from "@/lib/review/retention-diagnostics";
-import { REVIEW_RETENTION_PRESETS, readDesiredRetentionSetting } from "@/lib/review/settings";
+import {
+  REVIEW_RETENTION_PRESETS,
+  readDesiredRetentionSetting,
+  readFsrsWeightsSetting,
+} from "@/lib/review/settings";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
@@ -110,6 +114,7 @@ function resolveForecastDueAt(
   row: DashboardProgressRow,
   desiredRetention: number,
   now: Date,
+  weights?: readonly number[] | null,
 ) {
   if (row.state === "suspended") {
     return null;
@@ -123,6 +128,7 @@ function resolveForecastDueAt(
     row.scheduler_payload as StoredSchedulerCard | null,
     desiredRetention,
     now,
+    weights,
   );
 
   return retuned?.dueAt ?? row.due_at;
@@ -236,6 +242,7 @@ export function buildRetentionForecast(
   progressRows: DashboardProgressRow[],
   desiredRetention: number,
   now?: Date,
+  weights?: readonly number[] | null,
 ) {
   const actualNow = now ?? new Date();
   const normalizedRetention = normalizeDesiredRetention(desiredRetention);
@@ -248,7 +255,7 @@ export function buildRetentionForecast(
   let due14d = 0;
 
   for (const row of progressRows) {
-    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow);
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow, weights);
     if (!dueAt) {
       continue;
     }
@@ -275,11 +282,12 @@ export function buildRetentionForecast(
 export function buildRetentionForecasts(
   progressRows: DashboardProgressRow[],
   now?: Date,
+  weights?: readonly number[] | null,
 ) {
   const actualNow = now ?? new Date();
   return REVIEW_RETENTION_PRESETS.map((preset) => ({
     ...preset,
-    ...buildRetentionForecast(progressRows, preset.desiredRetention, actualNow),
+    ...buildRetentionForecast(progressRows, preset.desiredRetention, actualNow, weights),
   })) satisfies RetentionPresetForecast[];
 }
 
@@ -289,6 +297,7 @@ export function buildDailyForecastCalendar(
   days = 14,
   reviewLogs?: Array<{ reviewed_at: string }>,
   now?: Date,
+  weights?: readonly number[] | null,
 ): DailyForecastDay[] {
   const actualNow = now ?? new Date();
   const normalizedRetention = normalizeDesiredRetention(desiredRetention);
@@ -304,7 +313,7 @@ export function buildDailyForecastCalendar(
   }
 
   for (const row of progressRows) {
-    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow);
+    const dueAt = resolveForecastDueAt(row, normalizedRetention, actualNow, weights);
     if (!dueAt) continue;
     const bucket = buckets.find((b) => b.date === toLocalDayKey(dueAt));
     if (bucket) bucket.dueCount += 1;
@@ -577,6 +586,13 @@ export async function getDashboardSummary() {
   const configuredDesiredRetention = readDesiredRetentionSetting(
     profileResult.data?.settings ?? null,
   );
+  // Personalised FSRS weights, read from the same settings JSON the desired
+  // retention lives in. `null` when the user has never trained, which keeps
+  // every downstream calc on ts-fsrs defaults.
+  const fsrsWeightsSetting = readFsrsWeightsSetting(
+    profileResult.data?.settings ?? null,
+  );
+  const fsrsWeights = fsrsWeightsSetting?.weights ?? null;
 
   const retrievabilityValues = progressRows
     .filter((row) => row.state !== "suspended")
@@ -584,6 +600,8 @@ export async function getDashboardSummary() {
       getCurrentRetrievability(
         row.scheduler_payload as StoredSchedulerCard | null,
         row.desired_retention ?? DEFAULT_DESIRED_RETENTION,
+        nowDate,
+        fsrsWeights,
       ),
     )
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
@@ -681,6 +699,8 @@ export async function getDashboardSummary() {
       const retrievability = getCurrentRetrievability(
         row.scheduler_payload as StoredSchedulerCard | null,
         row.desired_retention ?? DEFAULT_DESIRED_RETENTION,
+        nowDate,
+        fsrsWeights,
       );
       return {
         cefr: row.words!.cefr ?? "unknown",
@@ -709,6 +729,7 @@ export async function getDashboardSummary() {
       progressRows,
       configuredDesiredRetention,
       nowDate,
+      fsrsWeights,
     ),
     configured: true,
     forgettingRate30d,
@@ -734,7 +755,7 @@ export async function getDashboardSummary() {
     ratingDistribution,
     recentLogs,
     retentionDiagnostic,
-    retentionForecasts: buildRetentionForecasts(progressRows, nowDate),
+    retentionForecasts: buildRetentionForecasts(progressRows, nowDate, fsrsWeights),
     retentionGapSeries14d: buildRetentionGapSeries(
       14,
       reviewLogs30d,
@@ -750,6 +771,7 @@ export async function getDashboardSummary() {
       14,
       reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
       nowDate,
+      fsrsWeights,
     ),
     masteryCells,
     relationGraph: buildRelationGraph(progressRows),

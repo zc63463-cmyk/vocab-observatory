@@ -140,6 +140,7 @@ function describeQueuePriority(
 function getQueuePrioritySnapshot(
   candidate: ReviewQueueCandidate,
   now = new Date(),
+  weights?: readonly number[] | null,
 ): QueuePrioritySnapshot {
   const dueTimestamp = getDueTimestamp(candidate.due_at);
   const nowTimestamp = now.getTime();
@@ -151,6 +152,7 @@ function getQueuePrioritySnapshot(
     candidate.scheduler_payload,
     candidate.desired_retention ?? DEFAULT_DESIRED_RETENTION,
     now,
+    weights,
   );
   const details = describeQueuePriority(candidate, overdueMs, retrievability);
 
@@ -209,11 +211,12 @@ function getMaxNewCardsPerBatch(limit: number) {
 function scoreReviewQueueItems<T extends ReviewQueueCandidate>(
   items: T[],
   now = new Date(),
+  weights?: readonly number[] | null,
 ) {
   return sortScoredReviewQueueItems(
     items.map((item) => ({
       item,
-      priority: getQueuePrioritySnapshot(item, now),
+      priority: getQueuePrioritySnapshot(item, now, weights),
     })),
   );
 }
@@ -221,16 +224,18 @@ function scoreReviewQueueItems<T extends ReviewQueueCandidate>(
 export function prioritizeReviewQueueItems<T extends ReviewQueueCandidate>(
   items: T[],
   now = new Date(),
+  weights?: readonly number[] | null,
 ) {
-  return scoreReviewQueueItems(items, now).map(({ item }) => item);
+  return scoreReviewQueueItems(items, now, weights).map(({ item }) => item);
 }
 
 export function buildReviewQueueBatch<T extends ReviewQueueCandidate>(
   items: T[],
   now = new Date(),
   limit = REVIEW_QUEUE_BATCH_LIMIT,
+  weights?: readonly number[] | null,
 ): ReviewQueueBatch<T> {
-  const sorted = scoreReviewQueueItems(items, now);
+  const sorted = scoreReviewQueueItems(items, now, weights);
   const maxNewCards = getMaxNewCardsPerBatch(limit);
   const selected: PrioritizedReviewQueueCandidate<T>[] = [];
   let selectedNewCards = 0;

@@ -4,6 +4,7 @@ import {
   REVIEW_QUEUE_CANDIDATE_LIMIT,
 } from "@/lib/review/queue";
 import { getOrCreateReviewSession } from "@/lib/review/session";
+import { getUserFsrsWeights } from "@/lib/review/settings";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import type { ReviewQueueItem, StoredSchedulerCard } from "@/lib/review/types";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
@@ -15,18 +16,26 @@ export async function GET() {
   }
 
   const supabase = ownerSession.supabase!;
-  const session = await getOrCreateReviewSession(supabase, ownerSession.user!.id);
-  const { count, data, error } = await supabase
-    .from("user_word_progress")
-    .select(
-      "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, lang_code, ipa, short_definition, definition_md, metadata, examples)",
-      { count: "exact" },
-    )
-    .eq("user_id", ownerSession.user!.id)
-    .neq("state", "suspended")
-    .lte("due_at", new Date().toISOString())
-    .order("due_at", { ascending: true })
-    .limit(REVIEW_QUEUE_CANDIDATE_LIMIT);
+  const userId = ownerSession.user!.id;
+  const session = await getOrCreateReviewSession(supabase, userId);
+  // Personalised weights influence retrievability ranking inside the queue
+  // builder. Fetched in parallel with the candidate query to avoid an extra
+  // round-trip latency. A null result keeps ts-fsrs defaults active.
+  const [queueResult, fsrsWeights] = await Promise.all([
+    supabase
+      .from("user_word_progress")
+      .select(
+        "id, word_id, state, review_count, due_at, desired_retention, scheduler_payload, content_hash_snapshot, words!inner(slug, title, lemma, lang_code, ipa, short_definition, definition_md, metadata, examples)",
+        { count: "exact" },
+      )
+      .eq("user_id", userId)
+      .neq("state", "suspended")
+      .lte("due_at", new Date().toISOString())
+      .order("due_at", { ascending: true })
+      .limit(REVIEW_QUEUE_CANDIDATE_LIMIT),
+    getUserFsrsWeights(supabase, userId),
+  ]);
+  const { count, data, error } = queueResult;
 
   if (error) {
     throw error;
@@ -54,7 +63,12 @@ export async function GET() {
     };
   }>;
 
-  const batch = buildReviewQueueBatch(rawRows);
+  const batch = buildReviewQueueBatch(
+    rawRows,
+    new Date(),
+    undefined,
+    fsrsWeights?.weights ?? null,
+  );
   const dueToday = count ?? rawRows.length;
   const newCards = rawRows.filter((row) => row.state === "new").length;
 

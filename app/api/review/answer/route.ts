@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { applyReviewAnswer } from "@/lib/review/fsrs-adapter";
+import { getUserFsrsWeights } from "@/lib/review/settings";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 import { incrementSessionCardsSeen } from "@/lib/review/session";
 import { requireOwnerApiSession } from "@/lib/request-auth";
@@ -62,12 +63,17 @@ export async function POST(request: NextRequest) {
 
   const progress = progressData as unknown as ProgressWithContentHash;
 
+  // Personalised weights are loaded once per request — passing null falls
+  // back to ts-fsrs defaults, which is correct for users who haven't trained.
+  const fsrsWeights = await getUserFsrsWeights(supabase, ownerSession.user!.id);
+
   const now = new Date();
   const scheduling = applyReviewAnswer(
     progress.scheduler_payload as StoredSchedulerCard | null,
     parsed.data.rating,
     now,
     progress.desired_retention,
+    fsrsWeights?.weights ?? null,
   );
   const nowIso = now.toISOString();
   const counterField = `${parsed.data.rating}_count` as
