@@ -21,6 +21,20 @@
 
 export const RETENTION_DIAGNOSTIC_MIN_SAMPLES = 50;
 export const RETENTION_DIAGNOSTIC_WINDOW_DAYS = 90;
+/**
+ * Per-bucket sample threshold. We keep it lower than the overall threshold
+ * because splitting by interval class naturally halves each bucket's count,
+ * and demanding 50 per bucket would gate out most real users. 20 still gives
+ * a Wilson CI narrow enough to be useful as a directional signal.
+ */
+export const RETENTION_BUCKET_MIN_SAMPLES = 20;
+/**
+ * Anki/FSRS convention: reviews with scheduled_days ≥ 21 are "mature"; below
+ * that (but ≥ 1, i.e. excluding learning-state) are "young". This threshold
+ * is widely used because it roughly corresponds to when FSRS stability has
+ * stopped growing linearly and starts to exhibit genuine long-term behavior.
+ */
+export const RETENTION_MATURE_THRESHOLD_DAYS = 21;
 /** 95% two-sided z score. */
 export const WILSON_Z_95 = 1.959963984540054;
 
@@ -44,16 +58,33 @@ export type RetentionSuggestionKind =
   | "insufficient-data"
   | "on-target";
 
-export interface RetentionDiagnostic {
+/**
+ * A single retention estimate: fraction of non-"again" answers among due
+ * reviews, with a Wilson CI and a classification against the user's target.
+ * Applied both to the overall population and to per-interval buckets.
+ */
+export interface RetentionSlice {
   againCount: number;
   confidenceInterval: { high: number; low: number } | null;
-  desiredRetention: number;
   dueReviews: number;
   gap: number | null;
   gapSignificant: boolean;
   observedRetention: number | null;
   sampleSufficient: boolean;
   suggestionKind: RetentionSuggestionKind;
+}
+
+export type RetentionBucketKey = "young" | "mature";
+
+export interface RetentionDiagnostic extends RetentionSlice {
+  /**
+   * Per-interval-class breakdown. Each bucket applies the same Wilson CI
+   * machinery over its own filtered logs, with its own sample-sufficiency
+   * threshold. Useful for separating "I'm not learning new cards properly"
+   * (young below target) from "my long-term model is off" (mature below target).
+   */
+  buckets: Record<RetentionBucketKey, RetentionSlice>;
+  desiredRetention: number;
   totalReviews: number;
   windowDays: number;
 }
@@ -151,21 +182,20 @@ function classifySuggestion(
 }
 
 /**
- * Top-level composition. Applies window + due-filter, computes proportion +
- * Wilson CI, and classifies the result against desiredRetention.
+ * Computes a retention slice (proportion + CI + classification) from an
+ * already-filtered set of due logs. Broken out so the overall diagnostic
+ * and each bucket-level diagnostic share exactly one calculation path.
  */
-export function computeRetentionDiagnostic(
-  input: RetentionDiagnosticInput,
-): RetentionDiagnostic {
-  const windowDays = input.windowDays ?? RETENTION_DIAGNOSTIC_WINDOW_DAYS;
-  const now = input.now ?? new Date();
-
-  const windowed = filterLogsWithinWindow(input.logs, now, windowDays);
-  const due = filterDueReviews(windowed);
-  const dueReviews = due.length;
-  const againCount = due.filter((l) => l.rating.toLowerCase() === "again").length;
-
-  const sampleSufficient = dueReviews >= RETENTION_DIAGNOSTIC_MIN_SAMPLES;
+export function computeSlice(
+  dueLogs: RetentionDiagnosticLog[],
+  desiredRetention: number,
+  minSamples: number,
+): RetentionSlice {
+  const dueReviews = dueLogs.length;
+  const againCount = dueLogs.filter(
+    (l) => l.rating.toLowerCase() === "again",
+  ).length;
+  const sampleSufficient = dueReviews >= minSamples;
   const observedRetention = dueReviews > 0 ? 1 - againCount / dueReviews : null;
   // Wilson is computed on the *success* count (non-again among due reviews).
   const ci =
@@ -175,20 +205,84 @@ export function computeRetentionDiagnostic(
   const { kind, significant } = classifySuggestion(
     sampleSufficient,
     ci,
-    input.desiredRetention,
+    desiredRetention,
   );
 
   return {
     againCount,
     confidenceInterval: ci,
-    desiredRetention: input.desiredRetention,
     dueReviews,
     gap:
-      observedRetention != null ? observedRetention - input.desiredRetention : null,
+      observedRetention != null ? observedRetention - desiredRetention : null,
     gapSignificant: significant,
     observedRetention,
     sampleSufficient,
     suggestionKind: kind,
+  };
+}
+
+/**
+ * Partitions due logs by interval class:
+ * - young: 1 ≤ scheduled_days < RETENTION_MATURE_THRESHOLD_DAYS
+ * - mature: scheduled_days ≥ RETENTION_MATURE_THRESHOLD_DAYS
+ *
+ * Assumes inputs are already due-filtered, i.e. scheduled_days is a finite
+ * number ≥ 1. (Guaranteed by `filterDueReviews`.)
+ */
+export function bucketDueLogs(
+  dueLogs: RetentionDiagnosticLog[],
+): Record<RetentionBucketKey, RetentionDiagnosticLog[]> {
+  const young: RetentionDiagnosticLog[] = [];
+  const mature: RetentionDiagnosticLog[] = [];
+  for (const log of dueLogs) {
+    // filterDueReviews guarantees scheduled_days is finite and ≥ 1, but be defensive.
+    const days = log.scheduled_days ?? 0;
+    if (days >= RETENTION_MATURE_THRESHOLD_DAYS) {
+      mature.push(log);
+    } else {
+      young.push(log);
+    }
+  }
+  return { mature, young };
+}
+
+/**
+ * Top-level composition. Applies window + due-filter, computes overall
+ * proportion + Wilson CI, and additionally splits by interval class to
+ * yield per-bucket slices.
+ */
+export function computeRetentionDiagnostic(
+  input: RetentionDiagnosticInput,
+): RetentionDiagnostic {
+  const windowDays = input.windowDays ?? RETENTION_DIAGNOSTIC_WINDOW_DAYS;
+  const now = input.now ?? new Date();
+
+  const windowed = filterLogsWithinWindow(input.logs, now, windowDays);
+  const due = filterDueReviews(windowed);
+  const overall = computeSlice(
+    due,
+    input.desiredRetention,
+    RETENTION_DIAGNOSTIC_MIN_SAMPLES,
+  );
+  const { young, mature } = bucketDueLogs(due);
+  const youngSlice = computeSlice(
+    young,
+    input.desiredRetention,
+    RETENTION_BUCKET_MIN_SAMPLES,
+  );
+  const matureSlice = computeSlice(
+    mature,
+    input.desiredRetention,
+    RETENTION_BUCKET_MIN_SAMPLES,
+  );
+
+  return {
+    ...overall,
+    buckets: {
+      mature: matureSlice,
+      young: youngSlice,
+    },
+    desiredRetention: input.desiredRetention,
     totalReviews: windowed.length,
     windowDays,
   };

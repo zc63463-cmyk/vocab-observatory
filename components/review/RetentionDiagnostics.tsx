@@ -1,6 +1,10 @@
 import {
+  RETENTION_BUCKET_MIN_SAMPLES,
   RETENTION_DIAGNOSTIC_MIN_SAMPLES,
+  RETENTION_MATURE_THRESHOLD_DAYS,
+  type RetentionBucketKey,
   type RetentionDiagnostic,
+  type RetentionSlice,
 } from "@/lib/review/retention-diagnostics";
 
 interface RetentionDiagnosticsProps {
@@ -131,13 +135,141 @@ export function RetentionDiagnostics({ diagnostic }: RetentionDiagnosticsProps) 
         />
       </div>
 
+      <BucketBreakdown diagnostic={diagnostic} />
+
       <p className="mt-3 text-[11px] leading-5 text-[var(--color-ink-soft)]">
         Methodology: only counts reviews where <code>elapsed_days ≥ scheduled_days</code>
         {" "}and <code>scheduled_days ≥ 1</code>, excluding early reviews and learning-state cards
         that would inflate the estimate. Confidence interval uses the Wilson score method.
+        Buckets split at <code>scheduled_days = {RETENTION_MATURE_THRESHOLD_DAYS}</code> (Anki/FSRS convention);
+        each bucket needs ≥ {RETENTION_BUCKET_MIN_SAMPLES} due reviews to produce a directional signal.
       </p>
     </div>
   );
+}
+
+const BUCKET_LABELS: Record<RetentionBucketKey, { interval: string; title: string }> = {
+  young: {
+    interval: `< ${RETENTION_MATURE_THRESHOLD_DAYS}d intervals`,
+    title: "Young cards",
+  },
+  mature: {
+    interval: `≥ ${RETENTION_MATURE_THRESHOLD_DAYS}d intervals`,
+    title: "Mature cards",
+  },
+};
+
+/**
+ * Per-bucket breakdown card. Surfaces the same Wilson-CI metric as the
+ * overall block but split by interval class. Lets the user separate
+ * "consolidation period" misalignment from "long-term memory model"
+ * misalignment — the two often have very different root causes.
+ */
+function BucketBreakdown({ diagnostic }: { diagnostic: RetentionDiagnostic }) {
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      {(Object.keys(BUCKET_LABELS) as RetentionBucketKey[]).map((key) => (
+        <BucketSliceCard
+          key={key}
+          desiredRetention={diagnostic.desiredRetention}
+          intervalDescription={BUCKET_LABELS[key].interval}
+          slice={diagnostic.buckets[key]}
+          title={BUCKET_LABELS[key].title}
+        />
+      ))}
+    </div>
+  );
+}
+
+function BucketSliceCard({
+  desiredRetention,
+  intervalDescription,
+  slice,
+  title,
+}: {
+  desiredRetention: number;
+  intervalDescription: string;
+  slice: RetentionSlice;
+  title: string;
+}) {
+  const tone = sliceTone(slice);
+  return (
+    <div
+      className={`rounded-[1rem] border p-3 ${tone.containerClass}`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-[var(--color-ink)]">{title}</p>
+        <p className="text-[10px] uppercase tracking-wider text-[var(--color-ink-soft)]">
+          {intervalDescription}
+        </p>
+      </div>
+
+      <p className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">
+        {slice.observedRetention != null
+          ? formatPercent(slice.observedRetention, 1)
+          : "—"}
+      </p>
+      <p className="text-[11px] text-[var(--color-ink-soft)]">
+        {slice.confidenceInterval
+          ? `95% CI ${formatPercent(slice.confidenceInterval.low, 1)} – ${formatPercent(slice.confidenceInterval.high, 1)}`
+          : "Insufficient due reviews"}
+      </p>
+
+      <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--color-ink-soft)]">
+        <span>{slice.dueReviews} due reviews</span>
+        <span>
+          {slice.gap != null ? formatSignedPoints(slice.gap, 1) : "—"} vs{" "}
+          {formatPercent(desiredRetention, 0)}
+        </span>
+      </div>
+
+      <p className={`mt-2 text-[11px] leading-4 ${tone.headlineClass}`}>
+        {tone.headline}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Maps a slice classification to a compact one-liner + chip color. Mirrors
+ * the overall component's tone palette so users can scan the page and
+ * intuit which bucket is healthy at a glance.
+ */
+function sliceTone(slice: RetentionSlice): {
+  containerClass: string;
+  headline: string;
+  headlineClass: string;
+} {
+  switch (slice.suggestionKind) {
+    case "above-target":
+      return {
+        containerClass:
+          "border-sky-500/30 bg-sky-500/5",
+        headline: "Reliably above target",
+        headlineClass: "text-sky-700 dark:text-sky-300",
+      };
+    case "below-target":
+      return {
+        containerClass:
+          "border-amber-500/40 bg-amber-500/5",
+        headline: "Reliably below target",
+        headlineClass: "text-amber-700 dark:text-amber-300",
+      };
+    case "on-target":
+      return {
+        containerClass:
+          "border-emerald-500/30 bg-emerald-500/5",
+        headline: "Indistinguishable from target",
+        headlineClass: "text-emerald-700 dark:text-emerald-300",
+      };
+    case "insufficient-data":
+    default:
+      return {
+        containerClass: "border-[var(--color-border)] bg-[var(--color-panel)]",
+        headline: `Need ${RETENTION_BUCKET_MIN_SAMPLES}+ due reviews for a signal`,
+        headlineClass: "text-[var(--color-ink-soft)]",
+      };
+  }
 }
 
 function DiagnosticStat({

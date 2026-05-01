@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  RETENTION_BUCKET_MIN_SAMPLES,
   RETENTION_DIAGNOSTIC_MIN_SAMPLES,
   RETENTION_DIAGNOSTIC_WINDOW_DAYS,
+  RETENTION_MATURE_THRESHOLD_DAYS,
+  bucketDueLogs,
   computeRetentionDiagnostic,
+  computeSlice,
   computeWilsonInterval,
   filterDueReviews,
   type RetentionDiagnosticLog,
@@ -370,5 +374,205 @@ describe("computeRetentionDiagnostic", () => {
     const snapshot = JSON.stringify(logs);
     computeRetentionDiagnostic({ desiredRetention: 0.9, logs, now });
     expect(JSON.stringify(logs)).toBe(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bucketDueLogs
+// ---------------------------------------------------------------------------
+describe("bucketDueLogs", () => {
+  function dueLog(scheduledDays: number): RetentionDiagnosticLog {
+    return mkLog({ elapsed_days: scheduledDays, scheduled_days: scheduledDays });
+  }
+
+  it("partitions empty input into empty buckets", () => {
+    const { young, mature } = bucketDueLogs([]);
+    expect(young).toEqual([]);
+    expect(mature).toEqual([]);
+  });
+
+  it("puts scheduled_days = threshold - 1 into young", () => {
+    const { young, mature } = bucketDueLogs([
+      dueLog(RETENTION_MATURE_THRESHOLD_DAYS - 1),
+    ]);
+    expect(young).toHaveLength(1);
+    expect(mature).toHaveLength(0);
+  });
+
+  it("puts scheduled_days = threshold into mature", () => {
+    const { young, mature } = bucketDueLogs([
+      dueLog(RETENTION_MATURE_THRESHOLD_DAYS),
+    ]);
+    expect(young).toHaveLength(0);
+    expect(mature).toHaveLength(1);
+  });
+
+  it("puts scheduled_days = threshold + 1 into mature", () => {
+    const { young, mature } = bucketDueLogs([
+      dueLog(RETENTION_MATURE_THRESHOLD_DAYS + 1),
+    ]);
+    expect(young).toHaveLength(0);
+    expect(mature).toHaveLength(1);
+  });
+
+  it("partitions a mixed batch deterministically", () => {
+    const logs = [
+      dueLog(1),
+      dueLog(7),
+      dueLog(20),
+      dueLog(21),
+      dueLog(60),
+      dueLog(365),
+    ];
+    const { young, mature } = bucketDueLogs(logs);
+    expect(young).toHaveLength(3);
+    expect(mature).toHaveLength(3);
+  });
+
+  it("preserves the sum of inputs (no loss, no dup)", () => {
+    const logs = Array.from({ length: 30 }, (_, i) => dueLog(i + 1));
+    const { young, mature } = bucketDueLogs(logs);
+    expect(young.length + mature.length).toBe(logs.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeSlice
+// ---------------------------------------------------------------------------
+describe("computeSlice", () => {
+  it("reports zeroes for empty input", () => {
+    const slice = computeSlice([], 0.9, 20);
+    expect(slice).toEqual({
+      againCount: 0,
+      confidenceInterval: null,
+      dueReviews: 0,
+      gap: null,
+      gapSignificant: false,
+      observedRetention: null,
+      sampleSufficient: false,
+      suggestionKind: "insufficient-data",
+    });
+  });
+
+  it("honours the minSamples threshold parameter (bucket vs overall)", () => {
+    // 25 reviews: enough for RETENTION_BUCKET_MIN_SAMPLES (20) but not RETENTION_DIAGNOSTIC_MIN_SAMPLES (50).
+    const logs = generateDueLogs(25, 0);
+    const bucketSlice = computeSlice(logs, 0.9, RETENTION_BUCKET_MIN_SAMPLES);
+    const overallSlice = computeSlice(logs, 0.9, RETENTION_DIAGNOSTIC_MIN_SAMPLES);
+    expect(bucketSlice.sampleSufficient).toBe(true);
+    expect(overallSlice.sampleSufficient).toBe(false);
+  });
+
+  it("classifies above-target when CI entirely exceeds desired", () => {
+    // 98 / 100 good ⇒ observed 0.98, CI roughly [0.93, 0.99] → above 0.9.
+    const logs = generateDueLogs(100, 2);
+    const slice = computeSlice(logs, 0.9, 20);
+    expect(slice.suggestionKind).toBe("above-target");
+  });
+
+  it("classifies below-target when CI entirely below desired", () => {
+    // 75 / 100 good ⇒ observed 0.75, CI roughly [0.66, 0.82] → below 0.9.
+    const logs = generateDueLogs(100, 25);
+    const slice = computeSlice(logs, 0.9, 20);
+    expect(slice.suggestionKind).toBe("below-target");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRetentionDiagnostic with buckets
+// ---------------------------------------------------------------------------
+describe("computeRetentionDiagnostic (buckets)", () => {
+  const now = new Date("2026-04-15T12:00:00Z");
+
+  /** Build N due logs with a target scheduled_days (to land in a specific bucket). */
+  function bucketLogs(
+    total: number,
+    againCount: number,
+    scheduledDays: number,
+    anchorIso = "2026-04-15T00:00:00Z",
+  ): RetentionDiagnosticLog[] {
+    const anchor = new Date(anchorIso).getTime();
+    return Array.from({ length: total }, (_, i) => ({
+      elapsed_days: scheduledDays,
+      rating: i < againCount ? "again" : "good",
+      reviewed_at: new Date(anchor - i * 60 * 60 * 1000).toISOString(),
+      scheduled_days: scheduledDays,
+    }));
+  }
+
+  it("always emits both bucket keys even when empty", () => {
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.9, logs: [], now });
+    expect(d.buckets.young.dueReviews).toBe(0);
+    expect(d.buckets.mature.dueReviews).toBe(0);
+    expect(d.buckets.young.suggestionKind).toBe("insufficient-data");
+    expect(d.buckets.mature.suggestionKind).toBe("insufficient-data");
+  });
+
+  it("routes all logs to the correct bucket based on scheduled_days", () => {
+    const logs = [
+      ...bucketLogs(10, 0, 5, "2026-04-15T08:00:00Z"), // young
+      ...bucketLogs(10, 0, 60, "2026-04-10T08:00:00Z"), // mature
+    ];
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.9, logs, now });
+    expect(d.buckets.young.dueReviews).toBe(10);
+    expect(d.buckets.mature.dueReviews).toBe(10);
+    expect(d.buckets.young.dueReviews + d.buckets.mature.dueReviews).toBe(d.dueReviews);
+  });
+
+  it("diverges suggestions between young and mature when retention actually differs", () => {
+    // Young bucket: 60 perfect reviews → CI low ≈ 0.94, well above 0.9 target.
+    // Mature bucket: 60 reviews with 30 again (50% retention) → CI high ≈ 0.62, well below 0.9.
+    // Desired 0.9.
+    const logs = [
+      ...bucketLogs(60, 0, 5, "2026-04-15T08:00:00Z"),
+      ...bucketLogs(60, 30, 60, "2026-04-10T08:00:00Z"),
+    ];
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.9, logs, now });
+    expect(d.buckets.young.suggestionKind).toBe("above-target");
+    expect(d.buckets.mature.suggestionKind).toBe("below-target");
+  });
+
+  it("marks bucket as insufficient-data when under RETENTION_BUCKET_MIN_SAMPLES", () => {
+    // 30 young (≥20 threshold), 10 mature (below threshold).
+    const logs = [
+      ...bucketLogs(30, 0, 5, "2026-04-15T08:00:00Z"),
+      ...bucketLogs(10, 0, 60, "2026-04-10T08:00:00Z"),
+    ];
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.9, logs, now });
+    expect(d.buckets.young.sampleSufficient).toBe(true);
+    expect(d.buckets.mature.sampleSufficient).toBe(false);
+    expect(d.buckets.mature.suggestionKind).toBe("insufficient-data");
+  });
+
+  it("bucket observedRetention + dueReviews is conserved against overall", () => {
+    const logs = [
+      ...bucketLogs(40, 4, 5, "2026-04-15T08:00:00Z"), // young: 36/40 = 0.9
+      ...bucketLogs(60, 12, 60, "2026-04-10T08:00:00Z"), // mature: 48/60 = 0.8
+    ];
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.85, logs, now });
+    // Overall dueReviews = sum of bucket dueReviews
+    expect(d.dueReviews).toBe(d.buckets.young.dueReviews + d.buckets.mature.dueReviews);
+    // Overall againCount = sum of bucket againCounts
+    expect(d.againCount).toBe(d.buckets.young.againCount + d.buckets.mature.againCount);
+  });
+
+  it("treats 20-day and 21-day scheduled at the canonical boundary", () => {
+    const logs = [
+      ...bucketLogs(
+        25,
+        0,
+        RETENTION_MATURE_THRESHOLD_DAYS - 1,
+        "2026-04-15T08:00:00Z",
+      ),
+      ...bucketLogs(
+        25,
+        0,
+        RETENTION_MATURE_THRESHOLD_DAYS,
+        "2026-04-10T08:00:00Z",
+      ),
+    ];
+    const d = computeRetentionDiagnostic({ desiredRetention: 0.9, logs, now });
+    expect(d.buckets.young.dueReviews).toBe(25);
+    expect(d.buckets.mature.dueReviews).toBe(25);
   });
 });
