@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { revalidatePublicContent } from "@/lib/cache/public";
+import {
+  derivePublicContentScope,
+  revalidatePublicContent,
+} from "@/lib/cache/public";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { canRunImport, jsonError } from "@/lib/request-auth";
 import { syncGitHubWords } from "@/lib/sync/upsertWord";
@@ -12,11 +15,19 @@ async function runImport(request: NextRequest) {
 
   const admin = createAdminSupabaseClient();
   const result = await syncGitHubWords(admin, { triggerType: "api" });
-  revalidatePublicContent();
+
+  // Only invalidate the ISR tags whose underlying content actually changed.
+  // A cron run where every file matched the stored content_hash returns a
+  // scope of `null`, letting the existing cache continue to serve visitors —
+  // this prevents the daily cron from triggering a full cold-start of every
+  // public page (and the Supabase fan-out that comes with it).
+  const scope = derivePublicContentScope(result);
+  const revalidatedTags = scope ? revalidatePublicContent(scope) : [];
 
   return NextResponse.json({
     ok: true,
     ...result,
+    revalidatedTags,
   });
 }
 

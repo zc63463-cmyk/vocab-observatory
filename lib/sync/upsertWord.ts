@@ -481,6 +481,7 @@ export async function syncGitHubWords(
       created: plan.create.length,
       collectionNotesCreated: collectionNotesAvailable ? collectionPlan.create.length : 0,
       collectionNotesImported: collectionNotesAvailable ? incomingCollectionNotes.length : 0,
+      collectionNotesSoftDeleted: collectionNotesAvailable ? collectionPlan.softDelete.length : 0,
       collectionNotesUpdated: collectionNotesAvailable ? collectionPlan.update.length : 0,
       errorCount: importErrors.length,
       imported: incomingWords.length,
