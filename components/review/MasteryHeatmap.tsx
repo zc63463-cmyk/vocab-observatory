@@ -71,6 +71,10 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
   const [, startTransition] = useTransition();
   const prefetchedRef = useRef<Set<string>>(new Set());
 
+  useEffect(() => {
+    prefetchedRef.current = new Set();
+  }, [cells]);
+
   const prefetchWord = useCallback(
     (slug: string) => {
       if (!slug || prefetchedRef.current.has(slug)) return;
@@ -89,6 +93,20 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     },
     [router],
   );
+
+  useEffect(() => {
+    if (!previewSlug) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewSlug(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [previewSlug]);
 
   useEffect(() => {
     if (!previewSlug) return;
@@ -408,8 +426,14 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
           <div
             className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
             onClick={() => setPreviewSlug(null)}
+            aria-hidden="true"
           />
-          <div className="fixed left-1/2 top-1/2 z-[61] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[2rem] bg-[var(--color-surface-strong)] p-8 shadow-2xl ring-1 ring-[var(--color-border)]">
+          <div
+            className="fixed left-1/2 top-1/2 z-[61] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[2rem] bg-[var(--color-surface-strong)] p-8 shadow-2xl ring-1 ring-[var(--color-border)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mastery-preview-title"
+          >
             <button
               className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-surface-soft)] text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)]"
               onClick={() => setPreviewSlug(null)}
@@ -423,7 +447,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-soft)] opacity-60">
               {previewCell.cefr}
             </div>
-            <h3 className="text-2xl font-bold text-[var(--color-ink)]">{previewCell.lemma}</h3>
+            <h3 id="mastery-preview-title" className="text-2xl font-bold text-[var(--color-ink)]">{previewCell.lemma}</h3>
 
             <div className="mt-4 flex items-center gap-3">
               <span
