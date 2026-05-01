@@ -6,11 +6,14 @@ import {
   type OptimizerLog,
 } from "@/lib/review/fsrs-optimizer";
 import {
-  getUserFsrsWeights,
   updateUserFsrsWeightsSetting,
   type FsrsWeightsSetting,
   FSRS_WEIGHTS_SETTING_VERSION,
 } from "@/lib/review/settings";
+import {
+  getFsrsTrainingStatus,
+  type FsrsTrainingStatus,
+} from "@/lib/review/training-status";
 import { requireOwnerApiSession } from "@/lib/request-auth";
 import type { Database } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -84,68 +87,17 @@ async function fetchOptimizerLogs(
   return out;
 }
 
-async function countUserReviewLogs(
-  supabase: AppSupabaseClient,
-  userId: string,
-): Promise<number> {
-  const { count, error } = await supabase
-    .from("review_logs")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("undone", false);
-
-  if (error) {
-    throw error;
-  }
-
-  return count ?? 0;
-}
-
-interface EligibilityPayload {
-  canTrain: boolean;
-  minRequired: number;
-  totalReviews: number;
-}
-
-/**
- * Common GET-style payload also used by POST/DELETE responses so the UI can
- * re-render against a single shape.
- */
-interface TrainStatusPayload {
-  eligibility: EligibilityPayload;
-  weights: FsrsWeightsSetting | null;
-}
-
-async function buildStatus(
-  supabase: AppSupabaseClient,
-  userId: string,
-): Promise<TrainStatusPayload> {
-  const [weights, totalReviews] = await Promise.all([
-    getUserFsrsWeights(supabase, userId),
-    countUserReviewLogs(supabase, userId),
-  ]);
-
-  return {
-    eligibility: {
-      canTrain: totalReviews >= MIN_REVIEWS_FOR_TRAINING,
-      minRequired: MIN_REVIEWS_FOR_TRAINING,
-      totalReviews,
-    },
-    weights,
-  };
-}
-
 export async function GET() {
   const ownerSession = await requireOwnerApiSession();
   if (ownerSession.response) {
     return ownerSession.response;
   }
 
-  const status = await buildStatus(
+  const status = await getFsrsTrainingStatus(
     ownerSession.supabase!,
     ownerSession.user!.id,
   );
-  return NextResponse.json(status);
+  return NextResponse.json(status satisfies FsrsTrainingStatus);
 }
 
 export async function POST(request: NextRequest) {
@@ -213,10 +165,10 @@ export async function POST(request: NextRequest) {
 
   await updateUserFsrsWeightsSetting(supabase, userId, payload, nowIso);
 
-  // Re-build status from DB so we return the exact persisted shape — guards
+  // Re-fetch status from DB so we return the exact persisted shape — guards
   // against any silent normalisation in the read path.
-  const status = await buildStatus(supabase, userId);
-  return NextResponse.json(status);
+  const status = await getFsrsTrainingStatus(supabase, userId);
+  return NextResponse.json(status satisfies FsrsTrainingStatus);
 }
 
 export async function DELETE() {
@@ -230,6 +182,6 @@ export async function DELETE() {
   const nowIso = new Date().toISOString();
 
   await updateUserFsrsWeightsSetting(supabase, userId, null, nowIso);
-  const status = await buildStatus(supabase, userId);
-  return NextResponse.json(status);
+  const status = await getFsrsTrainingStatus(supabase, userId);
+  return NextResponse.json(status satisfies FsrsTrainingStatus);
 }

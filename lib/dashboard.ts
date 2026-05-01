@@ -16,6 +16,10 @@ import {
   readDesiredRetentionSetting,
   readFsrsWeightsSetting,
 } from "@/lib/review/settings";
+import {
+  buildFsrsTrainingStatus,
+  type FsrsTrainingStatus,
+} from "@/lib/review/training-status";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
@@ -476,6 +480,7 @@ export async function getDashboardSummary() {
         desiredRetention: DEFAULT_DESIRED_RETENTION,
         logs: [],
       }),
+      fsrsTrainingStatus: buildFsrsTrainingStatus(null, 0) satisfies FsrsTrainingStatus,
       retentionForecasts: emptyPresetForecasts,
       retentionGapSeries14d: [] as RetentionGapPoint[],
       reviewVolume30d: [] as Array<{ count: number; date: string }>,
@@ -518,6 +523,7 @@ export async function getDashboardSummary() {
     notesCountResult,
     activeSessionResult,
     profileResult,
+    totalReviewLogCountResult,
   ] = await Promise.all([
     supabase
       .from("user_word_progress")
@@ -565,6 +571,13 @@ export async function getDashboardSummary() {
       .limit(1)
       .maybeSingle(),
     supabase.from("profiles").select("settings").eq("id", owner.id).maybeSingle(),
+    // Total non-undone review log count — used to gate the FSRS training UI.
+    // Cheap HEAD-only count over an indexed user_id column.
+    supabase
+      .from("review_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", owner.id)
+      .eq("undone", false),
   ]);
 
   const progressRows = (progressResult.data ?? []) as unknown as DashboardProgressRow[];
@@ -593,6 +606,13 @@ export async function getDashboardSummary() {
     profileResult.data?.settings ?? null,
   );
   const fsrsWeights = fsrsWeightsSetting?.weights ?? null;
+  // Wrap weights + total log count into the shape the training UI expects.
+  // The count comes from a HEAD query — null on error is treated as zero so
+  // we never offer training on bogus data.
+  const fsrsTrainingStatus = buildFsrsTrainingStatus(
+    fsrsWeightsSetting,
+    totalReviewLogCountResult.count ?? 0,
+  );
 
   const retrievabilityValues = progressRows
     .filter((row) => row.state !== "suspended")
@@ -755,6 +775,7 @@ export async function getDashboardSummary() {
     ratingDistribution,
     recentLogs,
     retentionDiagnostic,
+    fsrsTrainingStatus,
     retentionForecasts: buildRetentionForecasts(progressRows, nowDate, fsrsWeights),
     retentionGapSeries14d: buildRetentionGapSeries(
       14,
