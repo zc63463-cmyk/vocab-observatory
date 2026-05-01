@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { useToast } from "@/components/ui/Toast";
 import type { OwnerWordReviewLogEntry } from "@/lib/owner-word-sidebar";
 
 interface WordReviewTimelineProps {
   logs: OwnerWordReviewLogEntry[];
+  progressId?: string | null;
 }
 
 const RATING_COLORS: Record<string, string> = {
@@ -35,7 +38,36 @@ function formatDays(days: number | null): string {
   return `${(days / 365).toFixed(1)} 年`;
 }
 
-export function WordReviewTimeline({ logs }: WordReviewTimelineProps) {
+export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps) {
+  const router = useRouter();
+  const { addToast } = useToast();
+  const [submitting, setSubmitting] = useState(false);
+  const [, startTransition] = useTransition();
+
+  async function handleReviewNow() {
+    if (!progressId || submitting) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/review/rejoin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progressId }),
+      });
+      const payload = (await response.json()) as { error?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "立即复习失败");
+      }
+      addToast("已加入今日复习队列", "success");
+      startTransition(() => {
+        router.push("/review/zen");
+      });
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "立即复习失败", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const stats = useMemo(() => {
     if (logs.length === 0) return null;
     const ratingCounts = { again: 0, hard: 0, good: 0, easy: 0 };
@@ -88,6 +120,92 @@ export function WordReviewTimeline({ logs }: WordReviewTimelineProps) {
     return { height, maxDays, path, points, stepX, width };
   }, [logs]);
 
+  const weekGrid = useMemo(() => {
+    if (logs.length < 30) return null;
+    const dayMap = new Map<string, OwnerWordReviewLogEntry>();
+    for (const log of logs) {
+      const key = formatDate(log.reviewed_at);
+      dayMap.set(key, log);
+    }
+    const firstDate = new Date(logs[0].reviewed_at);
+    if (Number.isNaN(firstDate.getTime())) return null;
+    firstDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const start = new Date(firstDate);
+    start.setDate(firstDate.getDate() - firstDate.getDay());
+    const end = new Date(today);
+    end.setDate(today.getDate() + (6 - today.getDay()));
+
+    const weeks: Array<Array<{ date: Date; log: OwnerWordReviewLogEntry | null }>> = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const week: Array<{ date: Date; log: OwnerWordReviewLogEntry | null }> = [];
+      for (let i = 0; i < 7; i += 1) {
+        const key = formatDate(cursor.toISOString());
+        week.push({ date: new Date(cursor), log: dayMap.get(key) ?? null });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      weeks.push(week);
+    }
+
+    const cell = 5;
+    const gap = 1;
+    const stride = cell + gap;
+    return {
+      cell,
+      gap,
+      height: 7 * stride - gap,
+      stride,
+      weeks,
+      width: weeks.length * stride - gap,
+    };
+  }, [logs]);
+
+  // FSRS retrievability per review attempt: R = (1 + elapsed_days / (9 * prev_stability)) ^ -1
+  // Uses previous log's stability so it represents memory probability *at the moment of recall*.
+  // First review has no prior stability and is omitted.
+  const retrievabilityChart = useMemo(() => {
+    if (logs.length < 2) return null;
+    const points: Array<{ idx: number; r: number; rating: string; reviewedAt: string }> = [];
+    for (let i = 1; i < logs.length; i += 1) {
+      const log = logs[i];
+      const prev = logs[i - 1];
+      const elapsed = log.elapsed_days;
+      const prevStability = prev.stability;
+      if (
+        elapsed == null ||
+        !Number.isFinite(elapsed) ||
+        elapsed < 0 ||
+        prevStability == null ||
+        !Number.isFinite(prevStability) ||
+        prevStability <= 0
+      ) {
+        continue;
+      }
+      const r = 1 / (1 + elapsed / (9 * prevStability));
+      if (!Number.isFinite(r)) continue;
+      points.push({
+        idx: i,
+        r: Math.max(0, Math.min(1, r)),
+        rating: log.rating.toLowerCase(),
+        reviewedAt: log.reviewed_at,
+      });
+    }
+    if (points.length === 0) return null;
+    const width = 280;
+    const height = 50;
+    const stepX = points.length > 1 ? width / (points.length - 1) : 0;
+    const yOf = (r: number) => height - r * (height - 6) - 3;
+    const path = points
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${(i * stepX).toFixed(1)} ${yOf(p.r).toFixed(1)}`)
+      .join(" ");
+    const referenceY = yOf(0.9);
+    const avgR = points.reduce((sum, p) => sum + p.r, 0) / points.length;
+    return { avgR, height, path, points, referenceY, stepX, width, yOf };
+  }, [logs]);
+
   if (logs.length === 0 || !stats) {
     return null;
   }
@@ -116,24 +234,66 @@ export function WordReviewTimeline({ logs }: WordReviewTimelineProps) {
 
       <div className="mt-5">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-soft)] opacity-70">
-          评分轨迹
+          {weekGrid ? "复习日历" : "评分轨迹"}
         </p>
-        <div className="flex flex-wrap gap-1">
-          {logs.map((log, idx) => {
-            const rating = log.rating.toLowerCase();
-            const color = RATING_COLORS[rating] ?? "#94a3b8";
-            const label = RATING_LABELS[rating] ?? log.rating;
-            return (
-              <span
-                key={`${log.reviewed_at}-${idx}`}
-                className="inline-block h-3 w-3 rounded-sm transition-transform hover:scale-150"
-                style={{ backgroundColor: color }}
-                title={`${formatDate(log.reviewed_at)} · ${label}${log.scheduled_days != null ? ` · 下次 ${formatDays(log.scheduled_days)}` : ""}`}
-                aria-label={`第 ${idx + 1} 次复习：${label}`}
-              />
-            );
-          })}
-        </div>
+        {weekGrid ? (
+          <svg
+            viewBox={`0 0 ${weekGrid.width} ${weekGrid.height}`}
+            className="w-full"
+            style={{ maxHeight: "60px" }}
+            role="img"
+            aria-label="按日聚合的复习日历"
+          >
+            {weekGrid.weeks.map((week, weekIdx) =>
+              week.map((day, dayIdx) => {
+                const x = weekIdx * weekGrid.stride;
+                const y = dayIdx * weekGrid.stride;
+                const rating = day.log?.rating.toLowerCase();
+                const color = rating
+                  ? (RATING_COLORS[rating] ?? "#94a3b8")
+                  : "rgba(148,163,184,0.15)";
+                const dateLabel = `${day.date.getFullYear()}-${String(day.date.getMonth() + 1).padStart(2, "0")}-${String(day.date.getDate()).padStart(2, "0")}`;
+                return (
+                  <rect
+                    key={`${weekIdx}-${dayIdx}`}
+                    x={x}
+                    y={y}
+                    width={weekGrid.cell}
+                    height={weekGrid.cell}
+                    rx={1}
+                    fill={color}
+                  >
+                    {day.log ? (
+                      <title>
+                        {dateLabel} · {RATING_LABELS[rating ?? ""] ?? day.log.rating}
+                        {day.log.scheduled_days != null ? ` · 下次 ${formatDays(day.log.scheduled_days)}` : ""}
+                      </title>
+                    ) : (
+                      <title>{dateLabel} · 未复习</title>
+                    )}
+                  </rect>
+                );
+              }),
+            )}
+          </svg>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {logs.map((log, idx) => {
+              const rating = log.rating.toLowerCase();
+              const color = RATING_COLORS[rating] ?? "#94a3b8";
+              const label = RATING_LABELS[rating] ?? log.rating;
+              return (
+                <span
+                  key={`${log.reviewed_at}-${idx}`}
+                  className="inline-block h-3 w-3 rounded-sm transition-transform hover:scale-150"
+                  style={{ backgroundColor: color }}
+                  title={`${formatDate(log.reviewed_at)} · ${label}${log.scheduled_days != null ? ` · 下次 ${formatDays(log.scheduled_days)}` : ""}`}
+                  aria-label={`第 ${idx + 1} 次复习：${label}`}
+                />
+              );
+            })}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-[var(--color-ink-soft)]">
           {(["again", "hard", "good", "easy"] as const).map((key) => (
             <span key={key} className="inline-flex items-center gap-1">
@@ -193,9 +353,79 @@ export function WordReviewTimeline({ logs }: WordReviewTimelineProps) {
         </div>
       )}
 
-      <p className="mt-4 text-[11px] text-[var(--color-ink-soft)] opacity-60">
-        最近一次：{formatDate(stats.lastReviewed)} · {RATING_LABELS[stats.lastRating.toLowerCase()] ?? stats.lastRating}
-      </p>
+      {retrievabilityChart && (
+        <div className="mt-5">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-soft)] opacity-70">
+            回忆概率（平均 {Math.round(retrievabilityChart.avgR * 100)}%）
+          </p>
+          <svg
+            viewBox={`0 0 ${retrievabilityChart.width} ${retrievabilityChart.height}`}
+            className="h-12 w-full"
+            role="img"
+            aria-label="每次复习时的回忆概率折线"
+          >
+            <line
+              x1={0}
+              x2={retrievabilityChart.width}
+              y1={retrievabilityChart.referenceY}
+              y2={retrievabilityChart.referenceY}
+              stroke="var(--color-ink-soft)"
+              strokeWidth={0.5}
+              strokeDasharray="3 3"
+              opacity={0.4}
+            />
+            <text
+              x={retrievabilityChart.width - 2}
+              y={retrievabilityChart.referenceY - 2}
+              textAnchor="end"
+              fontSize={8}
+              fill="var(--color-ink-soft)"
+              opacity={0.6}
+            >
+              90%
+            </text>
+            <path
+              d={retrievabilityChart.path}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {retrievabilityChart.points.map((p, idx) => {
+              const x = idx * retrievabilityChart.stepX;
+              const y = retrievabilityChart.yOf(p.r);
+              const color = RATING_COLORS[p.rating] ?? "#94a3b8";
+              return (
+                <circle key={`${p.reviewedAt}-${idx}`} cx={x} cy={y} r={2.2} fill={color}>
+                  <title>
+                    {formatDate(p.reviewedAt)} · 回忆前概率 {Math.round(p.r * 100)}% · {RATING_LABELS[p.rating] ?? p.rating}
+                  </title>
+                </circle>
+              );
+            })}
+          </svg>
+          <p className="mt-1 text-[10px] text-[var(--color-ink-soft)] opacity-60">
+            FSRS 估算：复习开始时仍能记得的概率（虚线为 90% 保留度参考）。
+          </p>
+        </div>
+      )}
+
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-[var(--color-ink-soft)] opacity-60">
+          最近一次：{formatDate(stats.lastReviewed)} · {RATING_LABELS[stats.lastRating.toLowerCase()] ?? stats.lastRating}
+        </p>
+        {progressId ? (
+          <button
+            type="button"
+            onClick={handleReviewNow}
+            disabled={submitting}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 px-3 py-1.5 text-[11px] font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-accent)]/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {submitting ? "加入中…" : "立即复习此词 →"}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

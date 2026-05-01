@@ -357,7 +357,10 @@ export function OwnerWordSidebar({
         wordId={wordId}
         initialProgress={sidebarState.progress}
       />
-      <WordReviewTimeline logs={sidebarState.reviewLogs} />
+      <WordReviewTimeline
+        logs={sidebarState.reviewLogs}
+        progressId={sidebarState.progress?.id ?? null}
+      />
       <RelatedWordsReviewBatchButton wordIds={uniqueRelatedReviewWordIds} />
       <WordNotes
         wordId={wordId}
