@@ -20,6 +20,7 @@ import { useOmniStore } from "@/components/omni/useOmniStore";
 import type { ReviewQueueItem } from "@/lib/review/types";
 import type { ZenState, ZenAction, RatingKey, ZenReviewedItem, ZenUiState } from "./types";
 import { RATING_CONFIG } from "./types";
+import { recomputeCanUndo } from "./undo-logic";
 
 interface ZenContextValue extends ZenState {
   // Actions
@@ -324,12 +325,14 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           durationMs,
           canUndo: true,
         };
+        // Recompute canUndo across the whole session history. The new rating
+        // is the latest for its card; older logs of the SAME card lose
+        // canUndo, but other cards' latest logs keep it. This mirrors the
+        // backend's "latest non-undone log per card" rule and enables
+        // arbitrary-order undo across different cards.
         setUiState((prev) => ({
           ...prev,
-          sessionHistory: [
-            { ...historyItem, canUndo: true },
-            ...prev.sessionHistory.map((h) => ({ ...h, canUndo: false })),
-          ],
+          sessionHistory: recomputeCanUndo([historyItem, ...prev.sessionHistory]),
         }));
 
         const nextItems = state.items.slice(1);
@@ -445,14 +448,17 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       try {
         const restoredItem = await submitUndo(reviewLogId);
 
-        // Mark history item as undone; no item gets canUndo after undo
+        // Mark the target log as undone, then recompute canUndo for the
+        // whole history. Crucially, this may "revive" an older log of the
+        // same card by making it the latest non-undone entry again,
+        // enabling chained undo-across-history workflows.
         setUiState((prev) => ({
           ...prev,
           isUndoing: false,
-          sessionHistory: prev.sessionHistory.map((h) =>
-            h.id === reviewLogId
-              ? { ...h, undone: true, canUndo: false }
-              : h
+          sessionHistory: recomputeCanUndo(
+            prev.sessionHistory.map((h) =>
+              h.id === reviewLogId ? { ...h, undone: true } : h,
+            ),
           ),
         }));
 

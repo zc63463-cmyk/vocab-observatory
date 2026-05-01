@@ -120,7 +120,7 @@ export function ZenHistoryDrawer({ isOpen, onClose, history, onUndo, isUndoing }
               <p className="text-[10px] text-[var(--color-ink-soft)] opacity-50">
                 按 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1 py-0.5 font-mono text-[10px]">H</kbd> 关闭抽屉
                 {history.some((h) => h.canUndo && !h.undone) && (
-                  <span className="ml-2">· 撤销功能开发中</span>
+                  <span className="ml-2">· 点击 ↶ 撤销对应卡片的最新评分</span>
                 )}
               </p>
             </div>
