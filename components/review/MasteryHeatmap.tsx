@@ -72,6 +72,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
   const prefetchedRef = useRef<Set<string>>(new Set());
   const previewPanelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const lastTriggerRef = useRef<SVGCircleElement | null>(null);
 
   useEffect(() => {
     prefetchedRef.current = new Set();
@@ -146,11 +147,15 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
       cancelAnimationFrame(af);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      const trigger = lastTriggerRef.current;
       const prev = previousFocusRef.current;
-      if (prev && typeof prev.focus === "function" && document.body.contains(prev)) {
+      if (trigger && document.body.contains(trigger)) {
+        trigger.focus();
+      } else if (prev && typeof prev.focus === "function" && document.body.contains(prev)) {
         prev.focus();
       }
       previousFocusRef.current = null;
+      lastTriggerRef.current = null;
     };
   }, [isPreviewOpen]);
 
@@ -273,7 +278,26 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
       .attr("stroke", "#ffffff")
       .attr("stroke-width", 1.8)
       .attr("cursor", "pointer")
+      .attr("tabindex", 0)
+      .attr("role", "button")
+      .attr("aria-label", (d) => `${d.lemma}，记忆概率 ${Math.round(d.retrievability * 100)}%`)
       .style("transition", "filter 0.15s")
+      .style("outline", "none")
+      .on("focus", function () {
+        d3.select(this).attr("stroke", "var(--color-accent)").attr("stroke-width", 2.5);
+      })
+      .on("blur", function () {
+        d3.select(this).attr("stroke", "#ffffff").attr("stroke-width", 1.8);
+      })
+      .on("keydown", function (event: KeyboardEvent, d) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          lastTriggerRef.current = this as SVGCircleElement;
+          setTooltip(null);
+          prefetchWord(d.slug);
+          setPreviewSlug(d.slug);
+        }
+      })
       .on("mouseenter", (event, d) => {
         prefetchWord(d.slug);
         d3.selectAll<SVGCircleElement, GraphNode>("circle").style("filter", (n) =>
@@ -303,7 +327,8 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
         d3.selectAll("circle").style("filter", null);
         setTooltip(null);
       })
-      .on("click", (_event, d) => {
+      .on("click", function (_event, d) {
+        lastTriggerRef.current = this as SVGCircleElement;
         setTooltip(null);
         prefetchWord(d.slug);
         setPreviewSlug(d.slug);
