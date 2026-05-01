@@ -244,36 +244,22 @@ export async function updateUserDesiredRetentionSetting(
   desiredRetention: number,
   nowIso: string,
 ) {
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("settings")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (profileError) {
-    throw profileError;
-  }
-
-  const nextSettings = writeDesiredRetentionSetting(
-    profile?.settings ?? null,
-    desiredRetention,
-  );
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({
-      settings: nextSettings,
-      updated_at: nowIso,
-    })
-    .eq("id", userId)
-    .select("settings")
-    .single();
+  // Atomic jsonb_set via RPC — prevents a concurrent fsrs_weights write
+  // from clobbering this desired_retention update (the old read-modify-write
+  // pattern would lose one of them when both fired in the same window).
+  const normalized = normalizeDesiredRetention(desiredRetention);
+  const { data, error } = await supabase.rpc("upsert_profile_review_setting", {
+    p_user_id: userId,
+    p_key: "desired_retention",
+    p_value: asJson(normalized),
+    p_now: nowIso,
+  });
 
   if (error) {
     throw error;
   }
 
-  return readDesiredRetentionSetting(data.settings);
+  return readDesiredRetentionSetting(data ?? null);
 }
 
 /**
@@ -304,34 +290,28 @@ export async function updateUserFsrsWeightsSetting(
   payload: FsrsWeightsSetting | null,
   nowIso: string,
 ) {
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("settings")
-    .eq("id", userId)
-    .maybeSingle();
+  // Same atomic RPC pattern as desired_retention — the DB merge guarantees
+  // we never overwrite a concurrently-changed desired_retention value. A
+  // null payload deletes the `fsrs_weights` key; a non-null value upserts.
+  const jsonValue: Json | null = payload
+    ? asJson({
+        sample_size: payload.sampleSize,
+        trained_at: payload.trainedAt,
+        version: payload.version,
+        weights: [...payload.weights],
+      })
+    : null;
 
-  if (profileError) {
-    throw profileError;
-  }
-
-  const nextSettings = writeFsrsWeightsSetting(
-    profile?.settings ?? null,
-    payload,
-  );
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({
-      settings: nextSettings,
-      updated_at: nowIso,
-    })
-    .eq("id", userId)
-    .select("settings")
-    .single();
+  const { data, error } = await supabase.rpc("upsert_profile_review_setting", {
+    p_user_id: userId,
+    p_key: "fsrs_weights",
+    p_value: jsonValue,
+    p_now: nowIso,
+  });
 
   if (error) {
     throw error;
   }
 
-  return readFsrsWeightsSetting(data.settings);
+  return readFsrsWeightsSetting(data ?? null);
 }

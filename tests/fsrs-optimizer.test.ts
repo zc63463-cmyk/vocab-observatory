@@ -145,3 +145,28 @@ describe("trainFsrsWeights sample-size gate", () => {
     );
   });
 });
+
+describe("buildOptimizerItems filtered review accounting", () => {
+  // Covers the L3 fix: `sampleSize` reported by `trainFsrsWeights` is the
+  // sum of per-item review counts here, so consumers can rely on these
+  // numbers reflecting what the optimizer actually saw, not the raw DB
+  // row count.
+  it("total review count across items equals valid-input count", () => {
+    const items = buildOptimizerItems([
+      log({ progress_id: "a", reviewed_at: "2026-04-15T00:00:00Z" }),
+      log({ progress_id: "a", reviewed_at: "2026-04-16T00:00:00Z" }),
+      log({ progress_id: "b", reviewed_at: "2026-04-15T00:00:00Z" }),
+      // Three below should all be dropped:
+      log({ progress_id: null }),
+      log({ rating: "typo" }),
+      log({ reviewed_at: "not-a-date" }),
+    ]);
+    const totalReviews = items.reduce(
+      (sum, item) => sum + item.reviews.length,
+      0,
+    );
+    expect(totalReviews).toBe(3);
+    // And items are per-card, not per-log
+    expect(items).toHaveLength(2);
+  });
+});

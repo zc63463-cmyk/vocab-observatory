@@ -46,6 +46,13 @@ type AppSupabaseClient = SupabaseClient<Database>;
  * Pages through `review_logs` for the given user, returning rows in the
  * exact shape the optimizer expects. Skips undone logs since those have
  * been reverted by the undo flow and do not represent real recall events.
+ *
+ * When a user exceeds `MAX_LOGS_TO_FETCH`, we keep the **most recent**
+ * reviews rather than the earliest. Descending iteration combined with
+ * a global cap ensures recent behaviour dominates training — reversing
+ * the old behaviour which would have trained on stale review patterns.
+ * Per-card chronological order is restored inside `buildOptimizerItems`
+ * (it sorts each card's reviews by timestamp before computing delta_t).
  */
 async function fetchOptimizerLogs(
   supabase: AppSupabaseClient,
@@ -60,7 +67,7 @@ async function fetchOptimizerLogs(
       .select("progress_id, rating, reviewed_at")
       .eq("user_id", userId)
       .eq("undone", false)
-      .order("reviewed_at", { ascending: true })
+      .order("reviewed_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) {

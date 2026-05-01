@@ -157,6 +157,16 @@ export async function trainFsrsWeights(
     throw new Error("No valid review groups found after filtering");
   }
 
+  // `sampleSize` reports the actual count fed into the optimizer, i.e. after
+  // dropping logs with null progress_id, unknown ratings, or bad timestamps.
+  // Reporting `logs.length` instead would overcount when the DB has junk rows
+  // and mislead the UI (e.g. "Trained on 2500 reviews" when only 2100 were
+  // usable).
+  const effectiveSampleSize = items.reduce(
+    (sum, item) => sum + item.reviews.length,
+    0,
+  );
+
   // Dynamic import so the heavier binding (WASI blob) is only loaded when
   // training actually runs — critical for cold-start latency on serverless.
   const binding = await import("@open-spaced-repetition/binding");
@@ -174,5 +184,5 @@ export async function trainFsrsWeights(
     timeout: options.timeout,
   });
 
-  return { sampleSize: logs.length, weights };
+  return { sampleSize: effectiveSampleSize, weights };
 }

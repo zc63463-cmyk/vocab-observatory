@@ -448,6 +448,15 @@ export interface Database {
           out_error_message: string | null;
         }[];
       };
+      upsert_profile_review_setting: {
+        Args: {
+          p_user_id: string;
+          p_key: string;
+          p_value: Json | null;
+          p_now: string;
+        };
+        Returns: Json;
+      };
     };
     Enums: {
       review_rating: ReviewRating;
