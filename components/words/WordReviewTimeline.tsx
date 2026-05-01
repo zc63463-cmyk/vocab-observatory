@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/ui/Toast";
 import type { OwnerWordReviewLogEntry } from "@/lib/owner-word-sidebar";
+import { submitReviewRejoin } from "@/lib/review/rejoin-client";
 import {
   buildWeekGrid,
   computeRetrievabilityPoints,
@@ -69,28 +70,19 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
   async function handleReviewNow() {
     if (!progressId || submitting) return;
     setSubmitting(true);
-    try {
-      const response = await fetch("/api/review/rejoin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progressId }),
-      });
-      const payload = (await response.json()) as { error?: string; ok?: boolean };
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "立即复习失败");
-      }
-      if (!mountedRef.current) return;
-      addToast("已加入今日复习队列", "success");
-      startTransition(() => {
-        router.push("/review/zen");
-      });
-      // Keep submitting=true: page navigation is in-flight; resetting would briefly
-      // re-enable the button for double-clicks. Component unmounts on route change.
-    } catch (error) {
-      if (!mountedRef.current) return;
-      addToast(error instanceof Error ? error.message : "立即复习失败", "error");
+    const result = await submitReviewRejoin(progressId);
+    if (!mountedRef.current) return;
+    if (!result.ok) {
+      addToast(result.errorMessage ?? "立即复习失败", "error");
       setSubmitting(false);
+      return;
     }
+    addToast("已加入今日复习队列", "success");
+    startTransition(() => {
+      router.push("/review/zen");
+    });
+    // Keep submitting=true: page navigation is in-flight; resetting would briefly
+    // re-enable the button for double-clicks. Component unmounts on route change.
   }
 
   const sortedLogs = useMemo(() => normalizeReviewLogs(logs), [logs]);
