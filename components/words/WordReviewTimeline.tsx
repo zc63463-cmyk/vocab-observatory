@@ -4,8 +4,20 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/ui/Toast";
 import type { OwnerWordReviewLogEntry } from "@/lib/owner-word-sidebar";
+import {
+  buildWeekGrid,
+  computeRetrievabilityPoints,
+  computeReviewStats,
+  normalizeReviewLogs,
+} from "@/lib/review/timeline-analytics";
 
 const MAX_WEEK_GRID_COLUMNS = 52;
+const CHART_WIDTH = 280;
+const INTERVAL_CHART_HEIGHT = 60;
+const RETRIEVABILITY_CHART_HEIGHT = 50;
+const GRID_CELL = 5;
+const GRID_GAP = 1;
+const GRID_STRIDE = GRID_CELL + GRID_GAP;
 
 interface WordReviewTimelineProps {
   logs: OwnerWordReviewLogEntry[];
@@ -81,48 +93,8 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
     }
   }
 
-  // Defensive: filter logs with invalid reviewed_at and re-sort ascending so the
-  // component never relies on the API's ORDER BY being preserved across changes.
-  const sortedLogs = useMemo(() => {
-    return logs
-      .filter((log) => {
-        if (!log.reviewed_at) return false;
-        const t = Date.parse(log.reviewed_at);
-        return Number.isFinite(t);
-      })
-      .slice()
-      .sort((a, b) => a.reviewed_at.localeCompare(b.reviewed_at));
-  }, [logs]);
-
-  const stats = useMemo(() => {
-    if (sortedLogs.length === 0) return null;
-    const ratingCounts = { again: 0, hard: 0, good: 0, easy: 0 };
-    let knownTotal = 0;
-    for (const log of sortedLogs) {
-      const r = log.rating.toLowerCase();
-      if (r in ratingCounts) {
-        ratingCounts[r as keyof typeof ratingCounts] += 1;
-        knownTotal += 1;
-      }
-    }
-    const lastLog = sortedLogs[sortedLogs.length - 1];
-    const scheduledDays = sortedLogs
-      .map((l) => l.scheduled_days)
-      .filter((d): d is number => d != null);
-    const maxScheduled = scheduledDays.length > 0 ? Math.max(...scheduledDays) : 0;
-    const successCount = ratingCounts.good + ratingCounts.easy;
-    const successRate =
-      knownTotal > 0 ? Math.round((successCount / knownTotal) * 100) : 0;
-    return {
-      ratingCounts,
-      lastRating: lastLog.rating,
-      lastReviewed: lastLog.reviewed_at,
-      currentInterval: lastLog.scheduled_days,
-      maxScheduled,
-      successRate,
-      total: sortedLogs.length,
-    };
-  }, [sortedLogs]);
+  const sortedLogs = useMemo(() => normalizeReviewLogs(logs), [logs]);
+  const stats = useMemo(() => computeReviewStats(sortedLogs), [sortedLogs]);
 
   const intervalChart = useMemo(() => {
     if (sortedLogs.length === 0) return null;
@@ -136,112 +108,60 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
       .filter((p) => p.days > 0);
     if (points.length === 0) return null;
     const maxDays = Math.max(...points.map((p) => p.days), 1);
-    const width = 280;
-    const height = 60;
-    const stepX = points.length > 1 ? width / (points.length - 1) : 0;
+    const stepX = points.length > 1 ? CHART_WIDTH / (points.length - 1) : 0;
     const path = points
       .map((p, idx) => {
         const x = idx * stepX;
-        const y = height - (p.days / maxDays) * (height - 8) - 4;
+        const y = INTERVAL_CHART_HEIGHT - (p.days / maxDays) * (INTERVAL_CHART_HEIGHT - 8) - 4;
         return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
       })
       .join(" ");
-    return { height, maxDays, path, points, stepX, width };
+    return {
+      height: INTERVAL_CHART_HEIGHT,
+      maxDays,
+      path,
+      points,
+      stepX,
+      width: CHART_WIDTH,
+    };
   }, [sortedLogs]);
 
   const weekGrid = useMemo(() => {
     if (sortedLogs.length < 30) return null;
-    const localDayKey = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const dayMap = new Map<string, OwnerWordReviewLogEntry>();
-    for (const log of sortedLogs) {
-      const parsed = new Date(log.reviewed_at);
-      if (Number.isNaN(parsed.getTime())) continue;
-      dayMap.set(localDayKey(parsed), log);
-    }
-    const firstDate = new Date(sortedLogs[0].reviewed_at);
-    if (Number.isNaN(firstDate.getTime())) return null;
-    firstDate.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const start = new Date(firstDate);
-    start.setDate(firstDate.getDate() - firstDate.getDay());
-    const end = new Date(today);
-    end.setDate(today.getDate() + (6 - today.getDay()));
-
-    const weeks: Array<Array<{ date: Date; log: OwnerWordReviewLogEntry | null }>> = [];
-    const cursor = new Date(start);
-    while (cursor <= end) {
-      const week: Array<{ date: Date; log: OwnerWordReviewLogEntry | null }> = [];
-      for (let i = 0; i < 7; i += 1) {
-        week.push({ date: new Date(cursor), log: dayMap.get(localDayKey(cursor)) ?? null });
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      weeks.push(week);
-    }
-
-    // Cap at MAX_WEEK_GRID_COLUMNS most-recent weeks so cells stay readable.
-    const truncated = weeks.length > MAX_WEEK_GRID_COLUMNS;
-    if (truncated) {
-      weeks.splice(0, weeks.length - MAX_WEEK_GRID_COLUMNS);
-    }
-
-    const cell = 5;
-    const gap = 1;
-    const stride = cell + gap;
+    const grid = buildWeekGrid(sortedLogs, new Date(), MAX_WEEK_GRID_COLUMNS);
+    if (!grid) return null;
     return {
-      cell,
-      gap,
-      height: 7 * stride - gap,
-      stride,
-      truncated,
-      weeks,
-      width: weeks.length * stride - gap,
+      cell: GRID_CELL,
+      gap: GRID_GAP,
+      height: 7 * GRID_STRIDE - GRID_GAP,
+      stride: GRID_STRIDE,
+      truncated: grid.truncated,
+      weeks: grid.weeks,
+      width: grid.weeks.length * GRID_STRIDE - GRID_GAP,
     };
   }, [sortedLogs]);
 
-  // FSRS retrievability per review attempt: R = (1 + elapsed_days / (9 * prev_stability)) ^ -1
-  // Uses previous log's stability so it represents memory probability *at the moment of recall*.
-  // First review has no prior stability and is omitted.
   const retrievabilityChart = useMemo(() => {
-    if (sortedLogs.length < 2) return null;
-    const points: Array<{ idx: number; r: number; rating: string; reviewedAt: string }> = [];
-    for (let i = 1; i < sortedLogs.length; i += 1) {
-      const log = sortedLogs[i];
-      const prev = sortedLogs[i - 1];
-      const elapsed = log.elapsed_days;
-      const prevStability = prev.stability;
-      if (
-        elapsed == null ||
-        !Number.isFinite(elapsed) ||
-        elapsed < 0 ||
-        prevStability == null ||
-        !Number.isFinite(prevStability) ||
-        prevStability <= 0
-      ) {
-        continue;
-      }
-      const r = 1 / (1 + elapsed / (9 * prevStability));
-      if (!Number.isFinite(r)) continue;
-      points.push({
-        idx: i,
-        r: Math.max(0, Math.min(1, r)),
-        rating: log.rating.toLowerCase(),
-        reviewedAt: log.reviewed_at,
-      });
-    }
+    const points = computeRetrievabilityPoints(sortedLogs);
     if (points.length === 0) return null;
-    const width = 280;
-    const height = 50;
-    const stepX = points.length > 1 ? width / (points.length - 1) : 0;
-    const yOf = (r: number) => height - r * (height - 6) - 3;
+    const stepX = points.length > 1 ? CHART_WIDTH / (points.length - 1) : 0;
+    const yOf = (r: number) =>
+      RETRIEVABILITY_CHART_HEIGHT - r * (RETRIEVABILITY_CHART_HEIGHT - 6) - 3;
     const path = points
       .map((p, i) => `${i === 0 ? "M" : "L"} ${(i * stepX).toFixed(1)} ${yOf(p.r).toFixed(1)}`)
       .join(" ");
     const referenceY = yOf(0.9);
     const avgR = points.reduce((sum, p) => sum + p.r, 0) / points.length;
-    return { avgR, height, path, points, referenceY, stepX, width, yOf };
+    return {
+      avgR,
+      height: RETRIEVABILITY_CHART_HEIGHT,
+      path,
+      points,
+      referenceY,
+      stepX,
+      width: CHART_WIDTH,
+      yOf,
+    };
   }, [sortedLogs]);
 
   if (sortedLogs.length === 0 || !stats) {
