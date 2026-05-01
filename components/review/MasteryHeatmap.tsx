@@ -70,6 +70,8 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
   const [previewSlug, setPreviewSlug] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const prefetchedRef = useRef<Set<string>>(new Set());
+  const previewPanelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     prefetchedRef.current = new Set();
@@ -94,19 +96,63 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
     [router],
   );
 
+  const isPreviewOpen = previewSlug !== null;
   useEffect(() => {
-    if (!previewSlug) return;
+    if (!isPreviewOpen) return;
+    const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    previousFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPreviewSlug(null);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setPreviewSlug(null);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = previewPanelRef.current;
+      if (!panel) return;
+      const focusable = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!active || !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const af = requestAnimationFrame(() => {
+      const panel = previewPanelRef.current;
+      panel?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    });
+
     return () => {
+      cancelAnimationFrame(af);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      const prev = previousFocusRef.current;
+      if (prev && typeof prev.focus === "function" && document.body.contains(prev)) {
+        prev.focus();
+      }
+      previousFocusRef.current = null;
     };
-  }, [previewSlug]);
+  }, [isPreviewOpen]);
 
   useEffect(() => {
     if (!previewSlug) return;
@@ -429,6 +475,7 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
             aria-hidden="true"
           />
           <div
+            ref={previewPanelRef}
             className="fixed left-1/2 top-1/2 z-[61] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[2rem] bg-[var(--color-surface-strong)] p-8 shadow-2xl ring-1 ring-[var(--color-border)]"
             role="dialog"
             aria-modal="true"
