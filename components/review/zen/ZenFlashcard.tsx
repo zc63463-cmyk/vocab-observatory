@@ -86,7 +86,7 @@ function FlashcardBack({ item }: FlashcardBackProps) {
   return (
     <motion.div
       key="back"
-      className="absolute inset-0 flex flex-col items-center justify-center p-6 backface-hidden"
+      className="absolute inset-0 flex flex-col items-center overflow-hidden p-6 backface-hidden"
       style={{ 
         backfaceVisibility: "hidden",
         transform: "rotateY(180deg)",
@@ -96,6 +96,15 @@ function FlashcardBack({ item }: FlashcardBackProps) {
       exit={{ rotateY: -180 }}
       transition={{ type: "spring", ...springs.smooth }}
     >
+      {/*
+        Scroll container. Takes remaining vertical space via flex-1 and vertically
+        centers the answer card when content is small. When the user expands
+        examples / word relations and content exceeds the available height, this
+        container scrolls instead of letting the card push into the rating hint
+        below. `min-h-0` is required so flex-1 can shrink past intrinsic size
+        and overflow-y-auto actually kicks in.
+      */}
+      <div className="flex w-full min-h-0 flex-1 items-center justify-center overflow-y-auto">
       {/* Answer Card */}
       <div 
         className="w-full max-w-2xl rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-lg backdrop-blur-lg sm:p-10"
@@ -202,9 +211,16 @@ function FlashcardBack({ item }: FlashcardBackProps) {
           )}
         </div>
       </div>
+      </div>
 
-      {/* Rating hint */}
-      <div className="absolute bottom-8 left-0 right-0 text-center">
+      {/*
+        Rating hint: static flex footer (no longer `absolute bottom-8`). Previously
+        the hint sat on top of the card's flow, which let expanded content
+        collide with it. Now it occupies its own row below the scrollable card
+        area and `shrink-0` guarantees the card area — not the hint — absorbs
+        any layout pressure.
+      */}
+      <div className="mt-3 w-full shrink-0 text-center">
         <p className="text-sm text-[var(--color-ink-soft)] opacity-60">
           <span className="hidden sm:inline">
             <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">1</kbd> Again
