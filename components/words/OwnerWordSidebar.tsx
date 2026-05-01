@@ -10,7 +10,9 @@ import { SkeletonBlock } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { AddToReviewButton } from "@/components/words/AddToReviewButton";
 import { WordNotes } from "@/components/words/WordNotes";
+import { WordReviewTimeline } from "@/components/words/WordReviewTimeline";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import type { OwnerWordReviewLogEntry } from "@/lib/owner-word-sidebar";
 import type { OwnerWordProgressSummary } from "@/lib/words";
 
 interface NoteSnapshot {
@@ -30,6 +32,7 @@ interface SidebarPayload {
   history: NoteRevision[];
   note: NoteSnapshot;
   progress: OwnerWordProgressSummary | null;
+  reviewLogs: OwnerWordReviewLogEntry[];
 }
 
 interface BatchAddResponse {
@@ -45,6 +48,7 @@ type SidebarState =
       history: NoteRevision[];
       note: NoteSnapshot;
       progress: OwnerWordProgressSummary | null;
+      reviewLogs: OwnerWordReviewLogEntry[];
       status: "ready";
     }
   | { message: string; status: "error" };
@@ -265,6 +269,7 @@ export function OwnerWordSidebar({
               version: result.payload.note?.version ?? 0,
             },
             progress: result.payload.progress ?? null,
+            reviewLogs: result.payload.reviewLogs ?? [],
             status: "ready",
           });
         } catch (error) {
@@ -352,6 +357,7 @@ export function OwnerWordSidebar({
         wordId={wordId}
         initialProgress={sidebarState.progress}
       />
+      <WordReviewTimeline logs={sidebarState.reviewLogs} />
       <RelatedWordsReviewBatchButton wordIds={uniqueRelatedReviewWordIds} />
       <WordNotes
         wordId={wordId}

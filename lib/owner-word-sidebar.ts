@@ -8,6 +8,8 @@ import type { Database } from "@/types/database.types";
 
 type ServerSupabaseClient = SupabaseClient<Database>;
 
+const REVIEW_LOG_HISTORY_LIMIT = 60;
+
 export interface OwnerWordSidebarNoteSnapshot {
   contentMd: string;
   updatedAt: string | null;
@@ -21,10 +23,21 @@ export interface OwnerWordSidebarRevision {
   version: number;
 }
 
+export interface OwnerWordReviewLogEntry {
+  difficulty: number | null;
+  elapsed_days: number | null;
+  rating: string;
+  reviewed_at: string;
+  scheduled_days: number | null;
+  stability: number | null;
+  state: string;
+}
+
 export interface OwnerWordSidebarResponse {
   history: OwnerWordSidebarRevision[];
   note: OwnerWordSidebarNoteSnapshot;
   progress: OwnerWordProgressSummary | null;
+  reviewLogs: OwnerWordReviewLogEntry[];
 }
 
 export async function getOwnerWordSidebarData(
@@ -32,7 +45,7 @@ export async function getOwnerWordSidebarData(
   userId: string,
   wordId: string,
 ): Promise<OwnerWordSidebarResponse> {
-  const [progressResult, noteResult, historyResult] = await Promise.all([
+  const [progressResult, noteResult, historyResult, reviewLogsResult] = await Promise.all([
     supabase
       .from("user_word_progress")
       .select("id, due_at, review_count, state, last_reviewed_at")
@@ -52,6 +65,14 @@ export async function getOwnerWordSidebarData(
       .eq("word_id", wordId)
       .order("version", { ascending: false })
       .limit(8),
+    supabase
+      .from("review_logs")
+      .select("rating, reviewed_at, scheduled_days, elapsed_days, stability, difficulty, state")
+      .eq("user_id", userId)
+      .eq("word_id", wordId)
+      .eq("undone", false)
+      .order("reviewed_at", { ascending: true })
+      .limit(REVIEW_LOG_HISTORY_LIMIT),
   ]);
 
   if (progressResult.error) {
@@ -66,6 +87,10 @@ export async function getOwnerWordSidebarData(
     throw historyResult.error;
   }
 
+  if (reviewLogsResult.error) {
+    throw reviewLogsResult.error;
+  }
+
   return {
     history: isNoteRevisionsRelationMissing(historyResult.error)
       ? []
@@ -76,5 +101,6 @@ export async function getOwnerWordSidebarData(
       version: noteResult.data?.version ?? 0,
     },
     progress: progressResult.data ? serializeOwnerWordProgress(progressResult.data) : null,
+    reviewLogs: (reviewLogsResult.data ?? []) as OwnerWordReviewLogEntry[],
   };
 }
