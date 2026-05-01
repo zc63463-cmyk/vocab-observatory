@@ -44,3 +44,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# supabase cli local state (project link, version cache, etc.)
+supabase/.temp/
+supabase/.branches/
