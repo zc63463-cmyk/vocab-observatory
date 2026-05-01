@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/ui/Toast";
 import type { OwnerWordReviewLogEntry } from "@/lib/owner-word-sidebar";
+
+const MAX_WEEK_GRID_COLUMNS = 52;
 
 interface WordReviewTimelineProps {
   logs: OwnerWordReviewLogEntry[];
@@ -43,6 +45,14 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
   const { addToast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [, startTransition] = useTransition();
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   async function handleReviewNow() {
     if (!progressId || submitting) return;
@@ -57,33 +67,52 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "立即复习失败");
       }
+      if (!mountedRef.current) return;
       addToast("已加入今日复习队列", "success");
       startTransition(() => {
         router.push("/review/zen");
       });
+      // Keep submitting=true: page navigation is in-flight; resetting would briefly
+      // re-enable the button for double-clicks. Component unmounts on route change.
     } catch (error) {
+      if (!mountedRef.current) return;
       addToast(error instanceof Error ? error.message : "立即复习失败", "error");
-    } finally {
       setSubmitting(false);
     }
   }
 
+  // Defensive: filter logs with invalid reviewed_at and re-sort ascending so the
+  // component never relies on the API's ORDER BY being preserved across changes.
+  const sortedLogs = useMemo(() => {
+    return logs
+      .filter((log) => {
+        if (!log.reviewed_at) return false;
+        const t = Date.parse(log.reviewed_at);
+        return Number.isFinite(t);
+      })
+      .slice()
+      .sort((a, b) => a.reviewed_at.localeCompare(b.reviewed_at));
+  }, [logs]);
+
   const stats = useMemo(() => {
-    if (logs.length === 0) return null;
+    if (sortedLogs.length === 0) return null;
     const ratingCounts = { again: 0, hard: 0, good: 0, easy: 0 };
-    for (const log of logs) {
+    let knownTotal = 0;
+    for (const log of sortedLogs) {
       const r = log.rating.toLowerCase();
       if (r in ratingCounts) {
         ratingCounts[r as keyof typeof ratingCounts] += 1;
+        knownTotal += 1;
       }
     }
-    const lastLog = logs[logs.length - 1];
-    const scheduledDays = logs
+    const lastLog = sortedLogs[sortedLogs.length - 1];
+    const scheduledDays = sortedLogs
       .map((l) => l.scheduled_days)
       .filter((d): d is number => d != null);
     const maxScheduled = scheduledDays.length > 0 ? Math.max(...scheduledDays) : 0;
     const successCount = ratingCounts.good + ratingCounts.easy;
-    const successRate = logs.length > 0 ? Math.round((successCount / logs.length) * 100) : 0;
+    const successRate =
+      knownTotal > 0 ? Math.round((successCount / knownTotal) * 100) : 0;
     return {
       ratingCounts,
       lastRating: lastLog.rating,
@@ -91,13 +120,13 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
       currentInterval: lastLog.scheduled_days,
       maxScheduled,
       successRate,
-      total: logs.length,
+      total: sortedLogs.length,
     };
-  }, [logs]);
+  }, [sortedLogs]);
 
   const intervalChart = useMemo(() => {
-    if (logs.length === 0) return null;
-    const points = logs
+    if (sortedLogs.length === 0) return null;
+    const points = sortedLogs
       .map((log, i) => ({
         i,
         days: log.scheduled_days ?? 0,
@@ -118,16 +147,19 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
       })
       .join(" ");
     return { height, maxDays, path, points, stepX, width };
-  }, [logs]);
+  }, [sortedLogs]);
 
   const weekGrid = useMemo(() => {
-    if (logs.length < 30) return null;
+    if (sortedLogs.length < 30) return null;
+    const localDayKey = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const dayMap = new Map<string, OwnerWordReviewLogEntry>();
-    for (const log of logs) {
-      const key = formatDate(log.reviewed_at);
-      dayMap.set(key, log);
+    for (const log of sortedLogs) {
+      const parsed = new Date(log.reviewed_at);
+      if (Number.isNaN(parsed.getTime())) continue;
+      dayMap.set(localDayKey(parsed), log);
     }
-    const firstDate = new Date(logs[0].reviewed_at);
+    const firstDate = new Date(sortedLogs[0].reviewed_at);
     if (Number.isNaN(firstDate.getTime())) return null;
     firstDate.setHours(0, 0, 0, 0);
     const today = new Date();
@@ -143,11 +175,16 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
     while (cursor <= end) {
       const week: Array<{ date: Date; log: OwnerWordReviewLogEntry | null }> = [];
       for (let i = 0; i < 7; i += 1) {
-        const key = formatDate(cursor.toISOString());
-        week.push({ date: new Date(cursor), log: dayMap.get(key) ?? null });
+        week.push({ date: new Date(cursor), log: dayMap.get(localDayKey(cursor)) ?? null });
         cursor.setDate(cursor.getDate() + 1);
       }
       weeks.push(week);
+    }
+
+    // Cap at MAX_WEEK_GRID_COLUMNS most-recent weeks so cells stay readable.
+    const truncated = weeks.length > MAX_WEEK_GRID_COLUMNS;
+    if (truncated) {
+      weeks.splice(0, weeks.length - MAX_WEEK_GRID_COLUMNS);
     }
 
     const cell = 5;
@@ -158,20 +195,21 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
       gap,
       height: 7 * stride - gap,
       stride,
+      truncated,
       weeks,
       width: weeks.length * stride - gap,
     };
-  }, [logs]);
+  }, [sortedLogs]);
 
   // FSRS retrievability per review attempt: R = (1 + elapsed_days / (9 * prev_stability)) ^ -1
   // Uses previous log's stability so it represents memory probability *at the moment of recall*.
   // First review has no prior stability and is omitted.
   const retrievabilityChart = useMemo(() => {
-    if (logs.length < 2) return null;
+    if (sortedLogs.length < 2) return null;
     const points: Array<{ idx: number; r: number; rating: string; reviewedAt: string }> = [];
-    for (let i = 1; i < logs.length; i += 1) {
-      const log = logs[i];
-      const prev = logs[i - 1];
+    for (let i = 1; i < sortedLogs.length; i += 1) {
+      const log = sortedLogs[i];
+      const prev = sortedLogs[i - 1];
       const elapsed = log.elapsed_days;
       const prevStability = prev.stability;
       if (
@@ -204,9 +242,9 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
     const referenceY = yOf(0.9);
     const avgR = points.reduce((sum, p) => sum + p.r, 0) / points.length;
     return { avgR, height, path, points, referenceY, stepX, width, yOf };
-  }, [logs]);
+  }, [sortedLogs]);
 
-  if (logs.length === 0 || !stats) {
+  if (sortedLogs.length === 0 || !stats) {
     return null;
   }
 
@@ -234,7 +272,11 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
 
       <div className="mt-5">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-soft)] opacity-70">
-          {weekGrid ? "复习日历" : "评分轨迹"}
+          {weekGrid
+            ? weekGrid.truncated
+              ? `复习日历（最近 ${MAX_WEEK_GRID_COLUMNS} 周）`
+              : "复习日历"
+            : "评分轨迹"}
         </p>
         {weekGrid ? (
           <svg
@@ -278,7 +320,7 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
           </svg>
         ) : (
           <div className="flex flex-wrap gap-1">
-            {logs.map((log, idx) => {
+            {sortedLogs.map((log, idx) => {
               const rating = log.rating.toLowerCase();
               const color = RATING_COLORS[rating] ?? "#94a3b8";
               const label = RATING_LABELS[rating] ?? log.rating;
