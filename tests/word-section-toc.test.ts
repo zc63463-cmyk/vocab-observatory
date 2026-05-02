@@ -270,11 +270,23 @@ describe("resolveInitialActiveId", () => {
 /* ── observer constants ──────────────────────────────────────────── */
 
 describe("TOC observer constants", () => {
-  it("derives rootMargin from TOC_BAR_HEIGHT_REM with a 4rem breathing gap", () => {
-    // Top inset = bar height + 4rem so a section that just slid below the
-    // chip bar isn't still treated as the active one.
+  it("expresses every margin value in px or % only — never rem/em", () => {
+    // Regression guard: the IntersectionObserver constructor throws
+    // SyntaxError if rootMargin contains rem/em, which crashed the
+    // entire word detail page. Tokens must look like `0px`, `-112px`,
+    // or `-55%` (signed integer + px|%).
+    const tokens = TOC_OBSERVER_ROOT_MARGIN.split(/\s+/);
+    expect(tokens).toHaveLength(4);
+    for (const token of tokens) {
+      expect(token).toMatch(/^-?\d+(?:px|%)$/);
+    }
+  });
+
+  it("derives the top inset from TOC_BAR_HEIGHT_REM + 4rem of breathing room (in pixels)", () => {
+    // (3 + 4) * 16 = 112 at the browser default root font-size.
+    const expectedTopInsetPx = (TOC_BAR_HEIGHT_REM + 4) * 16;
     expect(TOC_OBSERVER_ROOT_MARGIN).toBe(
-      `-${TOC_BAR_HEIGHT_REM + 4}rem 0px -55% 0px`,
+      `-${expectedTopInsetPx}px 0px -55% 0px`,
     );
   });
 

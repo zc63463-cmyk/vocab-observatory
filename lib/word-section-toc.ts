@@ -120,17 +120,32 @@ export function resolveInitialActiveId(
 }
 
 /**
- * Visual height (in rem) of the chip bar itself. Combined with the sticky
- * `--toc-sticky-top` CSS variable to derive both the IntersectionObserver
- * `rootMargin` and each section's `scroll-margin-top`.
+ * Visual height (in rem) of the chip bar itself. Used both for CSS layout
+ * (where rem is the natural unit) and as the source of truth for deriving
+ * the IntersectionObserver rootMargin.
  */
 export const TOC_BAR_HEIGHT_REM = 3;
 
 /**
+ * Pixels-per-rem assumed when converting rem → px for the
+ * IntersectionObserver. The browser default root font-size is 16px; users
+ * who change it via accessibility settings will get a slightly off trigger
+ * zone but never a crash. We can NOT read getComputedStyle here because
+ * this module loads before any DOM exists.
+ */
+const PX_PER_REM = 16;
+
+/**
  * `rootMargin` for the IntersectionObserver. Top inset = chip bar height +
- * a small breathing gap so a section that just slid below the bar doesn't
+ * a 4rem breathing gap so a section that just slid below the bar doesn't
  * keep the previous chip highlighted; bottom inset = -55% so we don't flip
  * to the next chip until the previous section has genuinely scrolled past
  * the middle of the viewport.
+ *
+ * IMPORTANT: the IntersectionObserver constructor only accepts `px` and
+ * `%` for rootMargin per spec — `rem` / `em` throw SyntaxError at
+ * construction time and crash the entire page. We pre-compute the rem→px
+ * conversion here. See `tests/word-section-toc.test.ts` for the regression
+ * guard.
  */
-export const TOC_OBSERVER_ROOT_MARGIN = `-${TOC_BAR_HEIGHT_REM + 4}rem 0px -55% 0px`;
+export const TOC_OBSERVER_ROOT_MARGIN = `-${(TOC_BAR_HEIGHT_REM + 4) * PX_PER_REM}px 0px -55% 0px`;
