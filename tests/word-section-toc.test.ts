@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildWordTOCSections,
   pickActiveSectionId,
+  resolveInitialActiveId,
   TOC_BAR_HEIGHT_REM,
   TOC_OBSERVER_ROOT_MARGIN,
   type ObservedSection,
@@ -204,6 +205,65 @@ describe("pickActiveSectionId", () => {
     const snapshot = observed.map((entry) => ({ ...entry }));
     pickActiveSectionId(observed);
     expect(observed).toEqual(snapshot);
+  });
+});
+
+/* ── resolveInitialActiveId ──────────────────────────────────────── */
+
+describe("resolveInitialActiveId", () => {
+  const sections = buildWordTOCSections({
+    hasPrototype: true,
+    hasBody: true,
+  });
+
+  it("returns null when section list is empty", () => {
+    expect(resolveInitialActiveId([], "")).toBeNull();
+    expect(resolveInitialActiveId([], "#word-notes")).toBeNull();
+  });
+
+  it("returns the first chip id when hash is empty", () => {
+    expect(resolveInitialActiveId(sections, "")).toBe("word-definitions");
+  });
+
+  it("returns the first chip id when hash has no leading `#`", () => {
+    // Defensive: location.hash always carries the `#`, but if a caller
+    // passes a stripped value we treat it as 'no hash' rather than
+    // silently doing a string match — unambiguous behavior.
+    expect(resolveInitialActiveId(sections, "word-notes")).toBe(
+      "word-definitions",
+    );
+  });
+
+  it("returns the matching chip id when hash points at a known section", () => {
+    expect(resolveInitialActiveId(sections, "#word-notes")).toBe("word-notes");
+    expect(resolveInitialActiveId(sections, "#word-corpus")).toBe(
+      "word-corpus",
+    );
+  });
+
+  it("falls back to the first chip when hash points at an unknown id", () => {
+    // Old shared link surviving a section rename, third-party link with a
+    // typo, etc. We don't error out — just default to the entry point.
+    expect(resolveInitialActiveId(sections, "#does-not-exist")).toBe(
+      "word-definitions",
+    );
+  });
+
+  it("falls back to the first chip when hash points at a chip that's been gated out", () => {
+    // The body chip only exists when result.word.body_md is non-empty.
+    // A shared link to `#word-body` for a word that has no body should
+    // not highlight a non-existent chip.
+    const noBody = buildWordTOCSections({
+      hasPrototype: false,
+      hasBody: false,
+    });
+    expect(resolveInitialActiveId(noBody, "#word-body")).toBe(
+      "word-definitions",
+    );
+  });
+
+  it("treats `#` alone (empty fragment) as no hash", () => {
+    expect(resolveInitialActiveId(sections, "#")).toBe("word-definitions");
   });
 });
 

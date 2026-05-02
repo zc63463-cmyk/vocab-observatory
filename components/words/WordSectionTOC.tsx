@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   pickActiveSectionId,
+  resolveInitialActiveId,
   TOC_OBSERVER_ROOT_MARGIN,
   type WordTOCSection,
 } from "@/lib/word-section-toc";
@@ -38,8 +39,15 @@ export type { WordTOCSection } from "@/lib/word-section-toc";
  */
 
 export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
-  const [activeId, setActiveId] = useState<string | null>(
-    sections[0]?.id ?? null,
+  // Read the URL hash on mount so a shared link like
+  // `/words/foo#word-notes` highlights the right chip immediately
+  // instead of flashing the default first chip until the observer
+  // catches up.
+  const [activeId, setActiveId] = useState<string | null>(() =>
+    resolveInitialActiveId(
+      sections,
+      typeof window !== "undefined" ? window.location.hash : "",
+    ),
   );
 
   useEffect(() => {
@@ -76,13 +84,28 @@ export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
   function handleClick(id: string) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // Vestibular safety: skip the smooth animation when the user has
+    // requested reduced motion at the OS level.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    el.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
     setActiveId(id);
+
+    // Preserve the existing history.state object — Next.js App Router
+    // stores its segment cache and route tree there. Replacing it with
+    // null would clobber that data and break Back/Forward.
     if (
       typeof window !== "undefined" &&
       typeof window.history?.replaceState === "function"
     ) {
-      window.history.replaceState(null, "", `#${id}`);
+      window.history.replaceState(window.history.state, "", `#${id}`);
     }
   }
 
@@ -95,9 +118,17 @@ export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
       style={{ top: "var(--toc-sticky-top, 5rem)" }}
     >
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/85 shadow-sm backdrop-blur-md backdrop-saturate-150">
+        {/*
+          Plain list of nav buttons — NOT a tablist. Tabs in ARIA
+          imply tabpanels and arrow-key navigation between siblings;
+          here each chip just scrolls the page, so `aria-current=
+          "location"` on the active button is the correct semantic
+          for in-page navigation. `[&::-webkit-scrollbar]:hidden`
+          plus `scrollbarWidth: none` keeps both Firefox and Chromium
+          from showing a horizontal scrollbar when chips overflow.
+        */}
         <ul
-          role="tablist"
-          className="flex gap-1 overflow-x-auto p-1.5"
+          className="flex gap-1 overflow-x-auto p-1.5 [&::-webkit-scrollbar]:hidden"
           style={{ scrollbarWidth: "none" }}
         >
           {sections.map((section) => {
@@ -106,13 +137,12 @@ export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
               <li key={section.id} className="shrink-0">
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  aria-current={isActive ? "location" : undefined}
                   onClick={() => handleClick(section.id)}
                   className={
                     isActive
-                      ? "rounded-full border border-[rgba(15,111,98,0.22)] bg-[var(--color-surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--color-accent)] transition-colors"
-                      : "rounded-full border border-transparent px-3 py-1 text-xs font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)]"
+                      ? "rounded-full border border-[rgba(15,111,98,0.22)] bg-[var(--color-surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--color-accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
+                      : "rounded-full border border-transparent px-3 py-1 text-xs font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-surface-glass-hover)] hover:text-[var(--color-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
                   }
                   style={{
                     touchAction: "manipulation",

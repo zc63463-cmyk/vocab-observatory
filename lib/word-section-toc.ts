@@ -96,6 +96,30 @@ export function pickActiveSectionId(
 }
 
 /**
+ * Pick the initial chip to highlight when the page first mounts.
+ *
+ * If the URL hash matches a known section id (e.g. shared link to
+ * `/words/foo#word-notes`), highlight that chip immediately so users
+ * don't see a brief flash of the default first chip before the
+ * IntersectionObserver corrects it. Otherwise default to the first
+ * chip, or null if the section list is empty.
+ *
+ * `hash` is `window.location.hash` verbatim — including the leading
+ * `#`. Empty string and missing `#` both fall back to the first chip.
+ */
+export function resolveInitialActiveId(
+  sections: readonly WordTOCSection[],
+  hash: string,
+): string | null {
+  if (sections.length === 0) return null;
+  const candidate = hash.startsWith("#") ? hash.slice(1) : "";
+  if (candidate && sections.some((section) => section.id === candidate)) {
+    return candidate;
+  }
+  return sections[0]!.id;
+}
+
+/**
  * Visual height (in rem) of the chip bar itself. Combined with the sticky
  * `--toc-sticky-top` CSS variable to derive both the IntersectionObserver
  * `rootMargin` and each section's `scroll-margin-top`.

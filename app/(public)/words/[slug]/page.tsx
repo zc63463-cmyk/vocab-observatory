@@ -185,13 +185,16 @@ export async function WordDetailContent({
     hasBody: result.word.body_md.trim().length > 0,
   });
 
-  // scroll-margin-top so smooth-scroll lands flush below the sticky TOC
-  // chip bar instead of underneath it. The base offset reads from
-  // `--toc-sticky-top` (= header height on the standalone page, 0 inside
-  // the intercepted modal); the +3.5rem accounts for the chip bar's own
-  // visual height plus a small breathing gap.
+  // scroll-margin-top so smooth-scroll (and direct hash links) land
+  // flush below the sticky chrome instead of underneath it. The mobile
+  // / tablet base reserves room for both the SiteHeader (via
+  // --toc-sticky-top, default 5rem; 0 inside the intercepted modal)
+  // and the chip bar (3.5rem). The lg: override drops the chip-bar
+  // share because WordSectionTOC is `lg:hidden` on desktop, so a
+  // shared link like `/words/foo#word-notes` doesn't open with a
+  // 3.5rem white gap above the section.
   const sectionScrollMt =
-    "scroll-mt-[calc(var(--toc-sticky-top,5rem)+3.5rem)]";
+    "scroll-mt-[calc(var(--toc-sticky-top,5rem)+3.5rem)] lg:scroll-mt-[var(--header-height,5rem)]";
 
   return (
     <>
