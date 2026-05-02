@@ -151,7 +151,7 @@ export default async function DashboardPage() {
             <Badge tone="warm">{formatPercent(summary.fsrsForgettingRate)}</Badge>
           </div>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 xl:grid-cols-6">
             <MetricCard label="Tracked" value={summary.metrics.trackedWords} />
             <MetricCard label="Notes" value={summary.metrics.notesCount} tone="warm" />
             <MetricCard label="Reviews 7d" value={summary.metrics.reviewed7d} />
@@ -247,7 +247,7 @@ export default async function DashboardPage() {
             </p>
           ) : (
             <div className="mt-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-3 gap-3 sm:gap-4">
                 <MetricCard label="Created" value={summary.importOverview.latestRun.created_count} />
                 <MetricCard label="Updated" value={summary.importOverview.latestRun.updated_count} />
                 <MetricCard
