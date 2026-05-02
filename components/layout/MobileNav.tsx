@@ -205,6 +205,14 @@ export function MobileNav({ items }: MobileNavProps) {
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-3 py-3">
+            {/* TEMP DIAGNOSTIC — remove after mobile drawer items are confirmed working */}
+            <p
+              data-testid="mobile-nav-debug"
+              className="px-4 py-2 text-xs font-mono text-red-600"
+              style={{ background: "rgba(255,0,0,0.06)" }}
+            >
+              DEBUG items={items.length} pub={publicItems.length} priv={privateItems.length}
+            </p>
             {/* Public section */}
             <div className="mb-1">
               <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-ink-soft)]">
