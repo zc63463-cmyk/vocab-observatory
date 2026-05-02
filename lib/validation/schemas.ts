@@ -52,7 +52,11 @@ export const previousProgressSnapshotSchema = z.object({
 
 export const reviewSuspendSchema = z.object({
   progressId: z.string().uuid(),
-  sessionId: z.string().uuid(),
+  // Optional so the leech panel on the word detail page can suspend a card
+  // without an active review session. The route handler only updates the
+  // progress row's state and never reads sessionId, so making it optional
+  // is purely a schema relaxation, not a behavioural change.
+  sessionId: z.string().uuid().optional(),
 });
 
 export const reviewRejoinSchema = z.object({

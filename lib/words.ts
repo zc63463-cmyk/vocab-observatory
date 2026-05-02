@@ -46,9 +46,11 @@ type WordFilterFacetDimension = (typeof WORD_FILTER_FACET_DIMENSIONS)[number];
 export type ReviewFilter = "all" | "tracked" | "due" | "untracked";
 
 export interface OwnerWordProgressSummary {
+  again_count: number;
   due_at: string | null;
   id: string;
   is_due: boolean;
+  lapse_count: number;
   last_reviewed_at: string | null;
   review_count: number;
   state: string;
@@ -571,16 +573,20 @@ function isDue(dueAt: string | null | undefined) {
 }
 
 export function serializeOwnerWordProgress(progress: {
+  again_count?: number | null;
   due_at: string | null;
   id: string;
+  lapse_count?: number | null;
   last_reviewed_at: string | null;
   review_count: number;
   state: string;
 }): OwnerWordProgressSummary {
   return {
+    again_count: progress.again_count ?? 0,
     due_at: progress.due_at,
     id: progress.id,
     is_due: isDue(progress.due_at),
+    lapse_count: progress.lapse_count ?? 0,
     last_reviewed_at: progress.last_reviewed_at,
     review_count: progress.review_count,
     state: progress.state,
@@ -669,7 +675,9 @@ async function getOwnerProgressMap(
 ) {
   const { data, error } = await supabase
     .from("user_word_progress")
-    .select("word_id, id, due_at, review_count, state, last_reviewed_at")
+    .select(
+      "word_id, id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
+    )
     .eq("user_id", ownerUserId);
 
   if (error) {
@@ -678,8 +686,10 @@ async function getOwnerProgressMap(
 
   return new Map(
     ((data ?? []) as Array<{
+      again_count: number | null;
       due_at: string | null;
       id: string;
+      lapse_count: number | null;
       last_reviewed_at: string | null;
       review_count: number;
       state: string;

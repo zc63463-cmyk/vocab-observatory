@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
 import { AnimatedMetricCard as MetricCard } from "@/components/ui/AnimatedMetricCard";
 import { MiniBarChart } from "@/components/ui/MiniBarChart";
+import { PlanVsActualChart } from "@/components/ui/PlanVsActualChart";
 import { StackedRatingBar } from "@/components/ui/StackedRatingBar";
 import { MasteryHeatmap } from "@/components/review/MasteryHeatmap";
 import type { DailyForecastDay } from "@/lib/dashboard";
@@ -524,6 +525,21 @@ export default async function DashboardPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="panel rounded-[1.75rem] p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="section-title text-2xl font-semibold">计划 vs 实际</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+              把过去 14 天的每日预计到期量与实际完成量并排对比，看看节奏是否匹配
+            </p>
+          </div>
+          <Badge>滚动 14 天</Badge>
+        </div>
+        <div className="mt-5">
+          <PlanVsActualChart data={summary.planVsActual} />
+        </div>
       </section>
 
       <MasteryHeatmap cells={summary.masteryCells} relationGraph={summary.relationGraph} />

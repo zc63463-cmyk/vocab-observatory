@@ -20,6 +20,11 @@ import {
   buildFsrsTrainingStatus,
   type FsrsTrainingStatus,
 } from "@/lib/review/training-status";
+import {
+  captureTodayForecastSnapshot,
+  fetchPlanVsActualSeries,
+  type PlanVsActualPoint,
+} from "@/lib/review/forecast-snapshots";
 import type { StoredSchedulerCard } from "@/lib/review/types";
 import { getServerSupabaseClientOrNull } from "@/lib/supabase/server";
 import { startOfTodayIso } from "@/lib/utils";
@@ -491,6 +496,7 @@ export async function getDashboardSummary() {
         total: number;
       }>,
       dailyForecast: [] as DailyForecastDay[],
+      planVsActual: [] as PlanVsActualPoint[],
       masteryCells: [] as Array<{
         cefr: string;
         dueAt: string | null;
@@ -747,6 +753,42 @@ export async function getDashboardSummary() {
       return b.retrievability - a.retrievability;
     });
 
+  // Build the 14-day calendar once here so we can reuse today's forecast
+  // count for the snapshot capture below without recomputing the whole
+  // thing. The same array is also what the UI chart consumes.
+  const dailyForecast = buildDailyForecastCalendar(
+    progressRows,
+    configuredDesiredRetention,
+    14,
+    reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
+    nowDate,
+    fsrsWeights,
+  );
+
+  // Forecast-vs-actual telemetry: snapshot today's prediction (idempotent —
+  // only the first write per day sticks) and read back the rolling window.
+  // Both calls are fire-and-forget safe: fetchPlanVsActualSeries falls back
+  // to an empty-snapshot series when the table is unreachable.
+  const todayForecastDay = dailyForecast.find((d) => d.isToday);
+  const todayKey = todayForecastDay?.date ?? startOfTodayIso().slice(0, 10);
+  const todayForecastCount = todayForecastDay?.dueCount ?? 0;
+
+  await captureTodayForecastSnapshot({
+    supabase,
+    userId: owner.id,
+    date: todayKey,
+    forecastCount: todayForecastCount,
+    desiredRetention: configuredDesiredRetention,
+  });
+
+  const planVsActual = await fetchPlanVsActualSeries({
+    supabase,
+    userId: owner.id,
+    reviewLogs: reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
+    days: 14,
+    now: nowDate,
+  });
+
   return {
     activeSession: activeSessionResult.data ?? null,
     averageDesiredRetention,
@@ -792,14 +834,8 @@ export async function getDashboardSummary() {
     reviewVolume30d: buildVolumeSeries(30, reviewLogs30d, nowDate),
     reviewVolume7d: buildVolumeSeries(7, reviewLogs7d, nowDate),
     weakestSemanticFields,
-    dailyForecast: buildDailyForecastCalendar(
-      progressRows,
-      configuredDesiredRetention,
-      14,
-      reviewLogs30d.map((row) => ({ reviewed_at: row.reviewed_at })),
-      nowDate,
-      fsrsWeights,
-    ),
+    dailyForecast,
+    planVsActual,
     masteryCells,
     relationGraph: buildRelationGraph(progressRows),
   };

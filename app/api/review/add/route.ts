@@ -64,7 +64,9 @@ export async function POST(request: NextRequest) {
         onConflict: "user_id,word_id",
       },
     )
-    .select("id, due_at, review_count, state, last_reviewed_at")
+    .select(
+      "id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
+    )
     .single();
 
   if (error) {

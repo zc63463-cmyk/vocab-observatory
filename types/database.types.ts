@@ -132,6 +132,24 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["collection_notes"]["Insert"]>;
         Relationships: [];
       };
+      daily_forecast_snapshots: {
+        Row: {
+          captured_at: string;
+          date: string;
+          desired_retention: number;
+          forecast_count: number;
+          user_id: string;
+        };
+        Insert: {
+          captured_at?: string;
+          date: string;
+          desired_retention: number;
+          forecast_count: number;
+          user_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["daily_forecast_snapshots"]["Insert"]>;
+        Relationships: [];
+      };
       note_revisions: {
         Row: {
           content_md: string;

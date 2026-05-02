@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { SkeletonBlock } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { AddToReviewButton } from "@/components/words/AddToReviewButton";
+import { LeechPanel } from "@/components/words/LeechPanel";
 import { WordNotes } from "@/components/words/WordNotes";
 import { WordReviewTimeline } from "@/components/words/WordReviewTimeline";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -351,12 +352,27 @@ export function OwnerWordSidebar({
     return null;
   }
 
+  // Optimistically reflect a successful suspend without re-fetching the
+  // whole sidebar payload — the LeechPanel hides itself when state === suspended.
+  function handleSuspended() {
+    setSidebarState((prev) => {
+      if (prev.status !== "ready" || !prev.progress) return prev;
+      return {
+        ...prev,
+        progress: { ...prev.progress, state: "suspended" },
+      };
+    });
+  }
+
   return (
     <div className="space-y-6">
       <AddToReviewButton
         wordId={wordId}
         initialProgress={sidebarState.progress}
       />
+      {sidebarState.progress ? (
+        <LeechPanel progress={sidebarState.progress} onSuspended={handleSuspended} />
+      ) : null}
       <WordReviewTimeline
         logs={sidebarState.reviewLogs}
         progressId={sidebarState.progress?.id ?? null}
