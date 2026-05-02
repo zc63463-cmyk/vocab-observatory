@@ -268,7 +268,7 @@ export function ReviewQueue() {
   if (items.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           <MetricCard label="今日到期" value={stats?.dueToday ?? 0} tone="warm" />
           <MetricCard label="新卡" value={stats?.newCards ?? 0} />
           <MetricCard label="已完成" value={completedCount} />
@@ -299,7 +299,7 @@ export function ReviewQueue() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="grid gap-4 sm:flex-1 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:flex-1 sm:gap-4 md:grid-cols-4">
           <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
           <MetricCard label="新卡" value={stats?.newCards ?? 0} />
           <MetricCard label="已完成" value={completedCount} />

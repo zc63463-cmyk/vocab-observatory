@@ -131,7 +131,7 @@ export default async function DashboardPage() {
         </p>
       </section>
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-4">
         <MetricCard label="Streak Days" value={summary.metrics.streakDays} />
         <MetricCard label="Due Today" value={summary.metrics.dueToday} tone="warm" />
         <MetricCard label="Reviewed Today" value={summary.metrics.reviewedToday} />
