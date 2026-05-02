@@ -164,6 +164,74 @@ chipBarRef.current?.querySelector(`[data-id="${activeId}"]`)?.scrollIntoView({
 ### 加载状态承接
 `Suspense` fallback 期间渲染一条 skeleton chip 条，避免页面 hydration 时短暂闪烁。
 
+## 附录 · 移动端组件设计哲学
+
+TOC chip 条本身是这个项目里少数走"组件级隔离"路线的实例之一。借这个 doc 沉淀整套移动端适配决策框架，避免每次新需求都重做一轮"该不该单独写一个手机版"的内部辩论。
+
+### 三种适配策略
+
+| 策略 | 何时用 | 维护成本 |
+|---|---|---|
+| **A · 完全隔离**（`mobile.foo.com` 与 `foo.com` 两套代码 / 路由） | 极致性能场景（Facebook Lite 风格）、原生 App | **翻倍** |
+| **B · 单一组件 + 响应式 CSS**（Tailwind `sm:` / `md:` / `lg:` 断点；同一 className 字符串内不同断点覆盖） | **绝大多数 Web 页面** | 单源，零额外成本 |
+| **C · 条件渲染**（基于断点切换不同组件，移动 `<BottomSheet>` vs 桌面 `<Dialog>`，移动 `<TOC chip>` vs 桌面 `<Sidebar>`） | 移动与桌面**交互范式根本不同**时 | 适中（双组件，但共享数据层） |
+
+行业共识：**A 不做**。SEO / 分享链路 / 功能漂移成本太大；CSS Grid + Flex + container queries + Tailwind 响应式前缀已经能解决 95% 的布局差异。**B 是默认**，**C 是兜底**。
+
+### 这个项目的实际选择
+
+| 场景 | 策略 | 体现 |
+|---|---|---|
+| 词条页内导航 | **C** | 移动端 `WordSectionTOC` 横滑 chip 条；桌面端 `lg:hidden`，由 `OwnerWordSidebar` 接管。两套组件共享 `lib/word-section-toc.ts` 的纯函数 |
+| Modal vs 独立页路由 | **C** | 拦截 modal 路由通过 CSS 变量 `--toc-sticky-top: 0` 重写 chip 条吸附位置，无 React 状态判断 |
+| KPI 卡片网格 | **B** | `grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4`——同一组件，断点处自动切列数 / 间距 |
+| 主题切换、按钮、Badge | **B** | Tailwind 主题 token + 单组件 |
+
+### 网格清扫决策框架
+
+针对 KPI / Stat 卡片这类"小内容 + 多卡"场景，沉淀的判断表（来自 [移动端 KPI 网格清扫](#) 那两轮提交）：
+
+| 信号 | 移动端策略 |
+|---|---|
+| 卡片**只装一个数字 + 短 label** | 尽量挤多列，`grid-cols-2` 起步 |
+| 卡片**含正文 / 段落 / 多元素** | 保 1 列给呼吸，硬挤会断行 |
+| 容器是**完整 panel + 图表 + 多子组件** | 保 1 列，避免内部图表二次压缩 |
+| 卡片数 = 3 | 直接 `grid-cols-3` 全断点，避免 sm 时第 3 卡悬空半行 |
+| 卡片数 = 4 / 偶数 | mobile `grid-cols-2`，desktop 跳到目标列数 |
+| 卡片数 = 6 | 阶梯 `2 → 3 → 6` 平滑过渡 |
+| 卡片数 ≥ 8 | 考虑列表化或滚动条而非网格 |
+
+副规律：**用 `sm:gap-4` 不是 `gap-4`**——手机端用 `gap-3` 收紧 12px，sm+ 才放到 16px。卡片间距和容器间距同套逻辑。
+
+### TOC 作为 case study
+
+一个完整的"组件级隔离（C 策略）"实施路径：
+
+1. **抽纯函数到 `lib/`**——所有数据形变、算法、不变量在零 DOM 环境写完测完
+2. **薄壳组件**只接线 IntersectionObserver / 事件 / ARIA
+3. **CSS 变量做跨组件 / 跨路由协议**（这里是 `--toc-sticky-top`），避免组件间互相 import 状态
+4. **`lg:hidden` / `lg:block`** 在容器层切显隐，组件本身**不感知**自己是否被显示
+5. **响应式断点**给 scroll-margin / padding 等纯样式属性，避免在 JS 里写 `useMediaQuery`
+
+这套模板复用到 `BottomSheet vs Dialog` / `TabBar vs TopNav` 等 C 策略场景都成立。
+
+### 反模式速查
+
+| 反模式 | 替代 |
+|---|---|
+| 在 React 里 `useEffect` + `window.innerWidth` 切组件 | 直接 Tailwind `lg:hidden` / `lg:block`（CSS 媒体查询，零 hydration 风险） |
+| 给手机另开一个 `/m/foo` 路由 | 同 URL 用响应式 / 条件渲染 |
+| 移动端干脆隐藏功能（"手机用户用不到"） | 重新设计该功能的移动版本，或显式标注桌面专属 |
+| 复制一份组件并加 `Mobile` 后缀 | 抽纯函数到 lib/，两份组件共享业务逻辑 |
+| `text-xl md:text-2xl` 写成 `text-2xl md:text-2xl`（手机端没缩） | 字号永远 mobile-first 起步 |
+
+### 相关清扫提交
+
+| commit | 主题 |
+|---|---|
+| `c406b7d` | feat(ui): denser stat-card grids on mobile (2-col instead of 1) |
+| `e376e82` | feat(ui): mobile-densify dashboard 6-card and 3-card sub-grids |
+
 ## 提交历史（forensic 索引）
 
 | commit | 主题 |
