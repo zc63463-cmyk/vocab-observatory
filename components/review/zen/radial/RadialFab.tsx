@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotion } from "framer-motion";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 // Closed-state entry point for the radial action menu. Anchored at the
@@ -37,6 +38,14 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
   //  • full strength while ready to receive input
   const targetOpacity = !isAvailable ? 0 : isOpen ? 0.35 : 1;
   const targetScale = isPressing ? 0.92 : 1;
+  // Honor `prefers-reduced-motion`. The FAB uses plain CSS transitions
+  // rather than framer-motion (see the comment below about transform
+  // collisions), so the global <MotionConfig reducedMotion="user"> in
+  // app/layout.tsx doesn't reach it; we have to handle it ourselves.
+  const prefersReduced = useReducedMotion();
+  const transition = prefersReduced
+    ? "opacity 0ms, transform 0ms"
+    : "opacity 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1)";
 
   return (
     // Plain <button> on purpose. We previously used motion.button with
@@ -82,8 +91,7 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
         bottom: "max(28px, calc(env(safe-area-inset-bottom) + 28px))",
         transform: `scale(${targetScale})`,
         opacity: targetOpacity,
-        transition:
-          "opacity 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        transition,
         willChange: "opacity, transform",
       }}
     >

@@ -82,6 +82,11 @@ function reducer(state: RadialState, action: Action): RadialState {
 const PRESS_ACTIVATE_DELAY_MS = 50;
 /** committing + cancelling exit animations share this duration */
 const EXIT_ANIMATION_MS = 180;
+/** Pointer-drift threshold (px) below which a pointermove no longer
+ *  triggers a React state update. Coarse enough to halve re-renders
+ *  during a fast drag, fine enough that the drag-trail line in
+ *  RadialRing tracks the finger to within ±half a fingertip. */
+const MOVE_DISPATCH_PX = 4;
 
 export interface UseRadialGestureOptions {
   innerRadius: number;
@@ -143,7 +148,15 @@ export function useRadialGesture({
     if (state.phase !== "pressing" && state.phase !== "active") return;
     if (!state.origin) return;
 
+    // Throttle MOVE dispatches: pointermove fires up to 120 Hz on modern
+    // devices, but we only need a fresh React state when either (a) the
+    // hovered segment id changes, or (b) the pointer drifts far enough
+    // (≥ MOVE_DISPATCH_PX) that the drag-trail rendering would visibly
+    // lag behind the finger. Skipping low-delta dispatches halves the
+    // re-render cost on mid-tier Android during a drag.
     let lastHoveredId: RadialActionId | null = state.hovered?.id ?? null;
+    let lastDispatchedDx = state.pointer?.dx ?? 0;
+    let lastDispatchedDy = state.pointer?.dy ?? 0;
 
     const onMove = (e: PointerEvent) => {
       if (!state.origin) return;
@@ -154,24 +167,21 @@ export function useRadialGesture({
         outerRadius,
         layout,
       });
-      dispatch({ type: "MOVE", pointer: { dx, dy }, hovered: seg });
       const nextId = seg?.id ?? null;
-      if (nextId !== lastHoveredId) {
-        if (seg) haptic("select");
-        lastHoveredId = nextId;
+      const hoverChanged = nextId !== lastHoveredId;
+      const driftPx = Math.hypot(dx - lastDispatchedDx, dy - lastDispatchedDy);
+
+      if (hoverChanged || driftPx >= MOVE_DISPATCH_PX) {
+        dispatch({ type: "MOVE", pointer: { dx, dy }, hovered: seg });
+        lastDispatchedDx = dx;
+        lastDispatchedDy = dy;
+        if (hoverChanged) {
+          if (seg) haptic("select");
+          lastHoveredId = nextId;
+        }
       }
       // Prevent page-level scroll while dragging inside the ring.
       e.preventDefault();
-    };
-
-    const onUp = (_e: PointerEvent) => {
-      // Snapshot so we can read the most recent state without closure
-      // staleness. `state.hovered` in this closure is fine because the
-      // effect re-runs whenever it changes — MOVE dispatches trigger
-      // the re-run via state.phase === "active" persisting.
-      // But to be extra safe against a race where pointerup arrives
-      // between a MOVE dispatch and this listener seeing the new state,
-      // we re-hit-test from the last pointer position.
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -219,9 +229,6 @@ export function useRadialGesture({
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onCancelEvent);
       window.removeEventListener("contextmenu", onContextMenu);
-      // Satisfy unused-variable lints — onUp is here for future
-      // refactor clarity but isn't currently attached.
-      void onUp;
     };
   }, [state.phase, state.origin, innerRadius, outerRadius, layout]);
 

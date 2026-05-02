@@ -11,6 +11,7 @@ import {
 import { useRadialGesture } from "./useRadialGesture";
 import { RadialFab } from "./RadialFab";
 import { RadialRing } from "./RadialRing";
+import { RadialMenuHint, useRadialHint } from "./RadialMenuHint";
 
 // Composition layer for the radial action menu.
 //
@@ -43,6 +44,11 @@ export function ZenRadialMenu() {
   // undefined `document` during SSR.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // First-run "long-press to open" hint. Dismissed once the user has
+  // successfully opened the ring on this device (see effect below) or
+  // explicitly closes the chip.
+  const hint = useRadialHint();
 
   const handleCommit = (actionId: RadialActionId) => {
     switch (actionId) {
@@ -97,12 +103,31 @@ export function ZenRadialMenu() {
     isActionEnabled,
   });
 
+  // Auto-dismiss the onboarding chip the first time the user successfully
+  // opens the ring — they've clearly figured out the gesture, so further
+  // hinting would be noise. We watch for `active` rather than `pressing`
+  // because a brief press without crossing the activation threshold also
+  // triggers `pressing` and we don't want a single mistaken tap to
+  // permanently dismiss the chip.
+  useEffect(() => {
+    if (gesture.state.phase === "active" && hint.visible) hint.dismiss();
+  }, [gesture.state.phase, hint]);
+
   if (!mounted) return null;
 
   const isOpen =
     gesture.state.phase === "active" ||
     gesture.state.phase === "committing" ||
     gesture.state.phase === "cancelling";
+
+  // The hint is only useful when the user is meant to be rating — i.e.,
+  // the card is on the back face. Showing it on the front would teach
+  // a habit (long-press to peek?) that doesn't exist.
+  const showHint =
+    hint.visible &&
+    isAvailable &&
+    ctx.phase === "back" &&
+    gesture.state.phase === "closed";
 
   return createPortal(
     <>
@@ -112,6 +137,11 @@ export function ZenRadialMenu() {
         isOpen={isOpen}
         onPointerDown={gesture.beginPress}
       />
+      <AnimatePresence>
+        {showHint && (
+          <RadialMenuHint key="hint" onDismiss={hint.dismiss} />
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {isOpen && gesture.state.origin && (
           <RadialRing
@@ -123,6 +153,7 @@ export function ZenRadialMenu() {
             hoveredId={gesture.state.hovered?.id ?? null}
             committedId={gesture.state.committed?.id ?? null}
             disabledIds={disabledIds}
+            pointer={gesture.state.pointer}
             phase={
               gesture.state.phase === "committing"
                 ? "committing"

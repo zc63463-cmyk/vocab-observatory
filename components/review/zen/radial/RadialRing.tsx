@@ -35,6 +35,11 @@ export interface RadialRingProps {
   /** Segments that should render in a disabled visual state. Tapping
    *  them is treated as a cancel by useRadialGesture. */
   disabledIds?: ReadonlySet<RadialActionId>;
+  /** Live pointer offset from `center`. When provided we draw a thin
+   *  radial guideline from origin to (a slightly outward-clamped)
+   *  pointer position, giving fine-grained directional feedback to the
+   *  user. Null while the pointer hasn't moved since press. */
+  pointer?: { dx: number; dy: number } | null;
 }
 
 /** Map each segment id → its visual tint. Ratings use the existing
@@ -56,6 +61,7 @@ export function RadialRing({
   committedId,
   phase,
   disabledIds,
+  pointer,
 }: RadialRingProps) {
   // SVG viewport large enough to contain the outermost geometry plus
   // a little padding for the commit-ripple, which can overshoot the
@@ -125,21 +131,70 @@ export function RadialRing({
           const isDisabled = disabledIds?.has(seg.id) ?? false;
           const tint = colorFor(seg.id);
           const d = arcPath(seg.centerAngle, seg.spread, innerRadius, outerRadius);
+          // Mid-radius point along the segment's center axis. Used as
+          // the anchor for the commit ripple.
+          const mid = polar((innerRadius + outerRadius) / 2, seg.centerAngle);
 
           return (
             <g key={seg.id} opacity={isDisabled ? 0.32 : 1}>
               <motion.path
                 d={d}
-                fill={isHovered && !isDisabled ? tint : "var(--color-panel)"}
-                stroke={isHovered && !isDisabled ? tint : "var(--color-border)"}
-                strokeWidth={isHovered && !isDisabled ? 1.5 : 1}
+                fill={
+                  isCommitted && phase === "committing"
+                    ? tint
+                    : isHovered && !isDisabled
+                      ? tint
+                      : "var(--color-panel)"
+                }
+                stroke={
+                  (isCommitted && phase === "committing") ||
+                  (isHovered && !isDisabled)
+                    ? tint
+                    : "var(--color-border)"
+                }
+                strokeWidth={
+                  (isCommitted && phase === "committing") ||
+                  (isHovered && !isDisabled)
+                    ? 1.5
+                    : 1
+                }
                 animate={{
-                  fillOpacity: isHovered && !isDisabled ? 0.22 : 0.95,
-                  scale: isCommitted && phase === "committing" ? 1.08 : 1,
+                  // On commit, briefly punch the fill from "hovered"
+                  // (0.22) up to a confirmation flash (0.65) then fade.
+                  // The keyframe array is a framer-motion idiom for
+                  // chained tween — under prefers-reduced-motion the
+                  // global MotionConfig collapses this to instant.
+                  fillOpacity:
+                    isCommitted && phase === "committing"
+                      ? [0.22, 0.65, 0]
+                      : isHovered && !isDisabled
+                        ? 0.22
+                        : 0.95,
+                  scale:
+                    isCommitted && phase === "committing" ? 1.12 : 1,
                 }}
-                transition={{ duration: 0.08 }}
+                transition={
+                  isCommitted && phase === "committing"
+                    ? { duration: 0.18, ease: "easeOut" }
+                    : { duration: 0.08 }
+                }
                 style={{ transformOrigin: "0 0" }}
               />
+              {isCommitted && phase === "committing" && (
+                // Commit ripple — expanding circle pinned at the mid-
+                // radius point of the chosen segment. Reads as "the
+                // tap landed here" without obscuring the surrounding
+                // segments.
+                <motion.circle
+                  cx={mid.x}
+                  cy={mid.y}
+                  r={0}
+                  fill={tint}
+                  initial={{ r: 0, opacity: 0.55 }}
+                  animate={{ r: outerRadius - innerRadius, opacity: 0 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                />
+              )}
               <SegmentLabel
                 centerAngle={seg.centerAngle}
                 innerR={innerRadius}
@@ -151,8 +206,62 @@ export function RadialRing({
             </g>
           );
         })}
+
+        <DragGuideline
+          pointer={pointer}
+          innerRadius={innerRadius}
+          outerRadius={outerRadius}
+          phase={phase}
+        />
       </motion.svg>
     </>
+  );
+}
+
+interface DragGuidelineProps {
+  pointer: { dx: number; dy: number } | null | undefined;
+  innerRadius: number;
+  outerRadius: number;
+  phase: "active" | "committing" | "cancelling";
+}
+
+/** Thin radial line drawn from the ring center toward the pointer.
+ *  Helps the user visually align their drag with a target segment,
+ *  especially in the dead-zone where no segment is highlighted. The
+ *  endpoint is clamped just past `outerRadius` so the line never
+ *  visually escapes the SVG viewport. */
+function DragGuideline({
+  pointer,
+  innerRadius,
+  outerRadius,
+  phase,
+}: DragGuidelineProps) {
+  if (phase !== "active" || !pointer) return null;
+  // Pointer below the inner-radius dead zone means the user hasn't
+  // committed to a direction yet — hide the line to avoid a tiny
+  // wobbly stub right under the FAB.
+  const dist = Math.hypot(pointer.dx, pointer.dy);
+  if (dist < innerRadius * 0.45) return null;
+
+  // Clamp the line tip to (outerRadius + 6px) along the same heading.
+  // Going slightly past the ring outer edge gives the line a "shoots-
+  // through" feel that subtly emphasises the targeted segment.
+  const cap = outerRadius + 6;
+  const scale = Math.min(1, cap / dist);
+  const tipX = pointer.dx * scale;
+  const tipY = pointer.dy * scale;
+
+  return (
+    <line
+      x1={0}
+      y1={0}
+      x2={tipX}
+      y2={tipY}
+      stroke="var(--color-ink-soft)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      opacity={0.45}
+    />
   );
 }
 
