@@ -11,6 +11,7 @@ import { ZenHistoryDrawer } from "./ZenHistoryDrawer";
 import { ZenSessionSummary } from "./ZenSessionSummary";
 import { RatingFeedback } from "./RatingFeedback";
 import { useAutoHideCursor } from "./useAutoHideCursor";
+import { ZenRadialMenu } from "./radial/ZenRadialMenu";
 import { springs } from "@/components/motion";
 
 function ZenModeEffect({ enabled }: { enabled: boolean }) {
@@ -229,6 +230,12 @@ function ZenReviewInner() {
         onUndo={undo}
         isUndoing={uiState.isUndoing}
       />
+
+      {/* Touch-device only — the FAB + radial action ring. Renders via
+          a portal to document.body so its fixed positioning & SVG
+          geometry aren't disturbed by the parent's 3D-transformed flip
+          container. Self-gates on phase === "back" internally. */}
+      <ZenRadialMenu />
     </div>
   );
 }

@@ -31,6 +31,11 @@ interface ZenContextValue extends ZenState {
   toggleHistory: () => void;
   undo: (reviewLogId: string) => void;
   nextBatch: () => Promise<void>;
+  // Utility actions (also bound to keyboard shortcuts P and D). Exposed
+  // so non-keyboard surfaces (e.g., mobile radial action menu) can invoke
+  // them without reaching into useZenShortcuts.
+  speakWord: () => void;
+  openWordPage: () => void;
   // Meta
   totalCount: number;
   completedCount: number;
@@ -524,13 +529,15 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       toggleHistory,
       undo,
       nextBatch,
+      speakWord,
+      openWordPage,
       totalCount,
       completedCount,
       progress,
       isAnimating: animationLock,
       uiState,
     }),
-    [state, reveal, rate, exit, retry, toggleHistory, undo, nextBatch, totalCount, completedCount, progress, animationLock, uiState]
+    [state, reveal, rate, exit, retry, toggleHistory, undo, nextBatch, speakWord, openWordPage, totalCount, completedCount, progress, animationLock, uiState]
   );
 
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>;
