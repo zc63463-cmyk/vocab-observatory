@@ -129,12 +129,23 @@ export function ZenRadialMenu() {
     ctx.phase === "back" &&
     gesture.state.phase === "closed";
 
+  // "Primed" = back face, ring closed, gesture idle. This is the only
+  // window where the FAB should breathe — on the front face we don't
+  // want to distract the user from reading the word, and once the ring
+  // is open / pressing the breathing would visually fight the active
+  // gesture feedback.
+  const isPrimed =
+    ctx.phase === "back" &&
+    !ctx.isAnimating &&
+    gesture.state.phase === "closed";
+
   return createPortal(
     <>
       <RadialFab
         isAvailable={isAvailable}
         isPressing={gesture.state.phase === "pressing"}
         isOpen={isOpen}
+        isPrimed={isPrimed}
         onPointerDown={gesture.beginPress}
       />
       <AnimatePresence>

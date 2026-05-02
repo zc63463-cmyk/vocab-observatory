@@ -86,14 +86,14 @@ export function RadialMenuHint({ onDismiss }: RadialMenuHintProps) {
 
   return (
     <motion.div
-      // Same z-stack as the FAB itself. Anchored 80px above the FAB
-      // (FAB is bottom: 28px + safe-area, height 56px → top edge at
-      // ~84-100px from bottom; chip top at +84-100+72 ≈ 168px so the
-      // arrow points to the dots cleanly).
+      // Same z-stack as the FAB itself. Anchored so the arrow tip sits
+      // a short gap above the FAB's halo (FAB bottom = safe-area + 24,
+      // FAB diameter 60 + halo 14 pad ≈ 88 overall; chip bottom offset
+      // below lands the arrow tip ~12px above the halo).
       className="fixed left-1/2 z-[61] md:hidden -translate-x-1/2 select-none"
       style={{
         bottom:
-          "calc(max(28px, calc(env(safe-area-inset-bottom) + 28px)) + 80px)",
+          "calc(max(24px, calc(env(safe-area-inset-bottom) + 24px)) + 104px)",
       }}
       initial={{ opacity: 0, y: 8, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -103,16 +103,58 @@ export function RadialMenuHint({ onDismiss }: RadialMenuHintProps) {
       aria-live="polite"
     >
       <div
-        className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-panel-strong)] px-4 py-2 shadow-[var(--shadow-panel-strong)]"
+        className="relative flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] px-4 py-2"
+        style={{
+          // Layered gradient + glass, matching the FAB body so the two
+          // feel like part of the same material system.
+          background:
+            "linear-gradient(152deg, color-mix(in srgb, white 22%, var(--color-panel-strong)) 0%, var(--color-panel-strong) 60%, var(--color-panel) 100%)",
+          backdropFilter: "blur(10px) saturate(1.08)",
+          WebkitBackdropFilter: "blur(10px) saturate(1.08)",
+          boxShadow:
+            "0 12px 28px rgba(35, 26, 18, 0.18), 0 2px 6px rgba(35, 26, 18, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45)",
+        }}
       >
+        {/* Leading long-press glyph — a small filled dot with an arc
+            around it suggests "press and hold". */}
+        <svg
+          width="14"
+          height="14"
+          viewBox="-7 -7 14 14"
+          aria-hidden="true"
+          style={{ color: "var(--color-accent)", flexShrink: 0 }}
+        >
+          <circle cx="0" cy="0" r="2.2" fill="currentColor" />
+          <path
+            d="M 4.6 -2.2 A 5 5 0 0 1 4.6 2.2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+          <path
+            d="M -4.6 -2.2 A 5 5 0 0 0 -4.6 2.2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            opacity="0.55"
+          />
+        </svg>
+
         <span className="text-sm leading-none text-[var(--color-ink)]">
-          长按打开评分环
+          <span className="font-semibold" style={{ letterSpacing: "0.02em" }}>
+            长按
+          </span>
+          <span className="mx-1 text-[var(--color-ink-soft)]">·</span>
+          <span className="text-[var(--color-ink-soft)]">拖向目标</span>
         </span>
+
         <button
           type="button"
           aria-label="关闭提示"
           onClick={onDismiss}
-          className="-mr-1 flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-border)] transition-colors"
+          className="-mr-1 ml-1 flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-border)] transition-colors"
         >
           <svg
             width="12"
@@ -128,15 +170,23 @@ export function RadialMenuHint({ onDismiss }: RadialMenuHintProps) {
           </svg>
         </button>
       </div>
-      {/* Down-pointing arrow that visually connects the chip to the FAB. */}
-      <div
+
+      {/* Down-pointing arrow that visually connects the chip to the FAB.
+          Framer-motion's `animate` with an array produces a slow drift
+          so the arrow gently "nudges" toward the button — the global
+          <MotionConfig reducedMotion="user"> collapses the loop to a
+          single frame when the user prefers reduced motion. */}
+      <motion.div
         className="mx-auto h-0 w-0"
         style={{
           marginTop: -1,
           borderLeft: "6px solid transparent",
           borderRight: "6px solid transparent",
           borderTop: "6px solid var(--color-panel-strong)",
+          filter: "drop-shadow(0 1px 1px rgba(35, 26, 18, 0.12))",
         }}
+        animate={{ y: [0, 3, 0] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
         aria-hidden="true"
       />
     </motion.div>

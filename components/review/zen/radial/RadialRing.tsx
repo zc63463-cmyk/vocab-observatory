@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 import { RATING_CONFIG, type RatingKey } from "../types";
 import {
   arcPath,
@@ -9,7 +10,7 @@ import {
   type RadialSegment,
 } from "@/lib/review/radial-geometry";
 
-// Open-state visual: an annulus of 6 labeled sectors centered on the
+// Open-state visual: an annulus of 7 labeled sectors centered on the
 // pointerdown origin. The ring is rendered into a portal by the parent
 // (ZenRadialMenu) so its fixed-layer positioning isn't affected by the
 // 3D rotateY transform sitting around the flip card.
@@ -17,6 +18,20 @@ import {
 // All segment geometry comes from lib/review/radial-geometry so this
 // component carries no angle math of its own — changing the layout in
 // one place propagates correctly to hit-testing and rendering.
+//
+// Visual treatment
+// ----------------
+// Each segment is built from three stacked SVG paths sharing the same
+// `d`:
+//   1. base fill      — panel tone (or tint flash on commit)
+//   2. hover gradient — per-segment radial gradient in the action's
+//      accent colour, faded in when hovered
+//   3. rim light      — a global top-lit linear gradient overlay that
+//      gives the whole ring a "caught light from above" feel
+// A thin stroke is then drawn on top. Around the ring we add tick
+// marks at every segment boundary (hairlines) and a center pivot dot
+// inside the dead-zone. The backdrop is a radial spotlight centered on
+// the ring origin rather than a flat scrim — it reads as "stage lit".
 
 export interface RadialRingProps {
   /** Screen-space center the ring should appear around (pointerdown origin). */
@@ -64,27 +79,46 @@ export function RadialRing({
   pointer,
 }: RadialRingProps) {
   // SVG viewport large enough to contain the outermost geometry plus
-  // a little padding for the commit-ripple, which can overshoot the
+  // a little padding for the commit shockwave, which can overshoot the
   // ring radius briefly. `2 * (R + pad)` → square; we anchor at center.
-  const pad = 12;
+  const pad = 16;
   const viewSize = 2 * (outerRadius + pad);
   const half = viewSize / 2;
 
+  // Collect every segment-edge angle so we can draw hairline tick
+  // marks at each seam. Rounding + Set de-dupes the shared boundaries
+  // between adjacent segments so we don't double-stroke.
+  const boundaryAngles = useMemo(() => {
+    const s = new Set<string>();
+    for (const seg of layout) {
+      s.add((seg.centerAngle - seg.spread / 2).toFixed(5));
+      s.add((seg.centerAngle + seg.spread / 2).toFixed(5));
+    }
+    return Array.from(s).map(Number);
+  }, [layout]);
+
+  // Build a CSS radial-gradient that places a soft pool of light at
+  // the ring origin and darkens as it fans outward to the viewport
+  // edges. The result reads as a spotlight on the ring.
+  const spotlight = `radial-gradient(circle at ${center.x}px ${center.y}px, rgba(10, 10, 12, 0) 0%, rgba(10, 10, 12, 0.28) 45%, rgba(10, 10, 12, 0.44) 100%)`;
+
   return (
     <>
-      {/* Backdrop — absorbs taps outside the ring (if user lifts here,
-          the gesture's pointerup handler fires with `hovered === null`
-          and cancels, so no additional handler is needed here). */}
+      {/* Backdrop — spotlight radial instead of flat scrim. Absorbs
+          taps outside the ring (if user lifts here, the gesture's
+          pointerup handler fires with `hovered === null` and cancels,
+          so no additional handler is needed here). */}
       <motion.div
         className="fixed inset-0 z-[70] md:hidden"
         style={{
-          background: "rgba(10, 10, 12, 0.28)",
-          backdropFilter: "blur(2px)",
+          background: spotlight,
+          backdropFilter: "blur(4px) saturate(1.08)",
+          WebkitBackdropFilter: "blur(4px) saturate(1.08)",
           pointerEvents: "none",
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: phase === "active" ? 1 : 0 }}
-        transition={{ duration: 0.12 }}
+        transition={{ duration: 0.14 }}
         aria-hidden="true"
       />
 
@@ -100,6 +134,12 @@ export function RadialRing({
           left: center.x - half,
           top: center.y - half,
           pointerEvents: "none",
+          // Global, ring-wide drop-shadow. Applying it here instead of
+          // per-segment lets the browser composite a single shadow
+          // layer and keeps the ring feeling like one elevated object
+          // rather than seven separate tiles.
+          filter:
+            "drop-shadow(0 12px 28px rgba(35, 26, 18, 0.22)) drop-shadow(0 2px 6px rgba(35, 26, 18, 0.12))",
         }}
         initial={{ opacity: 0, scale: 0.6 }}
         animate={
@@ -112,6 +152,50 @@ export function RadialRing({
         transition={{ type: "spring", stiffness: 300, damping: 26 }}
         aria-hidden="true"
       >
+        <defs>
+          {/* Top-lit rim highlight shared across every segment. In
+              userSpaceOnUse it's a single vertical ramp across the
+              whole ring, so segments at the top pick up the bright
+              stops and segments at the bottom pick up the transparent
+              ones — a cohesive "light from above" impression. */}
+          <linearGradient
+            id="ring-rim"
+            x1="0"
+            y1={-outerRadius}
+            x2="0"
+            y2={outerRadius}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stopColor="rgba(255, 255, 255, 0.28)" />
+            <stop offset="50%" stopColor="rgba(255, 255, 255, 0.06)" />
+            <stop offset="100%" stopColor="rgba(255, 255, 255, 0)" />
+          </linearGradient>
+
+          {/* Per-segment hover gradient — centered on the segment's
+              mid-radius point so the tint glows from "inside" the
+              segment outward. Colour comes from RATING_CONFIG for
+              ratings and neutral-ink for utility actions. */}
+          {layout.map((seg) => {
+            const mid = polar((innerRadius + outerRadius) / 2, seg.centerAngle);
+            const r = (outerRadius - innerRadius) * 0.95;
+            const color = colorFor(seg.id);
+            return (
+              <radialGradient
+                key={`grad-${seg.id}`}
+                id={`radial-grad-${seg.id}`}
+                cx={mid.x}
+                cy={mid.y}
+                r={r}
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop offset="0%" stopColor={color} stopOpacity="0.42" />
+                <stop offset="65%" stopColor={color} stopOpacity="0.18" />
+                <stop offset="100%" stopColor={color} stopOpacity="0.06" />
+              </radialGradient>
+            );
+          })}
+        </defs>
+
         {/* Dead-zone ring stroke (subtle) — communicates "release here
             to cancel" without requiring an explicit label. */}
         <circle
@@ -125,10 +209,33 @@ export function RadialRing({
           opacity={0.4}
         />
 
+        {/* Center pivot marker — a small filled dot inside the dead-
+            zone. Confirms where the ring is anchored and gives the
+            drag guideline a visible origin to emanate from. */}
+        <circle
+          cx={0}
+          cy={0}
+          r={3}
+          fill="var(--color-ink-soft)"
+          opacity={0.72}
+        />
+        <circle
+          cx={0}
+          cy={0}
+          r={6}
+          fill="none"
+          stroke="var(--color-ink-soft)"
+          strokeWidth={1}
+          opacity={0.22}
+        />
+
         {layout.map((seg) => {
           const isHovered = hoveredId === seg.id;
           const isCommitted = committedId === seg.id;
           const isDisabled = disabledIds?.has(seg.id) ?? false;
+          const isActiveVisual =
+            (isHovered && !isDisabled) ||
+            (isCommitted && phase === "committing");
           const tint = colorFor(seg.id);
           const d = arcPath(seg.centerAngle, seg.spread, innerRadius, outerRadius);
           // Mid-radius point along the segment's center axis. Used as
@@ -136,65 +243,99 @@ export function RadialRing({
           const mid = polar((innerRadius + outerRadius) / 2, seg.centerAngle);
 
           return (
-            <g key={seg.id} opacity={isDisabled ? 0.32 : 1}>
+            <g key={seg.id} opacity={isDisabled ? 0.38 : 1}>
+              {/* 1. Base fill — panel tone, or a tint flash during
+                  commit. Flat fills read well against the drop-shadow
+                  applied at the <svg> level. */}
               <motion.path
                 d={d}
                 fill={
                   isCommitted && phase === "committing"
                     ? tint
-                    : isHovered && !isDisabled
-                      ? tint
-                      : "var(--color-panel)"
-                }
-                stroke={
-                  (isCommitted && phase === "committing") ||
-                  (isHovered && !isDisabled)
-                    ? tint
-                    : "var(--color-border)"
-                }
-                strokeWidth={
-                  (isCommitted && phase === "committing") ||
-                  (isHovered && !isDisabled)
-                    ? 1.5
-                    : 1
+                    : "var(--color-panel-strong)"
                 }
                 animate={{
-                  // On commit, briefly punch the fill from "hovered"
-                  // (0.22) up to a confirmation flash (0.65) then fade.
-                  // The keyframe array is a framer-motion idiom for
-                  // chained tween — under prefers-reduced-motion the
-                  // global MotionConfig collapses this to instant.
                   fillOpacity:
                     isCommitted && phase === "committing"
-                      ? [0.22, 0.65, 0]
-                      : isHovered && !isDisabled
-                        ? 0.22
-                        : 0.95,
-                  scale:
-                    isCommitted && phase === "committing" ? 1.12 : 1,
+                      ? [0.3, 0.8, 0]
+                      : 0.94,
                 }}
                 transition={
                   isCommitted && phase === "committing"
-                    ? { duration: 0.18, ease: "easeOut" }
+                    ? { duration: 0.22, ease: "easeOut" }
                     : { duration: 0.08 }
                 }
-                style={{ transformOrigin: "0 0" }}
               />
-              {isCommitted && phase === "committing" && (
-                // Commit ripple — expanding circle pinned at the mid-
-                // radius point of the chosen segment. Reads as "the
-                // tap landed here" without obscuring the surrounding
-                // segments.
-                <motion.circle
-                  cx={mid.x}
-                  cy={mid.y}
-                  r={0}
-                  fill={tint}
-                  initial={{ r: 0, opacity: 0.55 }}
-                  animate={{ r: outerRadius - innerRadius, opacity: 0 }}
-                  transition={{ duration: 0.18, ease: "easeOut" }}
+
+              {/* 2. Hover gradient — fades in for the currently
+                  targeted segment. Uses the per-segment radial
+                  gradient defined in <defs>. */}
+              {isHovered && !isDisabled && (
+                <motion.path
+                  d={d}
+                  fill={`url(#radial-grad-${seg.id})`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12 }}
                 />
               )}
+
+              {/* 3. Rim-light overlay — shared top-lit gradient. Kept
+                  at a modest opacity so it lifts the material without
+                  washing out the hover/commit colour beneath. */}
+              <path
+                d={d}
+                fill="url(#ring-rim)"
+                opacity={0.55}
+                pointerEvents="none"
+              />
+
+              {/* 4. Stroke — crisp outline on top of the fills. Gets
+                  the tint colour when the segment is "alive" (hovered
+                  or committing) to emphasise the selection. */}
+              <motion.path
+                d={d}
+                fill="none"
+                stroke={
+                  isActiveVisual ? tint : "var(--color-border-strong)"
+                }
+                strokeWidth={isActiveVisual ? 1.6 : 0.9}
+                animate={{ strokeOpacity: isActiveVisual ? 0.95 : 0.62 }}
+                transition={{ duration: 0.1 }}
+              />
+
+              {isCommitted && phase === "committing" && (
+                <>
+                  {/* Primary ripple — filled disc at the segment's
+                      mid-radius point. Reads as "the tap landed here". */}
+                  <motion.circle
+                    cx={mid.x}
+                    cy={mid.y}
+                    r={0}
+                    fill={tint}
+                    initial={{ r: 0, opacity: 0.6 }}
+                    animate={{ r: (outerRadius - innerRadius) * 0.9, opacity: 0 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                  />
+                  {/* Secondary shockwave — expanding stroke ring
+                      anchored at the ring origin, radiates past the
+                      outer edge. Adds a touch of drama to the commit
+                      without blocking the next card. */}
+                  <motion.circle
+                    cx={0}
+                    cy={0}
+                    r={innerRadius}
+                    fill="none"
+                    stroke={tint}
+                    strokeWidth={2.5}
+                    initial={{ r: innerRadius, opacity: 0.55 }}
+                    animate={{ r: outerRadius + 10, opacity: 0, strokeWidth: 0 }}
+                    transition={{ duration: 0.28, ease: "easeOut" }}
+                  />
+                </>
+              )}
+
               <SegmentLabel
                 centerAngle={seg.centerAngle}
                 innerR={innerRadius}
@@ -204,6 +345,28 @@ export function RadialRing({
                 isHovered={isHovered && !isDisabled}
               />
             </g>
+          );
+        })}
+
+        {/* Segment-boundary tick marks — thin hairlines at each seam,
+            extending just inside the inner radius. Their very low
+            opacity keeps them from fighting the segments; they read
+            as precision detailing rather than visual noise. */}
+        {boundaryAngles.map((a, i) => {
+          const p1 = polar(innerRadius - 4, a);
+          const p2 = polar(innerRadius + 1, a);
+          return (
+            <line
+              key={`tick-${i}`}
+              x1={p1.x}
+              y1={p1.y}
+              x2={p2.x}
+              y2={p2.y}
+              stroke="var(--color-border-strong)"
+              strokeWidth={0.8}
+              strokeLinecap="round"
+              opacity={0.5}
+            />
           );
         })}
 
@@ -252,16 +415,29 @@ function DragGuideline({
   const tipY = pointer.dy * scale;
 
   return (
-    <line
-      x1={0}
-      y1={0}
-      x2={tipX}
-      y2={tipY}
-      stroke="var(--color-ink-soft)"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      opacity={0.45}
-    />
+    <g pointerEvents="none">
+      <line
+        x1={0}
+        y1={0}
+        x2={tipX}
+        y2={tipY}
+        stroke="var(--color-ink-soft)"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeDasharray="2 3"
+        opacity={0.55}
+      />
+      {/* Terminal dot at the pointer tip — reinforces "this is where
+          you are right now". Kept small so it doesn't obscure the
+          underlying segment stroke. */}
+      <circle
+        cx={tipX}
+        cy={tipY}
+        r={2.5}
+        fill="var(--color-ink-soft)"
+        opacity={0.72}
+      />
+    </g>
   );
 }
 
@@ -293,12 +469,22 @@ function SegmentLabel({
       y={y}
       textAnchor="middle"
       dominantBaseline="central"
-      fill={isHovered ? color : "var(--color-ink)"}
       fontSize={isHovered ? 15 : 13}
-      fontWeight={isHovered ? 700 : 500}
-      style={{ pointerEvents: "none", userSelect: "none" }}
-      animate={{ scale: isHovered ? 1.08 : 1 }}
-      transition={{ duration: 0.08 }}
+      fontWeight={isHovered ? 700 : 550}
+      style={{
+        pointerEvents: "none",
+        userSelect: "none",
+        // Subtle letter-spacing reads as "typographic intent" rather
+        // than default web rendering. Slightly negative on idle for a
+        // more compact feel, zeroed on hover so the tracking-out effect
+        // helps the active label pop.
+        letterSpacing: isHovered ? "0.02em" : "0",
+      }}
+      animate={{
+        scale: isHovered ? 1.08 : 1,
+        fill: isHovered ? color : "var(--color-ink)",
+      }}
+      transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
     >
       {label}
     </motion.text>
