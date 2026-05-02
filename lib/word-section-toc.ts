@@ -6,9 +6,19 @@
  *
  * Owner of UX invariants:
  *  - 释义 always first (it's the entry point of the page),
- *  - 笔记 always last (jump-to-notes is the original feature driver),
+ *  - 笔记 sits immediately after 原型 (or after 释义 when 原型 is absent)
+ *    so the most-used jump target is within thumb reach at the start of
+ *    the chip bar — jump-to-notes is the feature driver,
+ *  - 搭配 / 语料 / 正文 are demoted to the tail because they're long-form
+ *    content the user typically scrolls into rather than jumps to,
  *  - prototype/body chips only render when the underlying section is in
  *    the DOM (otherwise the chip would be a dead anchor).
+ *
+ * Side effect of curating order != DOM order: the IntersectionObserver-
+ * driven active highlight will jump around the chip bar (instead of
+ * progressing monotonically left-to-right) as the user scrolls. Accepted —
+ * the chip bar is a navigation tool first and a scroll-progress indicator
+ * second.
  */
 
 export interface WordTOCSection {
@@ -28,8 +38,9 @@ export interface WordTOCSectionsInput {
 /**
  * Build the mobile TOC chip list for a word detail page.
  *
- * Order matches the visual scroll order of the rendered sections so the
- * IntersectionObserver-driven active highlight follows reading direction.
+ * Order is curated for priority access (see module docstring), NOT to
+ * mirror DOM scroll order:
+ *   释义 → [原型?] → 笔记 → 拓扑 → 同义 → 反义 → 搭配 → 语料 → [正文?]
  */
 export function buildWordTOCSections(
   input: WordTOCSectionsInput,
@@ -42,19 +53,23 @@ export function buildWordTOCSections(
     sections.push({ id: "word-prototype", label: "原型" });
   }
 
+  // 笔记 leads the post-prototype block: jump-to-notes is the feature
+  // driver and we want it within thumb reach at the start of the bar.
   sections.push(
-    { id: "word-collocations", label: "搭配" },
-    { id: "word-corpus", label: "语料" },
+    { id: "word-notes", label: "笔记" },
     { id: "word-topology", label: "拓扑" },
     { id: "word-synonyms", label: "同义" },
     { id: "word-antonyms", label: "反义" },
+    // 搭配 / 语料 are long-form, demoted to the tail.
+    { id: "word-collocations", label: "搭配" },
+    { id: "word-corpus", label: "语料" },
   );
 
+  // 正文 trails everything when present — it's the most scroll-heavy and
+  // least suited to a one-tap jump (users typically read it linearly).
   if (input.hasBody) {
     sections.push({ id: "word-body", label: "正文" });
   }
-
-  sections.push({ id: "word-notes", label: "笔记" });
 
   return sections;
 }

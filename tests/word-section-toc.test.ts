@@ -11,45 +11,46 @@ import {
 /* ── buildWordTOCSections ────────────────────────────────────────── */
 
 describe("buildWordTOCSections", () => {
-  it("renders the minimal 8-chip set when neither prototype nor body exist", () => {
+  it("renders the minimal 7-chip set when neither prototype nor body exist", () => {
     const sections = buildWordTOCSections({
       hasPrototype: false,
       hasBody: false,
     });
 
+    // New ordering: 笔记 is hoisted right after 释义 (no prototype slot
+    // here), and 搭配 / 语料 are demoted to the tail.
     expect(sections.map((s) => s.id)).toEqual([
       "word-definitions",
-      "word-collocations",
-      "word-corpus",
+      "word-notes",
       "word-topology",
       "word-synonyms",
       "word-antonyms",
-      "word-notes",
+      "word-collocations",
+      "word-corpus",
     ]);
   });
 
-  it("inserts the prototype chip in fixed slot when hasPrototype is true", () => {
+  it("inserts 原型 right after 释义 and slots 笔记 immediately after 原型", () => {
     const sections = buildWordTOCSections({
       hasPrototype: true,
       hasBody: false,
     });
 
-    // Prototype must sit between definitions and collocations — that's
-    // the visual reading order on the page, and the IntersectionObserver
-    // active-highlight depends on chip order matching DOM order.
+    // 笔记 follows 原型 directly so the high-priority jump targets are
+    // packed at the head of the chip bar.
     expect(sections.map((s) => s.id)).toEqual([
       "word-definitions",
       "word-prototype",
-      "word-collocations",
-      "word-corpus",
+      "word-notes",
       "word-topology",
       "word-synonyms",
       "word-antonyms",
-      "word-notes",
+      "word-collocations",
+      "word-corpus",
     ]);
   });
 
-  it("appends the body chip just before notes when hasBody is true", () => {
+  it("appends 正文 as the absolute final chip when hasBody is true", () => {
     const sections = buildWordTOCSections({
       hasPrototype: false,
       hasBody: true,
@@ -57,17 +58,18 @@ describe("buildWordTOCSections", () => {
 
     expect(sections.map((s) => s.id)).toEqual([
       "word-definitions",
-      "word-collocations",
-      "word-corpus",
+      "word-notes",
       "word-topology",
       "word-synonyms",
       "word-antonyms",
+      "word-collocations",
+      "word-corpus",
       "word-body",
-      "word-notes",
     ]);
+    expect(sections[sections.length - 1]?.label).toBe("正文");
   });
 
-  it("includes both optional chips when hasPrototype and hasBody are true", () => {
+  it("includes both optional chips in the right slots when hasPrototype and hasBody are true", () => {
     const sections = buildWordTOCSections({
       hasPrototype: true,
       hasBody: true,
@@ -75,12 +77,12 @@ describe("buildWordTOCSections", () => {
 
     expect(sections).toHaveLength(9);
     expect(sections[0]?.id).toBe("word-definitions");
-    expect(sections[sections.length - 1]?.id).toBe("word-notes");
-    expect(sections.find((s) => s.id === "word-prototype")).toBeDefined();
-    expect(sections.find((s) => s.id === "word-body")).toBeDefined();
+    expect(sections[1]?.id).toBe("word-prototype");
+    expect(sections[2]?.id).toBe("word-notes");
+    expect(sections[sections.length - 1]?.id).toBe("word-body");
   });
 
-  it("always anchors 释义 first and 笔记 last regardless of optional flags", () => {
+  it("always anchors 释义 as the first chip regardless of optional flags", () => {
     const cases: Array<{ hasPrototype: boolean; hasBody: boolean }> = [
       { hasPrototype: false, hasBody: false },
       { hasPrototype: true, hasBody: false },
@@ -91,11 +93,39 @@ describe("buildWordTOCSections", () => {
     for (const input of cases) {
       const sections = buildWordTOCSections(input);
       expect(sections[0]).toEqual({ id: "word-definitions", label: "释义" });
-      expect(sections[sections.length - 1]).toEqual({
-        id: "word-notes",
-        label: "笔记",
-      });
     }
+  });
+
+  it("places 笔记 immediately after the prototype slot (or after 释义 when no prototype)", () => {
+    const withPrototype = buildWordTOCSections({
+      hasPrototype: true,
+      hasBody: false,
+    });
+    const notesIdxA = withPrototype.findIndex((s) => s.id === "word-notes");
+    expect(notesIdxA).toBe(2);
+    expect(withPrototype[notesIdxA - 1]?.id).toBe("word-prototype");
+
+    const withoutPrototype = buildWordTOCSections({
+      hasPrototype: false,
+      hasBody: false,
+    });
+    const notesIdxB = withoutPrototype.findIndex((s) => s.id === "word-notes");
+    expect(notesIdxB).toBe(1);
+    expect(withoutPrototype[notesIdxB - 1]?.id).toBe("word-definitions");
+  });
+
+  it("ends with 正文 when hasBody is true, otherwise 语料 closes the bar", () => {
+    const ended = buildWordTOCSections({ hasPrototype: true, hasBody: true });
+    expect(ended[ended.length - 1]).toEqual({
+      id: "word-body",
+      label: "正文",
+    });
+
+    const noBody = buildWordTOCSections({ hasPrototype: true, hasBody: false });
+    expect(noBody[noBody.length - 1]).toEqual({
+      id: "word-corpus",
+      label: "语料",
+    });
   });
 
   it("emits unique anchor ids", () => {
