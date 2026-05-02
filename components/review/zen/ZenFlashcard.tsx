@@ -1,12 +1,17 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type PanInfo } from "framer-motion";
 import { ChevronDown, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
+import { RATING_CONFIG, type RatingKey } from "./types";
 import { speakLemma, canSpeak } from "@/lib/tts";
+import {
+  previewSwipeRating,
+  resolveSwipeRating,
+} from "@/lib/review/swipe-rating";
 import { WordRelationLinks } from "./WordRelationLinks";
 
 interface FlashcardFrontProps {
@@ -70,11 +75,28 @@ function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
 }
 
 interface FlashcardBackProps {
+  /** Disable swipe gestures while a rating is in flight or the flip is animating. */
+  canSwipe: boolean;
   item: ReviewQueueItem;
+  onRate: (rating: RatingKey) => void;
 }
 
-function FlashcardBack({ item }: FlashcardBackProps) {
+// Direction → which edge of the card fades in the preview label during drag.
+// Kept in a map so the JSX below stays declarative.
+const SWIPE_OVERLAY_POSITION: Record<RatingKey, string> = {
+  again: "left-6 top-1/2 -translate-y-1/2",
+  good: "right-6 top-1/2 -translate-y-1/2",
+  easy: "left-1/2 top-6 -translate-x-1/2",
+  hard: "left-1/2 bottom-6 -translate-x-1/2",
+};
+
+function FlashcardBack({ canSwipe, item, onRate }: FlashcardBackProps) {
   const [examplesOpen, setExamplesOpen] = useState(false);
+  // Live preview of which direction the drag currently aims at, or null when
+  // idle. We use framer-motion's onPan so the card never physically moves —
+  // that would fight the 3D-rotated flip frame this sits inside. Purely
+  // informational: real commit happens on onPanEnd via resolveSwipeRating.
+  const [dragPreview, setDragPreview] = useState<RatingKey | null>(null);
 
   const semanticField =
     typeof item.metadata === "object" &&
@@ -82,6 +104,23 @@ function FlashcardBack({ item }: FlashcardBackProps) {
     "semantic_field" in item.metadata
       ? String(item.metadata.semantic_field)
       : null;
+
+  function handlePan(_: PointerEvent, info: PanInfo) {
+    if (!canSwipe) return;
+    setDragPreview(previewSwipeRating({ x: info.offset.x, y: info.offset.y }));
+  }
+
+  function handlePanEnd(_: PointerEvent, info: PanInfo) {
+    setDragPreview(null);
+    if (!canSwipe) return;
+    const rating = resolveSwipeRating(
+      { x: info.offset.x, y: info.offset.y },
+      { x: info.velocity.x, y: info.velocity.y },
+    );
+    if (rating) {
+      onRate(rating);
+    }
+  }
 
   return (
     <motion.div
@@ -95,6 +134,8 @@ function FlashcardBack({ item }: FlashcardBackProps) {
       animate={{ rotateY: 0 }}
       exit={{ rotateY: -180 }}
       transition={{ type: "spring", ...springs.smooth }}
+      onPan={handlePan}
+      onPanEnd={handlePanEnd}
     >
       {/*
         Scroll container. Takes remaining vertical space via flex-1 and vertically
@@ -213,6 +254,26 @@ function FlashcardBack({ item }: FlashcardBackProps) {
       </div>
       </div>
 
+      {/* Swipe preview overlay — an unobtrusive label fading in at the edge
+          the gesture currently aims at. Pointer-events-none so it never
+          intercepts the active drag. AnimatePresence handles the swap when
+          direction crosses the dominant-axis boundary mid-gesture. */}
+      <AnimatePresence>
+        {dragPreview && (
+          <motion.div
+            key={dragPreview}
+            className={`pointer-events-none absolute ${SWIPE_OVERLAY_POSITION[dragPreview]} z-10 select-none rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-4 py-2 text-sm font-semibold shadow-md backdrop-blur`}
+            style={{ color: RATING_CONFIG[dragPreview].color }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+          >
+            {RATING_CONFIG[dragPreview].label}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/*
         Rating hint: static flex footer (no longer `absolute bottom-8`). Previously
         the hint sat on top of the card's flow, which let expanded content
@@ -233,7 +294,7 @@ function FlashcardBack({ item }: FlashcardBackProps) {
             <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">P</kbd> 朗读
           </span>
           <span className="sm:hidden">
-            点击评分按钮或按数字键 1-4
+            滑动卡片评分：← Again · → Good · ↑ Easy · ↓ Hard
           </span>
         </p>
       </div>
@@ -242,11 +303,15 @@ function FlashcardBack({ item }: FlashcardBackProps) {
 }
 
 export function ZenFlashcard() {
-  const { item, phase, reveal } = useZenReviewContext();
+  const { item, phase, reveal, rate, isAnimating } = useZenReviewContext();
 
   if (!item) return null;
 
   const showBack = phase === "back" || phase === "rating";
+  // Swipe only lives during the fully-revealed back phase. Disabling during
+  // the flip animation prevents racing the rating state machine (pending +
+  // animationLock).
+  const canSwipe = phase === "back" && !isAnimating;
 
   return (
     <div 
@@ -288,7 +353,7 @@ export function ZenFlashcard() {
             transform: "rotateY(180deg)",
           }}
         >
-          <FlashcardBack item={item} />
+          <FlashcardBack item={item} canSwipe={canSwipe} onRate={rate} />
         </div>
       </motion.div>
     </div>
