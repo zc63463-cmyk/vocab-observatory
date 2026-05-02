@@ -32,6 +32,9 @@ export interface RadialRingProps {
   /** "active" while pointer is tracking, "committing" or "cancelling"
    *  during the exit. */
   phase: "active" | "committing" | "cancelling";
+  /** Segments that should render in a disabled visual state. Tapping
+   *  them is treated as a cancel by useRadialGesture. */
+  disabledIds?: ReadonlySet<RadialActionId>;
 }
 
 /** Map each segment id → its visual tint. Ratings use the existing
@@ -50,6 +53,7 @@ export function RadialRing({
   hoveredId,
   committedId,
   phase,
+  disabledIds,
 }: RadialRingProps) {
   // SVG viewport large enough to contain the outermost geometry plus
   // a little padding for the commit-ripple, which can overshoot the
@@ -116,18 +120,19 @@ export function RadialRing({
         {layout.map((seg) => {
           const isHovered = hoveredId === seg.id;
           const isCommitted = committedId === seg.id;
+          const isDisabled = disabledIds?.has(seg.id) ?? false;
           const tint = colorFor(seg.id);
           const d = arcPath(seg.centerAngle, seg.spread, innerRadius, outerRadius);
 
           return (
-            <g key={seg.id}>
+            <g key={seg.id} opacity={isDisabled ? 0.32 : 1}>
               <motion.path
                 d={d}
-                fill={isHovered ? tint : "var(--color-panel)"}
-                stroke={isHovered ? tint : "var(--color-border)"}
-                strokeWidth={isHovered ? 1.5 : 1}
+                fill={isHovered && !isDisabled ? tint : "var(--color-panel)"}
+                stroke={isHovered && !isDisabled ? tint : "var(--color-border)"}
+                strokeWidth={isHovered && !isDisabled ? 1.5 : 1}
                 animate={{
-                  fillOpacity: isHovered ? 0.22 : 0.95,
+                  fillOpacity: isHovered && !isDisabled ? 0.22 : 0.95,
                   scale: isCommitted && phase === "committing" ? 1.08 : 1,
                 }}
                 transition={{ duration: 0.08 }}
@@ -138,8 +143,8 @@ export function RadialRing({
                 innerR={innerRadius}
                 outerR={outerRadius}
                 label={seg.label}
-                color={tint}
-                isHovered={isHovered}
+                color={isDisabled ? "var(--color-ink-soft)" : tint}
+                isHovered={isHovered && !isDisabled}
               />
             </g>
           );

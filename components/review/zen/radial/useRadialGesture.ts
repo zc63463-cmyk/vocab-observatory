@@ -90,6 +90,11 @@ export interface UseRadialGestureOptions {
   onCommit: (actionId: RadialActionId) => void;
   /** Callable to suppress opening (e.g., while a card is mid-flip). */
   isEnabled?: () => boolean;
+  /** Per-action enable gate. Returning false means the user can drag to
+   *  this segment but releasing on it will be treated as a cancel rather
+   *  than a commit — used to keep the FAB visible on the front face
+   *  while rating segments stay non-committable. Defaults to always true. */
+  isActionEnabled?: (id: RadialActionId) => boolean;
 }
 
 export interface RadialGestureApi {
@@ -106,6 +111,7 @@ export function useRadialGesture({
   layout = DEFAULT_LAYOUT,
   onCommit,
   isEnabled,
+  isActionEnabled,
 }: UseRadialGestureOptions): RadialGestureApi {
   const [state, dispatch] = useReducer(reducer, initial);
 
@@ -116,6 +122,8 @@ export function useRadialGesture({
   onCommitRef.current = onCommit;
   const isEnabledRef = useRef(isEnabled);
   isEnabledRef.current = isEnabled;
+  const isActionEnabledRef = useRef(isActionEnabled);
+  isActionEnabledRef.current = isActionEnabled;
 
   // PRESS → ACTIVATE transition (debounced). This has to live in an
   // effect so we can cancel it via clean-up if the user releases before
@@ -175,7 +183,14 @@ export function useRadialGesture({
         outerRadius,
         layout,
       });
-      if (state.phase === "active" && finalHit) {
+      // Action-level gate: a segment can be inside the ring geometry but
+      // disabled in the current context (e.g., rating segments while
+      // the card is on its front face). Treat those as cancel.
+      const enabled =
+        finalHit &&
+        (!isActionEnabledRef.current ||
+          isActionEnabledRef.current(finalHit.id));
+      if (state.phase === "active" && finalHit && enabled) {
         dispatch({ type: "COMMIT" });
         haptic("commit");
         onCommitRef.current(finalHit.id);
