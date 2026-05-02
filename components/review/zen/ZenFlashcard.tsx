@@ -97,14 +97,17 @@ function FlashcardBack({ item }: FlashcardBackProps) {
       transition={{ type: "spring", ...springs.smooth }}
     >
       {/*
-        Scroll container. Takes remaining vertical space via flex-1 and vertically
-        centers the answer card when content is small. When the user expands
-        examples / word relations and content exceeds the available height, this
-        container scrolls instead of letting the card push into the rating hint
-        below. `min-h-0` is required so flex-1 can shrink past intrinsic size
-        and overflow-y-auto actually kicks in.
+        Scroll container. Takes remaining vertical space via flex-1.
+        On mobile (`items-start`) the answer card anchors to the top of the
+        scroll region so the word lemma + IPA are always visible — without
+        this anchor, `align-items: center` would push the top of the card
+        above the visible scroll area whenever content (definition + examples
+        + relations) overflows the cramped 4:3 mobile card. From `sm:` up the
+        viewport is wide enough that content fits and we can afford the
+        nicer-looking vertical centering. `min-h-0` is required so flex-1 can
+        shrink past intrinsic size and overflow-y-auto actually kicks in.
       */}
-      <div className="flex w-full min-h-0 flex-1 items-center justify-center overflow-y-auto">
+      <div className="flex w-full min-h-0 flex-1 items-start justify-center overflow-y-auto sm:items-center">
       {/* Answer Card */}
       <div 
         className="w-full max-w-2xl rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-lg backdrop-blur-lg sm:p-10"
