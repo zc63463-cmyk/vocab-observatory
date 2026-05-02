@@ -73,7 +73,13 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
         // transform below doesn't cancel out our centering offset.
         // 28px = half of h-14 / w-14 (3.5rem * 16 / 2).
         left: "calc(50% - 28px)",
-        bottom: "max(20px, env(safe-area-inset-bottom))",
+        // `calc(env(safe-area-inset-bottom) + 28px)` guarantees the FAB
+        // sits a full ~28px above the home indicator / Android nav bar.
+        // The outer `max()` with 28px handles browsers where the env()
+        // returns 0 (desktop emulation, older Android). Previous value
+        // of 20px was visually being clipped by Chrome Android's bottom
+        // URL bar on at least one user's device.
+        bottom: "max(28px, calc(env(safe-area-inset-bottom) + 28px))",
         transform: `scale(${targetScale})`,
         opacity: targetOpacity,
         transition:
