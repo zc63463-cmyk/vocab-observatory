@@ -388,11 +388,20 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     router.push("/review");
   }, [router]);
 
-  // Open word page in new tab
+  // Open the word detail. We push to `/words/[slug]` and rely on the
+  // parallel-route modal at `app/(app)/@modal/(...)words/[slug]/page.tsx`
+  // to intercept: the review page remains mounted underneath the modal
+  // (the `children` slot of the (app) layout is preserved across this
+  // kind of same-group navigation), so when the user closes the modal
+  // via router.back() the review session picks up exactly where it was
+  // — no re-fetch, no lost ctx state, no new-tab switching cost.
+  //
+  // Previously this used `window.open(url, "_blank")`, which forced
+  // the user into a new browser tab and lost the ongoing review flow.
   const openWordPage = useCallback(() => {
     if (!state.item) return;
-    window.open(`/words/${state.item.slug}`, "_blank", "noopener,noreferrer");
-  }, [state.item]);
+    router.push(`/words/${state.item.slug}`);
+  }, [router, state.item]);
 
   // Speak current lemma (with language detection from DB)
   const speakWord = useCallback(() => {

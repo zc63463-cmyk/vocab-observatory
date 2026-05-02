@@ -22,11 +22,12 @@
 
 import type { RatingKey } from "@/components/review/zen/types";
 
-/** Every action the menu can dispatch. 4 ratings + 2 utilities. */
+/** Every action the menu can dispatch. 4 ratings + 3 utilities. */
 export type RadialActionId =
   | RatingKey
   | "history"
-  | "speak";
+  | "speak"
+  | "detail";
 
 export interface RadialSegment {
   id: RadialActionId;
@@ -40,27 +41,57 @@ export interface RadialSegment {
 }
 
 /**
- * Default 4+2 layout. Rating positions (left=Again, right=Good, up=Easy,
- * down=Hard) mirror v1 onPan exactly so users who had muscle memory from
- * the direct-swipe era keep it; utilities go on the two upper diagonals
- * where mis-commits have the lowest cost (History is a drawer, Speak is
- * audio — both non-destructive).
+ * Default 4 + 3 layout, designed for a thumb-anchored FAB at the
+ * bottom of the screen. The ring is an open-bottom (3/4) annulus:
+ *
+ *   • Right half (135°): the four rating actions stacked top-to-bottom
+ *     in confidence-order — Easy at the top, Again at the bottom.
+ *     Each segment spans 135/4 = 33.75°.
+ *   • Left half (135°): three utility actions stacked top-to-bottom —
+ *     Detail (open word page), History (drawer), Speak (TTS). Each
+ *     segment spans 135/3 = 45°, so utilities have a noticeably wider
+ *     target than ratings; that's intentional, since utility commits
+ *     are less common but should feel forgiving.
+ *   • Bottom 90° is an empty arc — the "open mouth" of the ring,
+ *     centered on the FAB so the press point is always inside the
+ *     dead-zone and the four rating segments fan up to the user's
+ *     thumb at natural reach angles.
+ *
+ * Why the asymmetric split? In a session, the user lifts on a rating
+ * 99% of the time. Pinning all four ratings to the dominant-thumb
+ * (right) side keeps every commit a tight upward slide; the off-hand
+ * side is reserved for the rarer utility actions.
  */
+const RATING_SPREAD = (3 * Math.PI) / 16; // 33.75°
+const UTILITY_SPREAD = Math.PI / 4;        // 45°
+
 export const DEFAULT_LAYOUT: readonly RadialSegment[] = [
-  { id: "good",    centerAngle: 0,                   spread: Math.PI / 3, label: "Good" },
-  { id: "speak",   centerAngle: Math.PI / 4,         spread: Math.PI / 6, label: "朗读",   shortLabel: "🔊" },
-  { id: "easy",    centerAngle: Math.PI / 2,         spread: Math.PI / 3, label: "Easy" },
-  { id: "history", centerAngle: (3 * Math.PI) / 4,   spread: Math.PI / 6, label: "历史",   shortLabel: "📜" },
-  { id: "again",   centerAngle: Math.PI,             spread: Math.PI / 3, label: "Again" },
-  { id: "hard",    centerAngle: -Math.PI / 2,        spread: Math.PI / 3, label: "Hard" },
+  // Right half — ratings, top → bottom (math angle decreases).
+  // Centers chosen so segments tile (-π/4, π/2] with no gaps and the
+  // top edge of Easy lands exactly at +π/2 (straight up).
+  { id: "easy",    centerAngle:  (13 * Math.PI) / 32, spread: RATING_SPREAD, label: "Easy" },
+  { id: "good",    centerAngle:   (7 * Math.PI) / 32, spread: RATING_SPREAD, label: "Good" },
+  { id: "hard",    centerAngle:        Math.PI / 32,  spread: RATING_SPREAD, label: "Hard" },
+  { id: "again",   centerAngle:  (-5 * Math.PI) / 32, spread: RATING_SPREAD, label: "Again" },
+  // Left half — utilities, top → bottom (math angle wraps past +π).
+  // Detail at the top so the most "information-rich" action is furthest
+  // from the FAB (deliberate — high-value, less-frequent); Speak at the
+  // bottom-left so it's closest to the thumb on the left side.
+  { id: "detail",  centerAngle:   (5 * Math.PI) /  8, spread: UTILITY_SPREAD, label: "详情",   shortLabel: "�" },
+  { id: "history", centerAngle:   (7 * Math.PI) /  8, spread: UTILITY_SPREAD, label: "历史",   shortLabel: "📜" },
+  { id: "speak",   centerAngle:  (-7 * Math.PI) /  8, spread: UTILITY_SPREAD, label: "朗读",   shortLabel: "🔊" },
 ] as const;
 
-// Layout invariant: the total angular span must ≤ 2π. We keep it exactly
-// 4·(π/3) + 2·(π/6) = 4π/3 + π/3 = 5π/3, leaving π/3 (60°) of gap
-// distributed at the two bottom-diagonal seams. Those gaps act as
-// dead-zones that prevent accidental commits when a user aims between
-// adjacent sectors — important for the Hard↔Again and Hard↔Good borders
-// where mis-rating has high cost.
+// Layout invariant: total coverage = 4·(3π/16) + 3·(π/4) = 3π/4 + 3π/4 =
+// 3π/2 (270°), leaving the bottom π/2 (90°) as a single contiguous gap
+// from -3π/4 to -π/4. That gap doubles as: (a) a clear visual cue that
+// the FAB sits at the ring's center; (b) a generous dead-zone that
+// rejects accidental downward swipes.
+//
+// At the two top seams (±π/2 and π/2 specifically) adjacent segments
+// share a knife-edge boundary. hitTest's first-match rule combined with
+// the array order above resolves these deterministically: a perfectly
+// vertical pull lands in Easy (right half wins).
 
 /** Euclidean distance from the ring center. */
 export function radius(dx: number, dy: number): number {

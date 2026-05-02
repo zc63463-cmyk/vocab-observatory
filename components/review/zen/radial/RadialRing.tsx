@@ -41,7 +41,9 @@ export interface RadialRingProps {
  *  RATING_CONFIG colours; utility sectors pick up the neutral ink so
  *  they're deliberately less loud than the primary rating quadrants. */
 function colorFor(id: RadialActionId): string {
-  if (id === "history" || id === "speak") return "var(--color-ink-soft)";
+  if (id === "history" || id === "speak" || id === "detail") {
+    return "var(--color-ink-soft)";
+  }
   return RATING_CONFIG[id as RatingKey].color;
 }
 

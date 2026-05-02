@@ -58,6 +58,9 @@ export function ZenRadialMenu() {
       case "speak":
         ctx.speakWord();
         return;
+      case "detail":
+        ctx.openWordPage();
+        return;
     }
   };
 
@@ -73,7 +76,7 @@ export function ZenRadialMenu() {
   // utility actions are committable any time the FAB is available.
   const canRate = ctx.phase === "back" && !ctx.isAnimating;
   const isActionEnabled = (id: RadialActionId): boolean => {
-    if (id === "speak" || id === "history") return true;
+    if (id === "speak" || id === "history" || id === "detail") return true;
     return canRate;
   };
 
