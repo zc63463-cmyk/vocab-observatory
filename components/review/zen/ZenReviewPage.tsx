@@ -184,7 +184,10 @@ function ZenContent() {
             <ZenProgress />
           </div>
           
-          <div className="mt-6">
+          {/* Desktop-only rating row. Mobile uses the bottom-center
+              ZenRadialMenu FAB instead, so showing both would duplicate
+              the action and crowd the small viewport. */}
+          <div className="mt-6 hidden md:block">
             <ZenRatingButtons />
           </div>
         </motion.div>

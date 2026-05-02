@@ -15,54 +15,34 @@ import { RadialRing } from "./RadialRing";
 // Composition layer for the radial action menu.
 //
 // Key architectural decisions:
-// 1. The whole thing renders via a portal to document.body. The ring
-//    MUST NOT live inside the ZenFlashcard's 3D rotateY(180deg) parent,
-//    otherwise the SVG coordinate system gets mirrored and all hit-test
-//    angles become wrong. Putting it at the body level also keeps it
-//    above the history drawer's own z-layer predictably.
 //
-// 2. The FAB is only rendered when the card is in the `back` phase and
-//    the flip animation isn't in progress. Front-phase cards haven't
-//    been read yet, so it makes no sense to offer rating. We DO want
-//    utility actions (Speak, History) accessible earlier, but those
-//    are available via keyboard on desktop and via History drawer on
-//    mobile; gating on `back` keeps the UX rule simple.
+// 1. ALWAYS mounted while the review session is alive. The previous
+//    revision returned null when the card was on the front face, which
+//    unmounted the gesture hook — and intermittently failed to remount
+//    the FAB on the next back-face flip due to a race between matchMedia
+//    initial-state propagation and React 19 effect ordering. Keeping
+//    the component mounted and toggling FAB visibility via opacity +
+//    pointer-events on a *prop* avoids that race entirely. The cost is
+//    a few extra useEffect re-runs per card; negligible.
 //
-// 3. Desktop is detected via `(hover: none) and (pointer: coarse)` —
-//    the classic "touch device" media query. Desktop users stay on
-//    keyboard shortcuts + the existing rating buttons row.
+// 2. Renders via a portal to document.body. The ring MUST NOT live
+//    inside the ZenFlashcard's 3D rotateY(180deg) parent, otherwise
+//    SVG coordinates get mirrored and hit-tests break. body-level
+//    rendering also keeps it above the history drawer predictably.
+//
+// 3. Desktop hiding is now CSS-driven (Tailwind `md:hidden` inside
+//    RadialFab + RadialRing's backdrop). No JS media-query state, no
+//    initial-render flash.
 
 const INNER_RADIUS = 50;
 const OUTER_RADIUS = 120;
 
-// We stop rendering the FAB unless this media query matches. Using state
-// rather than CSS `@media` + display:none because the gesture hook
-// allocates window listeners, which we'd like to avoid even provisioning
-// on desktop where the FAB will never be tapped anyway.
-function useIsTouchDevice(): boolean {
-  const [isTouch, setIsTouch] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(hover: none) and (pointer: coarse)");
-    setIsTouch(mq.matches);
-    const listener = (e: MediaQueryListEvent) => setIsTouch(e.matches);
-    // Safari < 14 used addListener; guard for compatibility.
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", listener);
-      return () => mq.removeEventListener("change", listener);
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
-      mq.addListener(listener);
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
-      return () => mq.removeListener(listener);
-    }
-  }, []);
-  return isTouch;
-}
-
 export function ZenRadialMenu() {
   const ctx = useZenReviewContext();
-  const isTouch = useIsTouchDevice();
+  // Mounted-on-client gate. createPortal would otherwise be called with
+  // undefined `document` during SSR.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleCommit = (actionId: RadialActionId) => {
     switch (actionId) {
@@ -81,6 +61,9 @@ export function ZenRadialMenu() {
     }
   };
 
+  // The FAB is interactive only while the card has been flipped to its
+  // back face and no rating animation is in flight. Note: we no longer
+  // unmount when this is false — see decision (1) above.
   const isAvailable = ctx.phase === "back" && !ctx.isAnimating;
 
   const gesture = useRadialGesture({
@@ -91,23 +74,7 @@ export function ZenRadialMenu() {
     isEnabled: () => isAvailable,
   });
 
-  // If the card transitions out of `back` while the ring is still open
-  // (e.g., user drags long enough for the rate() committed during commit
-  // to advance the phase to `rating`), forcibly reset so we don't leak
-  // a stale ring onto the next card.
-  useEffect(() => {
-    if (!isAvailable && gesture.state.phase !== "closed") {
-      gesture.forceClose();
-    }
-  }, [isAvailable, gesture]);
-
-  if (!isTouch) return null;
-  if (!isAvailable && gesture.state.phase === "closed") return null;
-
-  // Everything below lives in a body-level portal to escape the 3D
-  // transform container. SSR-safe: createPortal returns null when
-  // document is undefined; we guard via typeof check.
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   const isOpen =
     gesture.state.phase === "active" ||
@@ -117,6 +84,7 @@ export function ZenRadialMenu() {
   return createPortal(
     <>
       <RadialFab
+        isAvailable={isAvailable}
         isPressing={gesture.state.phase === "pressing"}
         isOpen={isOpen}
         onPointerDown={gesture.beginPress}

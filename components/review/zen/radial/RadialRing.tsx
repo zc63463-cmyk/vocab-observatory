@@ -64,7 +64,7 @@ export function RadialRing({
           the gesture's pointerup handler fires with `hovered === null`
           and cancels, so no additional handler is needed here). */}
       <motion.div
-        className="fixed inset-0 z-[70]"
+        className="fixed inset-0 z-[70] md:hidden"
         style={{
           background: "rgba(10, 10, 12, 0.28)",
           backdropFilter: "blur(2px)",
@@ -77,7 +77,7 @@ export function RadialRing({
       />
 
       <motion.svg
-        className="fixed z-[80]"
+        className="fixed z-[80] md:hidden"
         width={viewSize}
         height={viewSize}
         viewBox={`${-half} ${-half} ${viewSize} ${viewSize}`}
