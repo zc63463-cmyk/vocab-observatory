@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 // Closed-state entry point for the radial action menu. Anchored at the
@@ -37,22 +36,30 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
   //  • dimmed when the ring itself is open (subordinates the button)
   //  • full strength while ready to receive input
   const targetOpacity = !isAvailable ? 0 : isOpen ? 0.35 : 1;
+  const targetScale = isPressing ? 0.92 : 1;
 
   return (
-    <motion.button
+    // Plain <button> on purpose. We previously used motion.button with
+    // animate={{ scale, opacity }} but framer-motion writes its own
+    // `transform` inline style for scale, which clobbers Tailwind's
+    // `-translate-x-1/2`-based centering (both target `transform`).
+    // The result was a FAB that ended up at left:50% with no centering
+    // offset — visible on first card by accident of layout, hidden on
+    // subsequent cards as soon as the transform was rewritten. Plain CSS
+    // transitions on `transform` and `opacity` give us full control and
+    // never collide with classnames.
+    <button
       type="button"
       aria-label="打开评分菜单"
       aria-expanded={isOpen}
-      aria-hidden={!isAvailable}
-      tabIndex={isAvailable ? 0 : -1}
+      // React 19 supports `inert` natively as a boolean. inert is the
+      // recommended replacement for aria-hidden+tabIndex on focused
+      // ancestors (Chrome's "Blocked aria-hidden" warning) and also
+      // automatically removes focus from the element when applied.
+      inert={!isAvailable}
       onPointerDown={onPointerDown}
-      // Keep onClick empty so screen-reader activation still works
-      // (VoiceOver / TalkBack synthesise pointer events that include a
-      // click, which we shouldn't blindly open the ring for — real
-      // pointerdown is the primary driver).
       className="
         fixed z-[60] md:hidden
-        left-1/2 -translate-x-1/2
         flex items-center justify-center
         h-14 w-14 rounded-full
         border border-[var(--color-border-strong)]
@@ -62,14 +69,17 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
         touch-none select-none
       "
       style={{
+        // Centering via `left` (not transform) so the press-scale
+        // transform below doesn't cancel out our centering offset.
+        // 28px = half of h-14 / w-14 (3.5rem * 16 / 2).
+        left: "calc(50% - 28px)",
         bottom: "max(20px, env(safe-area-inset-bottom))",
-        pointerEvents: isAvailable ? "auto" : "none",
-      }}
-      animate={{
-        scale: isPressing ? 0.92 : 1,
+        transform: `scale(${targetScale})`,
         opacity: targetOpacity,
+        transition:
+          "opacity 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        willChange: "opacity, transform",
       }}
-      transition={{ type: "spring", stiffness: 400, damping: 28 }}
     >
       {/* Three dots — communicates "more actions" without committing to a
           specific iconography. Using pure SVG circles (not an imported
@@ -79,6 +89,6 @@ export function RadialFab({ isAvailable, isPressing, isOpen, onPointerDown }: Ra
         <circle cx="10" cy="10" r="1.75" />
         <circle cx="16" cy="10" r="1.75" />
       </svg>
-    </motion.button>
+    </button>
   );
 }
