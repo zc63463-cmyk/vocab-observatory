@@ -14,11 +14,17 @@ export default function InterceptedWordDetailFromApp({
     semantic?: string | string[];
   }>;
 }) {
+  // Inside the modal there is no SiteHeader above the content scroll
+  // container — the modal itself starts at top:5rem. Override the TOC
+  // sticky offset to 0 so the chip bar pins to the top of the modal's
+  // scroll viewport instead of leaving a phantom 5rem gap.
   return (
     <Modal activePathPrefix="/words/">
-      <Suspense fallback={<WordDetailFallback />}>
-        <WordDetailContent params={params} searchParams={searchParams} />
-      </Suspense>
+      <div style={{ "--toc-sticky-top": "0px" } as React.CSSProperties}>
+        <Suspense fallback={<WordDetailFallback />}>
+          <WordDetailContent params={params} searchParams={searchParams} />
+        </Suspense>
+      </div>
     </Modal>
   );
 }
