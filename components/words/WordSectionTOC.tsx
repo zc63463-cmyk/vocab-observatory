@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  pickActiveSectionId,
+  TOC_OBSERVER_ROOT_MARGIN,
+  type WordTOCSection,
+} from "@/lib/word-section-toc";
 
-export interface WordTOCSection {
-  id: string;
-  label: string;
-}
+export type { WordTOCSection } from "@/lib/word-section-toc";
 
 /**
  * Sticky in-page table of contents shown ABOVE lg breakpoint only —
@@ -28,12 +30,12 @@ export interface WordTOCSection {
  *    flush below the TOC bar instead of underneath it.
  *
  * Active highlighting uses a single IntersectionObserver — the topmost
- * intersecting section in the upper 45% of the viewport wins. We
- * deliberately don't mutate `activeId` on click directly: letting the
- * observer drive it keeps the pill state honest with the actual scroll
- * position, including momentum scroll on iOS.
+ * intersecting section in the upper 45% of the viewport wins. The
+ * picking algorithm lives in `lib/word-section-toc.ts` so it's tested
+ * without a DOM. We deliberately don't mutate `activeId` on click
+ * directly: letting the observer drive it keeps the pill state honest
+ * with the actual scroll position, including momentum scroll on iOS.
  */
-const TOC_BAR_HEIGHT_REM = 3;
 
 export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
   const [activeId, setActiveId] = useState<string | null>(
@@ -45,19 +47,20 @@ export function WordSectionTOC({ sections }: { sections: WordTOCSection[] }) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries.filter((entry) => entry.isIntersecting);
-        if (visible.length === 0) return;
-        visible.sort(
-          (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
+        const next = pickActiveSectionId(
+          entries.map((entry) => ({
+            id: entry.target.id,
+            isIntersecting: entry.isIntersecting,
+            top: entry.boundingClientRect.top,
+          })),
         );
-        const next = visible[0]?.target.id;
+        // pickActiveSectionId returns null when nothing is intersecting,
+        // which we treat as "no change" so the highlight doesn't blink
+        // off when the user scrolls past the final section.
         if (next) setActiveId(next);
       },
       {
-        // Top edge of the trigger zone sits just below the sticky bar;
-        // bottom edge cuts at ~55% so we don't flip to the next chip
-        // before the previous section is genuinely off-screen.
-        rootMargin: `-${TOC_BAR_HEIGHT_REM + 4}rem 0px -55% 0px`,
+        rootMargin: TOC_OBSERVER_ROOT_MARGIN,
         threshold: 0,
       },
     );

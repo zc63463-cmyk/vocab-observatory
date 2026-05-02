@@ -12,10 +12,11 @@ import { WordCorpus } from "@/components/words/WordCorpus";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordHeader } from "@/components/words/WordHeader";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
-import { WordSectionTOC, type WordTOCSection } from "@/components/words/WordSectionTOC";
+import { WordSectionTOC } from "@/components/words/WordSectionTOC";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import { VocabTopologyGraphIsland } from "@/components/vocab/VocabTopologyGraphIsland";
 import { buildLocalVocabGraph, type VocabGraphData } from "@/lib/vocab-graph";
+import { buildWordTOCSections } from "@/lib/word-section-toc";
 import { buildWordsListHref } from "@/lib/words-routing";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
@@ -177,24 +178,12 @@ export async function WordDetailContent({
   // to the personal note section instead of scrolling past every block.
   // Conditional sections (prototype, body) are only listed when the
   // underlying DOM section is rendered — otherwise the chip would be a
-  // dead link.
-  const tocSections: WordTOCSection[] = [
-    { id: "word-definitions", label: "释义" },
-  ];
-  if (result.word.prototype_text) {
-    tocSections.push({ id: "word-prototype", label: "原型" });
-  }
-  tocSections.push(
-    { id: "word-collocations", label: "搭配" },
-    { id: "word-corpus", label: "语料" },
-    { id: "word-topology", label: "拓扑" },
-    { id: "word-synonyms", label: "同义" },
-    { id: "word-antonyms", label: "反义" },
-  );
-  if (result.word.body_md.trim()) {
-    tocSections.push({ id: "word-body", label: "正文" });
-  }
-  tocSections.push({ id: "word-notes", label: "笔记" });
+  // dead link. Logic lives in lib/word-section-toc.ts so it's covered
+  // by `tests/word-section-toc.test.ts` without a DOM.
+  const tocSections = buildWordTOCSections({
+    hasPrototype: Boolean(result.word.prototype_text),
+    hasBody: result.word.body_md.trim().length > 0,
+  });
 
   // scroll-margin-top so smooth-scroll lands flush below the sticky TOC
   // chip bar instead of underneath it. The base offset reads from
