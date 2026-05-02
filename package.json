@@ -11,7 +11,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "sync:vault": "tsx scripts/sync-vault.ts",
-    "dev:login": "tsx scripts/dev-login.ts"
+    "dev:login": "tsx scripts/dev-login.ts",
+    "db:apply": "tsx scripts/apply-migration.ts"
   },
   "dependencies": {
     "@open-spaced-repetition/binding": "^0.3.0",
@@ -37,11 +38,13 @@
     "@types/d3": "^7.4.3",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "pg": "^8.20.0",
     "supabase": "^2.98.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
