@@ -50,12 +50,16 @@ export function MobileNav({ items }: MobileNavProps) {
   }, []);
 
   const toggle = useCallback(() => {
+    if (typeof window !== "undefined") {
+      // Diagnostic: confirm event reaches handler. Remove once mobile drawer is verified working.
+      console.log("[MobileNav] toggle", { open, closing });
+    }
     if (open) {
       close();
     } else {
       setOpen(true);
     }
-  }, [open, close]);
+  }, [open, closing, close]);
 
   /* ── Escape key ── */
   useEffect(() => {
@@ -146,6 +150,8 @@ export function MobileNav({ items }: MobileNavProps) {
       <button
         type="button"
         onClick={toggle}
+        data-testid="mobile-nav-toggle"
+        style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition-colors duration-200 hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.92]"
         aria-label={open ? "关闭菜单" : "打开菜单"}
         aria-expanded={open}
