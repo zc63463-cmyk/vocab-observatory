@@ -43,7 +43,7 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--color-ink-soft)]">
           gauge 读数给出当下，sparkline 勾勒趋势，Observation Deck 把
-          空间维度与时间维度并置。手机端用 9-dot 手势密码锁解锁更多视图。
+          快速入口与记忆拓扑并置。手机端用 9-dot 手势密码锁解锁更多视图。
         </p>
       </header>
 
