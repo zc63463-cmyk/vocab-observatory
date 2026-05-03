@@ -5,6 +5,7 @@ import {
   DEFAULT_REVIEW_PREFERENCES,
   type UserReviewPreferences,
 } from "@/lib/review/settings";
+import { useReviewPreferencesContext } from "@/components/review/ReviewPreferencesProvider";
 
 interface UseReviewPreferencesReturn {
   preferences: UserReviewPreferences;
@@ -12,66 +13,84 @@ interface UseReviewPreferencesReturn {
   error: string | null;
   /** Refetches preferences from the server. Useful after a settings save. */
   refresh: () => Promise<void>;
-  /** Optimistically replaces local state. Server stays untouched. */
-  setLocal: (next: UserReviewPreferences) => void;
 }
 
 /**
- * Client-side fetcher for review-experience preferences. Returns defaults
- * during the loading window so consumers can render immediately — the
- * worst case while preferences haven't arrived is "user sees forward mode
- * without a prediction slider", which is the same as the pre-feature
- * behaviour. We do NOT block render on this fetch.
+ * Read-only zen-side accessor for review preferences.
  *
- * Errors are captured but never thrown — preferences are non-critical to
- * the review flow, so a server hiccup must not break the session.
+ * Prefers the app-wide `ReviewPreferencesProvider` (mounted in
+ * `(app)/layout.tsx`) so an in-zen popover save propagates live to the
+ * running review session. When the provider is missing — e.g. during
+ * tests, or if a sibling page tree forgets to mount it — falls back to
+ * a local fetch so legacy call sites keep working unchanged.
+ *
+ * Errors are captured but never thrown: preferences are non-critical to
+ * the review flow, so a server hiccup must not break the session. Worst
+ * case during a bad fetch: the user sees the pre-feature defaults
+ * (forward mode, no slider) — same as if the feature were off.
  */
 export function useReviewPreferences(): UseReviewPreferencesReturn {
-  const [preferences, setPreferences] =
+  const ctx = useReviewPreferencesContext();
+  const [localPrefs, setLocalPrefs] =
     useState<UserReviewPreferences>(DEFAULT_REVIEW_PREFERENCES);
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(ctx === null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refreshLocal = useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch("/api/review/preferences", { method: "GET" });
+      const res = await fetch("/api/review/preferences", {
+        method: "GET",
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("无法读取偏好设置");
       const payload = (await res.json()) as UserReviewPreferences;
-      setPreferences(payload);
+      setLocalPrefs(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "未知错误");
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    if (ctx !== null) return; // Provider is the source of truth, skip local fetch.
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/review/preferences", { method: "GET" });
+        const res = await fetch("/api/review/preferences", {
+          method: "GET",
+          cache: "no-store",
+        });
         if (!res.ok) throw new Error("无法读取偏好设置");
         const payload = (await res.json()) as UserReviewPreferences;
-        if (!cancelled) setPreferences(payload);
+        if (!cancelled) setLocalPrefs(payload);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "未知错误");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLocalLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ctx]);
+
+  if (ctx) {
+    return {
+      preferences: ctx.preferences,
+      loading: ctx.loading,
+      error: null,
+      refresh: ctx.refresh,
+    };
+  }
 
   return {
-    preferences,
-    loading,
+    preferences: localPrefs,
+    loading: localLoading,
     error,
-    refresh,
-    setLocal: setPreferences,
+    refresh: refreshLocal,
   };
 }
