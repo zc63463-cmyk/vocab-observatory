@@ -48,7 +48,9 @@ export async function getOwnerWordSidebarData(
   const [progressResult, noteResult, historyResult, reviewLogsResult] = await Promise.all([
     supabase
       .from("user_word_progress")
-      .select("id, due_at, review_count, state, last_reviewed_at")
+      .select(
+        "id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
+      )
       .eq("user_id", userId)
       .eq("word_id", wordId)
       .maybeSingle(),

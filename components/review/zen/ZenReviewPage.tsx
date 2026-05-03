@@ -11,6 +11,8 @@ import { ZenHistoryDrawer } from "./ZenHistoryDrawer";
 import { ZenSessionSummary } from "./ZenSessionSummary";
 import { RatingFeedback } from "./RatingFeedback";
 import { useAutoHideCursor } from "./useAutoHideCursor";
+import { ZenRadialMenu } from "./radial/ZenRadialMenu";
+import { ReviewPreferencesGearButton } from "@/components/review/ReviewPreferencesGearButton";
 import { springs } from "@/components/motion";
 
 function ZenModeEffect({ enabled }: { enabled: boolean }) {
@@ -183,7 +185,10 @@ function ZenContent() {
             <ZenProgress />
           </div>
           
-          <div className="mt-6">
+          {/* Desktop-only rating row. Mobile uses the bottom-center
+              ZenRadialMenu FAB instead, so showing both would duplicate
+              the action and crowd the small viewport. */}
+          <div className="mt-6 hidden md:block">
             <ZenRatingButtons />
           </div>
         </motion.div>
@@ -206,6 +211,13 @@ function ZenReviewInner() {
       <ZenModeEffect enabled={true} />
       <RatingFeedback />
       <ZenExitButton />
+      {/* Sit the preferences gear LEFT of the exit X. Both buttons are
+          `position: fixed`, both portal their popovers to document.body,
+          so the zen UI stays visually pristine — the gear is the only
+          new pixel and matches the exit button's chrome exactly. The
+          popover is gear-internal so we don't have to wire any state
+          here. */}
+      <ReviewPreferencesGearButton variant="zen" />
       
       <motion.main
         className="relative z-10"
@@ -229,6 +241,12 @@ function ZenReviewInner() {
         onUndo={undo}
         isUndoing={uiState.isUndoing}
       />
+
+      {/* Touch-device only — the FAB + radial action ring. Renders via
+          a portal to document.body so its fixed positioning & SVG
+          geometry aren't disturbed by the parent's 3D-transformed flip
+          container. Self-gates on phase === "back" internally. */}
+      <ZenRadialMenu />
     </div>
   );
 }

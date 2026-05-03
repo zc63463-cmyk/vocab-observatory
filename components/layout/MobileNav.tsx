@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 
 /* ── Icon mapping ── */
 const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -35,6 +36,14 @@ export function MobileNav({ items }: MobileNavProps) {
   const touchCurrentX = useRef(0);
   const pathname = usePathname();
   const previousPathnameRef = useRef(pathname);
+
+  /* ── Portal target only available client-side. Reuses the same
+        useSyncExternalStore helpers defined below for MobileThemeToggle. ── */
+  const portalReady = useSyncExternalStore(
+    subscribeToMount,
+    getClientMounted,
+    getServerMounted,
+  );
 
   const close = useCallback(() => {
     if (closeTimeoutRef.current) {
@@ -146,6 +155,8 @@ export function MobileNav({ items }: MobileNavProps) {
       <button
         type="button"
         onClick={toggle}
+        data-testid="mobile-nav-toggle"
+        style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] transition-colors duration-200 hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-glass-hover)] active:scale-[0.92]"
         aria-label={open ? "关闭菜单" : "打开菜单"}
         aria-expanded={open}
@@ -157,33 +168,35 @@ export function MobileNav({ items }: MobileNavProps) {
         )}
       </button>
 
-      {/* Backdrop */}
-      {open && (
-        <div
-          className={`fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
-            closing ? "opacity-0" : "opacity-100"
-          }`}
-          onClick={close}
-          aria-hidden="true"
-        />
-      )}
+      {/* Backdrop + Drawer rendered via portal to <body> so SiteHeader's
+          backdrop-filter doesn't capture them in its containing block. */}
+      {portalReady && open &&
+        createPortal(
+          <>
+            {/* Backdrop */}
+            <div
+              className={`fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
+                closing ? "opacity-0" : "opacity-100"
+              }`}
+              onClick={close}
+              aria-hidden="true"
+            />
 
-      {/* Drawer */}
-      {open && (
-        <div
-          ref={drawerRef}
-          className={`fixed right-0 top-0 z-50 flex h-full w-[280px] flex-col border-l border-[var(--color-border)] bg-[var(--color-panel-strong)] backdrop-blur-xl shadow-2xl transition-transform duration-[280ms] ${
-            closing
-              ? "translate-x-full ease-[cubic-bezier(0.4,0,0.2,1)]"
-              : "translate-x-0 ease-[cubic-bezier(0.16,1,0.3,1)]"
-          }`}
-          role="dialog"
-          aria-modal="true"
-          aria-label="导航菜单"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+            {/* Drawer */}
+            <div
+              ref={drawerRef}
+              className={`fixed right-0 top-0 z-50 flex h-full w-[280px] flex-col border-l border-[var(--color-border)] bg-[var(--color-panel-strong)] backdrop-blur-xl shadow-2xl transition-transform duration-[280ms] ${
+                closing
+                  ? "translate-x-full ease-[cubic-bezier(0.4,0,0.2,1)]"
+                  : "translate-x-0 ease-[cubic-bezier(0.16,1,0.3,1)]"
+              }`}
+              role="dialog"
+              aria-modal="true"
+              aria-label="导航菜单"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
             <p className="section-title text-base font-semibold">Vocab Observatory</p>
@@ -284,8 +297,10 @@ export function MobileNav({ items }: MobileNavProps) {
               <MobileThemeToggle />
             </div>
           </div>
-        </div>
-      )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

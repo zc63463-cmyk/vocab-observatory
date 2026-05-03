@@ -7,6 +7,11 @@
 - 公开词条浏览：`/`、`/words`、`/words/[slug]`
 - Owner 登录：Supabase Magic Link
 - 私有学习层：`/review`、`/dashboard`、`/notes`
+  - `/dashboard` 新设计 (Phase 4.1)：桌面端三幕舞台
+    InstrumentCluster (4 仪表 + 7d sparkline) →
+    Observation Deck (左 1fr = 快速入口（手势）+ 右 2fr = 词汇网络图) →
+    SectionDirectory bento (12 张 section 索引按钮)；
+    手机端顶部仪表盘 + 9-dot 手势密码锁解锁其余 12 种视图
 - GitHub 仓库同步：`/api/imports/github`
 - Markdown 解析：面向 `Obsidian-Eg/Wiki/L0_单词集合/*.md`
 - 复习调度：`ts-fsrs`

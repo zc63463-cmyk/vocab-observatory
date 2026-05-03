@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, SpellCheck2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { springs } from "@/components/motion";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -268,7 +268,7 @@ export function ReviewQueue() {
   if (items.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           <MetricCard label="今日到期" value={stats?.dueToday ?? 0} tone="warm" />
           <MetricCard label="新卡" value={stats?.newCards ?? 0} />
           <MetricCard label="已完成" value={completedCount} />
@@ -299,20 +299,33 @@ export function ReviewQueue() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="grid gap-4 sm:flex-1 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:flex-1 sm:gap-4 md:grid-cols-4">
           <MetricCard label="今日到期" value={stats?.dueToday ?? items.length} tone="warm" />
           <MetricCard label="新卡" value={stats?.newCards ?? 0} />
           <MetricCard label="已完成" value={completedCount} />
           <MetricCard label="剩余" value={remainingCount} tone="warm" />
         </div>
         
-        <a
-          href="/review/zen"
-          className="flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition hover:bg-[var(--color-surface-glass-hover)] sm:px-5"
-        >
-          <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
-          <span>禅意模式</span>
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/review/zen"
+            className="flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition hover:bg-[var(--color-surface-glass-hover)] sm:px-5"
+          >
+            <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
+            <span>禅意模式</span>
+          </a>
+          {/* Drill is a separate self-test flow — intentionally does NOT
+              affect FSRS scheduling. Placed alongside zen entry so users see
+              both routes from the same queue page, but visually lighter to
+              signal "utility tool" rather than "core review". */}
+          <a
+            href="/review/drill"
+            className="flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] sm:px-5"
+          >
+            <SpellCheck2 className="h-4 w-4 text-[var(--color-accent-2)]" />
+            <span>完形自测</span>
+          </a>
+        </div>
       </div>
 
       <ReviewProgressBar completed={completedCount} remaining={remainingCount} />

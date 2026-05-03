@@ -2,12 +2,20 @@
 
 import { useCallback, useState } from "react";
 import type { ReviewQueueItem, ReviewQueueStats, ReviewSessionSummary } from "@/lib/review/types";
+import type { ReviewPromptMode } from "@/lib/review/settings";
 import type { RatingKey } from "./types";
 
 interface QueueResponse {
   items: ReviewQueueItem[];
   session: ReviewSessionSummary | null;
   stats: ReviewQueueStats | null;
+}
+
+export interface SubmitRatingExtras {
+  /** User's pre-flip prediction in [0, 100]; null when prediction was off or skipped. */
+  predictedRecall?: number | null;
+  /** The actual front-face mode the card was shown in. */
+  promptMode?: ReviewPromptMode;
 }
 
 interface UseZenReviewReturn {
@@ -22,7 +30,11 @@ interface UseZenReviewReturn {
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   fetchQueue: () => Promise<QueueResponse>;
-  submitRating: (item: ReviewQueueItem, rating: RatingKey) => Promise<string>;
+  submitRating: (
+    item: ReviewQueueItem,
+    rating: RatingKey,
+    extras?: SubmitRatingExtras,
+  ) => Promise<string>;
   submitUndo: (reviewLogId: string) => Promise<ReviewQueueItem | null>;
   skipItem: (item: ReviewQueueItem) => Promise<ReviewQueueItem | null>;
 }
@@ -47,25 +59,40 @@ export function useZenReview(): UseZenReviewReturn {
     };
   }, []);
 
-  const submitRating = useCallback(async (item: ReviewQueueItem, rating: RatingKey): Promise<string> => {
-    if (!session) throw new Error("无活跃会话");
-    
-    const response = await fetch("/api/review/answer", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+  const submitRating = useCallback(
+    async (
+      item: ReviewQueueItem,
+      rating: RatingKey,
+      extras?: SubmitRatingExtras,
+    ): Promise<string> => {
+      if (!session) throw new Error("无活跃会话");
+
+      const body: Record<string, unknown> = {
         progressId: item.progress_id,
         rating,
         sessionId: session.id,
-      }),
-    });
-    
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error ?? "提交评分失败");
-    }
-    return payload.reviewLogId as string;
-  }, [session]);
+      };
+      if (extras?.predictedRecall !== undefined) {
+        body.predictedRecall = extras.predictedRecall;
+      }
+      if (extras?.promptMode !== undefined) {
+        body.promptMode = extras.promptMode;
+      }
+
+      const response = await fetch("/api/review/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "提交评分失败");
+      }
+      return payload.reviewLogId as string;
+    },
+    [session],
+  );
 
   const submitUndo = useCallback(async (reviewLogId: string): Promise<ReviewQueueItem | null> => {
     if (!session) throw new Error("无活跃会话");

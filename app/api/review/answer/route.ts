@@ -138,15 +138,27 @@ export async function POST(request: NextRequest) {
     content_hash_snapshot: progress.content_hash_snapshot,
   };
 
+  // Build the metadata blob. Prediction + prompt mode are optional client
+  // signals; only attach a key when the client actually sent something so
+  // we can tell "user has prediction off" (key absent) from "user predicted
+  // explicitly null" (key present, value null) in later analytics.
+  const logMetadata: Record<string, unknown> = {
+    desired_retention: progress.desired_retention,
+    progress_id: progress.id,
+    retrievability: scheduling.retrievability,
+  };
+  if (parsed.data.predictedRecall !== undefined) {
+    logMetadata.predicted_recall = parsed.data.predictedRecall;
+  }
+  if (parsed.data.promptMode !== undefined) {
+    logMetadata.prompt_mode = parsed.data.promptMode;
+  }
+
   const { data: logData, error: logError } = await supabase.from("review_logs").insert({
     difficulty: scheduling.difficulty,
     due_at: scheduling.logDueAt,
     elapsed_days: scheduling.elapsedDays,
-    metadata: {
-      desired_retention: progress.desired_retention,
-      progress_id: progress.id,
-      retrievability: scheduling.retrievability,
-    },
+    metadata: logMetadata as Json,
     previous_progress_snapshot: previousSnapshot as unknown as Json,
     progress_id: progress.id,
     rating: parsed.data.rating,

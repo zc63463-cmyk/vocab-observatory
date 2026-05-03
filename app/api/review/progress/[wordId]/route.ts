@@ -14,7 +14,9 @@ export async function GET(
   const { wordId } = await context.params;
   const { data, error } = await ownerSession.supabase!
     .from("user_word_progress")
-    .select("id, due_at, review_count, state, last_reviewed_at")
+    .select(
+      "id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
+    )
     .eq("user_id", ownerSession.user!.id)
     .eq("word_id", wordId)
     .maybeSingle();

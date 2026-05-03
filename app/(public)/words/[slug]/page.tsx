@@ -12,9 +12,11 @@ import { WordCorpus } from "@/components/words/WordCorpus";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
 import { WordHeader } from "@/components/words/WordHeader";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
+import { WordSectionTOC } from "@/components/words/WordSectionTOC";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import { VocabTopologyGraphIsland } from "@/components/vocab/VocabTopologyGraphIsland";
 import { buildLocalVocabGraph, type VocabGraphData } from "@/lib/vocab-graph";
+import { buildWordTOCSections } from "@/lib/word-section-toc";
 import { buildWordsListHref } from "@/lib/words-routing";
 import type { ParsedExample } from "@/lib/sync/parseMarkdown";
 import { excerpt } from "@/lib/utils";
@@ -172,6 +174,28 @@ export async function WordDetailContent({
   const relatedReviewWordIds = getRelatedReviewWordIds(graphData);
   const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
 
+  // Build the in-page TOC for mobile/tablet so readers can jump straight
+  // to the personal note section instead of scrolling past every block.
+  // Conditional sections (prototype, body) are only listed when the
+  // underlying DOM section is rendered — otherwise the chip would be a
+  // dead link. Logic lives in lib/word-section-toc.ts so it's covered
+  // by `tests/word-section-toc.test.ts` without a DOM.
+  const tocSections = buildWordTOCSections({
+    hasPrototype: Boolean(result.word.prototype_text),
+    hasBody: result.word.body_md.trim().length > 0,
+  });
+
+  // scroll-margin-top so smooth-scroll (and direct hash links) land
+  // flush below the sticky chrome instead of underneath it. The mobile
+  // / tablet base reserves room for both the SiteHeader (via
+  // --toc-sticky-top, default 5rem; 0 inside the intercepted modal)
+  // and the chip bar (3.5rem). The lg: override drops the chip-bar
+  // share because WordSectionTOC is `lg:hidden` on desktop, so a
+  // shared link like `/words/foo#word-notes` doesn't open with a
+  // 3.5rem white gap above the section.
+  const sectionScrollMt =
+    "scroll-mt-[calc(var(--toc-sticky-top,5rem)+3.5rem)] lg:scroll-mt-[var(--header-height,5rem)]";
+
   return (
     <>
       <Breadcrumb
@@ -181,67 +205,88 @@ export async function WordDetailContent({
         ]}
       />
 
+      <WordSectionTOC sections={tocSections} />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-6">
           <WordHeader word={result.word} />
 
-          <RevealSection delay={0.05}>
-            <WordDefinitions
-              definitions={result.word.core_definitions}
-              fallbackHtml={result.word.definition_html}
-            />
-          </RevealSection>
+          <section id="word-definitions" className={sectionScrollMt}>
+            <RevealSection delay={0.05}>
+              <WordDefinitions
+                definitions={result.word.core_definitions}
+                fallbackHtml={result.word.definition_html}
+              />
+            </RevealSection>
+          </section>
 
           {result.word.prototype_text ? (
-            <RevealSection delay={0.1}>
-              <PrototypeReveal text={result.word.prototype_text} />
-            </RevealSection>
+            <section id="word-prototype" className={sectionScrollMt}>
+              <RevealSection delay={0.1}>
+                <PrototypeReveal text={result.word.prototype_text} />
+              </RevealSection>
+            </section>
           ) : null}
 
-          <RevealSection delay={0.15}>
-            <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
-          </RevealSection>
+          <section id="word-collocations" className={sectionScrollMt}>
+            <RevealSection delay={0.15}>
+              <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
+            </RevealSection>
+          </section>
 
-          <RevealSection delay={0.2}>
-            <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
-          </RevealSection>
+          <section id="word-corpus" className={sectionScrollMt}>
+            <RevealSection delay={0.2}>
+              <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
+            </RevealSection>
+          </section>
 
-          <RevealSection delay={0.25}>
-            <VocabTopologyGraphIsland data={graphData} maxNodes={60} />
-          </RevealSection>
+          <section id="word-topology" className={sectionScrollMt}>
+            <RevealSection delay={0.25}>
+              <VocabTopologyGraphIsland data={graphData} maxNodes={60} />
+            </RevealSection>
+          </section>
 
-          <RevealSection delay={0.3}>
-            <WordSynonyms
-              resolvedSynonymItems={result.word.resolved_synonym_items}
-              fallbackHtml={result.word.synonym_html}
-            />
-          </RevealSection>
+          <section id="word-synonyms" className={sectionScrollMt}>
+            <RevealSection delay={0.3}>
+              <WordSynonyms
+                resolvedSynonymItems={result.word.resolved_synonym_items}
+                fallbackHtml={result.word.synonym_html}
+              />
+            </RevealSection>
+          </section>
 
-          <RevealSection delay={0.35}>
-            <WordAntonyms
-              resolvedAntonymItems={result.word.resolved_antonym_items}
-              fallbackHtml={result.word.antonym_html}
-            />
-          </RevealSection>
+          <section id="word-antonyms" className={sectionScrollMt}>
+            <RevealSection delay={0.35}>
+              <WordAntonyms
+                resolvedAntonymItems={result.word.resolved_antonym_items}
+                fallbackHtml={result.word.antonym_html}
+              />
+            </RevealSection>
+          </section>
 
           {result.word.body_md.trim() ? (
-            <RevealSection delay={0.4}>
-              <CollapsiblePanel
-                title="词条正文"
-                defaultOpen={false}
-                summary={bodySummary}
-                subtitle="结构化区块优先展示；展开后查看完整原文。"
-              >
-                <div
-                  className="prose-obsidian"
-                  dangerouslySetInnerHTML={{ __html: result.word.body_html }}
-                />
-              </CollapsiblePanel>
-            </RevealSection>
+            <section id="word-body" className={sectionScrollMt}>
+              <RevealSection delay={0.4}>
+                <CollapsiblePanel
+                  title="词条正文"
+                  defaultOpen={false}
+                  summary={bodySummary}
+                  subtitle="结构化区块优先展示；展开后查看完整原文。"
+                >
+                  <div
+                    className="prose-obsidian"
+                    dangerouslySetInnerHTML={{ __html: result.word.body_html }}
+                  />
+                </CollapsiblePanel>
+              </RevealSection>
+            </section>
           ) : null}
         </div>
 
-        <aside className="lg:sticky lg:top-[calc(var(--header-height,5rem)+1.5rem)] lg:self-start">
+        <aside
+          id="word-notes"
+          className={`${sectionScrollMt} lg:sticky lg:top-[calc(var(--header-height,5rem)+1.5rem)] lg:self-start`}
+        >
           <div className="space-y-6">
             <Suspense fallback={
               <div className="rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface-soft-deep)] p-5">

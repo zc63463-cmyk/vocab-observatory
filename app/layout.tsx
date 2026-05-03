@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Manrope } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
@@ -44,6 +44,18 @@ const themeScript = `
 export const metadata: Metadata = {
   title: "词汇知识库",
   description: "基于 Obsidian、Supabase 与 Vercel 的词汇知识库与复习系统。",
+};
+
+// viewport-fit=cover is required for `env(safe-area-inset-*)` to
+// actually resolve to non-zero on iOS notch devices and newer Android
+// browsers — without it, the Zen-mode FAB sits under the home indicator
+// / browser chrome bar even though we `max()` against a 20px fallback.
+// The Next.js 16 `viewport` export is the supported way to emit the
+// corresponding `<meta name="viewport" content="... viewport-fit=cover">`.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

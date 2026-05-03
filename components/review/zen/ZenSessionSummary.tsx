@@ -11,6 +11,7 @@ import {
   formatDurationMs,
   formatRate,
 } from "./derive-session-summary";
+import { gradeCalibration } from "@/lib/review/calibration";
 
 /**
  * Phase 0.1: Calm, restrained session summary panel.
@@ -109,6 +110,50 @@ export function ZenSessionSummary() {
             total={summary.activeReviewed}
           />
         </div>
+
+        {/* Calibration row — only when the user actually committed
+            predictions. count === 0 covers both "feature off" and
+            "feature on but skipped on every card". The grade label maps
+            directly from avgAbsDelta so the user gets a one-glance
+            quality readout: "校准良好 / 可接受 / 偏差较大". */}
+        {summary.calibration.count > 0 && (
+          <div className="mt-8 flex flex-col gap-3">
+            <span
+              className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-ink-soft)] opacity-60"
+              style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+            >
+              Calibration
+            </span>
+            <div className="grid grid-cols-3 gap-4 sm:gap-6">
+              <ZenSessionMetric
+                label="Predicted"
+                value={summary.calibration.count}
+                hint={
+                  summary.calibration.count === summary.activeReviewed
+                    ? "every card"
+                    : `of ${summary.activeReviewed}`
+                }
+                tone="default"
+              />
+              <ZenSessionMetric
+                label="Avg |Δ|"
+                value={`${Math.round(summary.calibration.avgAbsDelta)}%`}
+                hint={gradeCalibration(summary.calibration.avgAbsDelta).label}
+                tone="primary"
+              />
+              <ZenSessionMetric
+                label="Skew"
+                value={summary.calibration.overconfidentCount > summary.calibration.underconfidentCount
+                  ? "↑ over"
+                  : summary.calibration.overconfidentCount < summary.calibration.underconfidentCount
+                  ? "↓ under"
+                  : "balanced"}
+                hint={`${summary.calibration.overconfidentCount} 过 · ${summary.calibration.underconfidentCount} 不足`}
+                tone="muted"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Time metrics row */}
         <div className="mt-8 grid grid-cols-2 gap-4 sm:gap-6">

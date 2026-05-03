@@ -16,8 +16,11 @@ import { speakLemma } from "@/lib/tts";
 import { useToast } from "@/components/ui/Toast";
 import { useZenReview } from "./useZenReview";
 import { useZenShortcuts } from "./useZenShortcuts";
+import { useReviewPreferences } from "./useReviewPreferences";
 import { useOmniStore } from "@/components/omni/useOmniStore";
 import type { ReviewQueueItem } from "@/lib/review/types";
+import type { ReviewPromptMode, UserReviewPreferences } from "@/lib/review/settings";
+import { resolvePrompt, type ResolvedPrompt } from "@/lib/review/prompt-mode";
 import type { ZenState, ZenAction, RatingKey, ZenReviewedItem, ZenUiState } from "./types";
 import { RATING_CONFIG } from "./types";
 import { recomputeCanUndo } from "./undo-logic";
@@ -31,12 +34,26 @@ interface ZenContextValue extends ZenState {
   toggleHistory: () => void;
   undo: (reviewLogId: string) => void;
   nextBatch: () => Promise<void>;
+  setPrediction: (value: number | null) => void;
+  // Utility actions (also bound to keyboard shortcuts P and D). Exposed
+  // so non-keyboard surfaces (e.g., mobile radial action menu) can invoke
+  // them without reaching into useZenShortcuts.
+  speakWord: () => void;
+  openWordPage: () => void;
   // Meta
   totalCount: number;
   completedCount: number;
   progress: number;
   isAnimating: boolean;
   uiState: ZenUiState;
+  preferences: UserReviewPreferences;
+  /**
+   * Resolved prompt for the current card. Stable across re-renders for the
+   * same progress_id thanks to per-card caching in the provider; cloze
+   * resolution happens once per card rather than on every render so the
+   * randomly-picked example doesn't shuffle while the user thinks.
+   */
+  resolvedPrompt: ResolvedPrompt;
 }
 
 const initialState: ZenState = {
@@ -48,6 +65,7 @@ const initialState: ZenState = {
   message: "",
   pending: false,
   lastRating: null,
+  prediction: null,
 };
 
 function zenReducer(state: ZenState, action: ZenAction): ZenState {
@@ -61,6 +79,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
           item: null,
           session: action.session,
           stats: action.stats,
+          prediction: null,
         };
       }
       return {
@@ -71,6 +90,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         session: action.session,
         stats: action.stats,
         message: "",
+        prediction: null,
       };
 
     case "REVEAL":
@@ -94,10 +114,11 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
           items: state.items.slice(1),
           pending: false,
           lastRating: null,
+          prediction: null,
         };
       }
       // Queue exhausted, need to fetch more or done
-      return { ...state, phase: "loading", pending: false, lastRating: null };
+      return { ...state, phase: "loading", pending: false, lastRating: null, prediction: null };
 
     case "REFRESH_QUEUE":
       if (action.items.length === 0) {
@@ -109,6 +130,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
           session: action.session,
           stats: action.stats,
           pending: false,
+          prediction: null,
         };
       }
       return {
@@ -119,6 +141,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         session: action.session,
         stats: action.stats,
         pending: false,
+        prediction: null,
       };
 
     case "SET_MESSAGE":
@@ -129,6 +152,13 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
 
     case "SET_PENDING":
       return { ...state, pending: action.pending };
+
+    case "SET_PREDICTION":
+      // Only meaningful while we are still on the front face. Once the user
+      // has flipped (back / rating phases), changing the prediction would
+      // taint the calibration measurement, so we silently drop the action.
+      if (state.phase !== "front") return state;
+      return { ...state, prediction: action.value };
 
     case "RESTORE_BACK":
       return { ...state, phase: "back", pending: false, lastRating: null };
@@ -145,6 +175,9 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         items: [action.item, ...dedupedItems],
         pending: false,
         lastRating: null,
+        // Prediction can't be re-collected for an already-flipped card.
+        // Cleared to null so the next NEXT_CARD starts from a known state.
+        prediction: null,
       };
     }
 
@@ -160,6 +193,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
           pending: false,
           lastRating: null,
           message: "没有更多卡片了",
+          prediction: null,
         };
       }
       return {
@@ -172,6 +206,7 @@ function zenReducer(state: ZenState, action: ZenAction): ZenState {
         pending: false,
         lastRating: null,
         message: "",
+        prediction: null,
       };
     }
 
@@ -190,10 +225,17 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
   const router = useRouter();
   const { addToast } = useToast();
   const omni = useOmniStore();
+  const { preferences } = useReviewPreferences();
   const [animationLock, setAnimationLock] = useState(false);
   const mountedRef = useRef(true);
   const undoInFlightRef = useRef(false); // Synchronous guard for rapid-fire clicks (Fix-5)
   const cardShownAtRef = useRef<number | null>(null); // Per-card shown timestamp for durationMs
+  // Per-card resolved prompt cache. Keyed by progress_id so repeated
+  // renders of the same card return the same mode + cloze text — without
+  // this, useMemo would re-roll the dice every time React re-runs the
+  // memo selector (e.g., when preferences load asynchronously after the
+  // first card is already on screen).
+  const promptCacheRef = useRef<Map<string, ResolvedPrompt>>(new Map());
   
   // UI state for history drawer (separate from core review state machine)
   const [uiState, setUiState] = useState<ZenUiState>({
@@ -280,10 +322,50 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     }
   }, [setStats, setSession]);
 
-  // Reveal action
-  const reveal = useCallback(() => {
-    dispatch({ type: "REVEAL" });
+  // Resolve the current card's prompt mode. Cached per progress_id so the
+  // cloze sentence stays stable across re-renders. The cache is also
+  // keyed indirectly on `preferences.promptModes` via the conditional
+  // re-resolution below — when the user toggles modes mid-session, we
+  // drop stale cached prompts whose mode is no longer allowed.
+  const resolvedPrompt = useMemo<ResolvedPrompt>(() => {
+    if (!state.item) {
+      return { mode: "forward", clozeText: null, clozeLength: null, clozeSource: null };
+    }
+    const cache = promptCacheRef.current;
+    const cached = cache.get(state.item.progress_id);
+    // Widen the zen-narrow allowlist to ReviewPromptMode for the `.includes`
+    // check: `cached.mode` is the broader type (ReviewPromptMode) because
+    // ResolvedPrompt remains shared with drill mode. A stale cloze-tagged
+    // cache entry (e.g. from a browser tab older than the cloze excision)
+    // will fail this check and get re-resolved on the next render.
+    const allowedBroad: ReadonlyArray<ReviewPromptMode> = preferences.promptModes;
+    if (cached && allowedBroad.includes(cached.mode)) {
+      return cached;
+    }
+    const fresh = resolvePrompt(state.item, {
+      allowedModes: preferences.promptModes,
+    });
+    cache.set(state.item.progress_id, fresh);
+    return fresh;
+  }, [state.item, preferences.promptModes]);
+
+  // Prediction action — exposed via context so the front-face slider can
+  // commit values. Reducer drops writes after the user has flipped to
+  // protect calibration integrity.
+  const setPrediction = useCallback((value: number | null) => {
+    dispatch({ type: "SET_PREDICTION", value });
   }, []);
+
+  // Reveal action. When prediction is enabled we gate the flip on having
+  // a non-null prediction value: forcing the user to commit a confidence
+  // before the answer is the whole point of the metacognition exercise.
+  const reveal = useCallback(() => {
+    if (preferences.predictionEnabled && state.prediction === null) {
+      addToast("先设定你的把握度再翻面", "info");
+      return;
+    }
+    dispatch({ type: "REVEAL" });
+  }, [preferences.predictionEnabled, state.prediction, addToast]);
 
   // Rate action with API call
   const rate = useCallback(
@@ -295,6 +377,14 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
 
       let ratingTimeout: ReturnType<typeof setTimeout> | null = null;
 
+      // Snapshot prediction + prompt mode at rate-time so a late state
+      // tick (e.g. preferences refresh) cannot retroactively change what
+      // we send to the server or store in the session history.
+      const submittedPrediction = preferences.predictionEnabled
+        ? state.prediction
+        : null;
+      const submittedPromptMode = resolvedPrompt.mode;
+
       try {
         // Run API call and animation delay in PARALLEL.
         // Total wait = max(API, 350ms) instead of API + 350ms.
@@ -302,7 +392,10 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           ratingTimeout = setTimeout(() => resolve(), 350);
         });
         const [reviewLogId] = await Promise.all([
-          submitRating(state.item, rating),
+          submitRating(state.item, rating, {
+            predictedRecall: submittedPrediction,
+            promptMode: submittedPromptMode,
+          }),
           animationPromise,
         ]);
 
@@ -324,6 +417,8 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
           answeredAt: new Date().toISOString(),
           durationMs,
           canUndo: true,
+          predictedRecall: submittedPrediction,
+          promptMode: submittedPromptMode,
         };
         // Recompute canUndo across the whole session history. The new rating
         // is the latest for its card; older logs of the SAME card lose
@@ -375,7 +470,7 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
         }
       }
     },
-    [state.item, state.items, state.pending, session, animationLock, uiState.isUndoing, submitRating, updateStatsAfterRemoval, fetchQueue, setItems, setSession, setStats, addToast]
+    [state.item, state.items, state.pending, state.prediction, session, animationLock, uiState.isUndoing, submitRating, updateStatsAfterRemoval, fetchQueue, setItems, setSession, setStats, addToast, preferences.predictionEnabled, resolvedPrompt.mode]
   );
 
   // Exit action
@@ -383,11 +478,20 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     router.push("/review");
   }, [router]);
 
-  // Open word page in new tab
+  // Open the word detail. We push to `/words/[slug]` and rely on the
+  // parallel-route modal at `app/(app)/@modal/(...)words/[slug]/page.tsx`
+  // to intercept: the review page remains mounted underneath the modal
+  // (the `children` slot of the (app) layout is preserved across this
+  // kind of same-group navigation), so when the user closes the modal
+  // via router.back() the review session picks up exactly where it was
+  // — no re-fetch, no lost ctx state, no new-tab switching cost.
+  //
+  // Previously this used `window.open(url, "_blank")`, which forced
+  // the user into a new browser tab and lost the ongoing review flow.
   const openWordPage = useCallback(() => {
     if (!state.item) return;
-    window.open(`/words/${state.item.slug}`, "_blank", "noopener,noreferrer");
-  }, [state.item]);
+    router.push(`/words/${state.item.slug}`);
+  }, [router, state.item]);
 
   // Speak current lemma (with language detection from DB)
   const speakWord = useCallback(() => {
@@ -524,13 +628,18 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
       toggleHistory,
       undo,
       nextBatch,
+      setPrediction,
+      speakWord,
+      openWordPage,
       totalCount,
       completedCount,
       progress,
       isAnimating: animationLock,
       uiState,
+      preferences,
+      resolvedPrompt,
     }),
-    [state, reveal, rate, exit, retry, toggleHistory, undo, nextBatch, totalCount, completedCount, progress, animationLock, uiState]
+    [state, reveal, rate, exit, retry, toggleHistory, undo, nextBatch, setPrediction, speakWord, openWordPage, totalCount, completedCount, progress, animationLock, uiState, preferences, resolvedPrompt]
   );
 
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>;
