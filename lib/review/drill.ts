@@ -1,6 +1,7 @@
 /**
- * Drill mode: a client-only cloze self-test, intentionally separated from
- * the FSRS review flow.
+ * Drill mode: a client-only self-test engine, intentionally separated from
+ * the FSRS review flow. Supports multiple test variants (cloze fill-in,
+ * definition + masked-lemma recall) but shares the same queue / retry loop.
  *
  * Why a separate engine vs reusing the Zen review flow?
  *   - FSRS rating is metacognitive ("how well did I recall") and its four
@@ -18,6 +19,26 @@
  * The engine is a pure, reducer-like module so it's trivial to unit-test
  * the queue / correctness logic without mounting React.
  */
+
+/** Supported drill test modes. */
+export type DrillMode = "cloze" | "definition";
+
+export const DRILL_MODES: Array<{
+  id: DrillMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "cloze",
+    label: "完形填空",
+    description: "根据上下文例句，填入缺失的单词",
+  },
+  {
+    id: "definition",
+    label: "词汇填空",
+    description: "根据释义和字母提示，写出完整单词",
+  },
+];
 
 export interface DrillCard {
   /** The user_word_progress row id — used as the drill key. */
@@ -176,6 +197,25 @@ export function countFirstTryPasses(state: DrillQueueState): number {
  *     multi-word lemmas like "give up")
  *   - strips trailing punctuation: . , ! ? : ; ) ] } " '
  */
+/**
+ * Masks a lemma for the "definition" drill mode.
+ *
+ * Rules ("as few letters as possible"):
+ *   - length ≤ 3: show the full word (nothing meaningful to mask).
+ *   - length 4: show first + last, one ▢ in the middle.
+ *   - length ≥ 5: show first + last, everything in between is ▢.
+ *
+ * The ▢ glyph is the same CLOZE_BLANK_TOKEN character used in cloze
+ * mode so the visual language stays consistent across drill variants.
+ */
+export function maskLemma(lemma: string): string {
+  if (lemma.length <= 3) return lemma;
+  const first = lemma[0];
+  const last = lemma[lemma.length - 1];
+  const blanks = "▢".repeat(Math.max(1, lemma.length - 2));
+  return `${first}${blanks}${last}`;
+}
+
 export function normalizeDrillAnswer(s: string): string {
   if (!s) return "";
   return s

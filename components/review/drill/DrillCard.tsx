@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { springs } from "@/components/motion";
-import type { DrillCard as DrillCardType } from "@/lib/review/drill";
+import { type DrillCard as DrillCardType, type DrillMode, maskLemma } from "@/lib/review/drill";
 
 /**
  * Feedback shown after a submit. When set, the card enters a "locked"
@@ -23,6 +23,7 @@ export interface DrillCardFeedback {
 
 interface DrillCardProps {
   card: DrillCardType;
+  mode: DrillMode;
   /** Serial number of cards presented (including retries) for HUD. */
   sessionIndex: number;
   /** Wrong-attempt count for this specific card. Shown as a faint chip. */
@@ -45,6 +46,7 @@ interface DrillCardProps {
  */
 export function DrillCard({
   card,
+  mode,
   sessionIndex,
   attempts,
   feedback,
@@ -86,7 +88,7 @@ export function DrillCard({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-ink-soft)]">
         <span className="font-semibold uppercase tracking-[0.18em]">
-          Cloze Drill · #{sessionIndex + 1}
+          {mode === "definition" ? "词汇填空" : "完形填空"} · #{sessionIndex + 1}
         </span>
         {attempts > 0 && (
           <span className="rounded-full bg-[var(--color-surface-muted-warm)] px-2.5 py-0.5 text-[var(--color-accent-2)]">
@@ -96,16 +98,41 @@ export function DrillCard({
       </div>
 
       <div className="mt-6 rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel)] p-5 sm:p-7">
-        <p
-          className="text-xl leading-[1.8] text-[var(--color-ink)] sm:text-2xl"
-          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
-        >
-          {card.clozeText}
-        </p>
-        <p className="mt-3 text-xs text-[var(--color-ink-soft)] opacity-70">
-          空格长度：{card.clozeLength} 字母
-          {card.shortDefinition ? ` · ${card.shortDefinition}` : ""}
-        </p>
+        {mode === "definition" ? (
+          <>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+              释义
+            </p>
+            <p
+              className="mt-2 text-xl leading-[1.8] text-[var(--color-ink)] sm:text-2xl"
+              style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+            >
+              {card.shortDefinition ?? "暂无释义"}
+            </p>
+            <div className="mt-5 flex items-center gap-2">
+              <span className="text-xs text-[var(--color-ink-soft)]">单词提示：</span>
+              <span
+                className="inline-block rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface-soft)] px-4 py-2 text-2xl font-semibold tracking-[0.12em] text-[var(--color-ink)] sm:text-3xl"
+                style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+              >
+                {maskLemma(card.lemma)}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <p
+              className="text-xl leading-[1.8] text-[var(--color-ink)] sm:text-2xl"
+              style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+            >
+              {card.clozeText}
+            </p>
+            <p className="mt-3 text-xs text-[var(--color-ink-soft)] opacity-70">
+              空格长度：{card.clozeLength} 字母
+              {card.shortDefinition ? ` · ${card.shortDefinition}` : ""}
+            </p>
+          </>
+        )}
       </div>
 
       <form className="mt-5" onSubmit={handleSubmit}>
@@ -188,9 +215,16 @@ export function DrillCard({
                 <span className="text-[var(--color-ink-soft)]">正确答案：</span>
                 <span className="font-semibold">{feedback.correctAnswer}</span>
               </p>
-              <p className="text-[var(--color-ink-soft)]">
-                原句：<span className="text-[var(--color-ink)]">{card.clozeSource}</span>
-              </p>
+              {mode === "definition" && card.shortDefinition && (
+                <p className="text-[var(--color-ink-soft)]">
+                  释义：<span className="text-[var(--color-ink)]">{card.shortDefinition}</span>
+                </p>
+              )}
+              {mode === "cloze" && (
+                <p className="text-[var(--color-ink-soft)]">
+                  原句：<span className="text-[var(--color-ink)]">{card.clozeSource}</span>
+                </p>
+              )}
             </div>
           </motion.div>
         )}

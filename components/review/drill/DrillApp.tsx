@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { springs } from "@/components/motion";
-import type { DrillCard, DrillQueueState } from "@/lib/review/drill";
+import { type DrillCard, type DrillQueueState, type DrillMode } from "@/lib/review/drill";
 import { DrillWordPicker } from "./DrillWordPicker";
 import { DrillSession } from "./DrillSession";
 import { DrillSummary } from "./DrillSummary";
@@ -35,6 +35,7 @@ export function DrillApp() {
   const [candidates, setCandidates] = useState<DrillCandidate[]>([]);
   const [activeDeck, setActiveDeck] = useState<DrillCard[]>([]);
   const [finalState, setFinalState] = useState<DrillQueueState | null>(null);
+  const [drillMode, setDrillMode] = useState<DrillMode>("cloze");
 
   const fetchCandidates = useCallback(async () => {
     setPhase("loading");
@@ -60,13 +61,14 @@ export function DrillApp() {
     void fetchCandidates();
   }, [fetchCandidates]);
 
-  const handleStart = useCallback((selected: DrillCandidate[]) => {
+  const handleStart = useCallback((selected: DrillCandidate[], mode: DrillMode) => {
     if (selected.length === 0) return;
     // Shed the picker-only fields (`dueAt`, `reviewCount`) implicitly:
     // TS structural typing lets the wider candidate shape satisfy
     // DrillCard, so no mapping needed at runtime — but we copy the
     // array so a later picker mutation cannot mutate the live session.
     setActiveDeck(selected.slice());
+    setDrillMode(mode);
     setFinalState(null);
     setPhase("session");
   }, []);
@@ -163,6 +165,7 @@ export function DrillApp() {
         >
           <DrillSession
             initialCards={activeDeck}
+            mode={drillMode}
             onDone={handleDone}
             onExit={handleExitSession}
           />
@@ -180,6 +183,7 @@ export function DrillApp() {
           <DrillSummary
             state={finalState}
             deck={activeDeck}
+            mode={drillMode}
             onReplay={handleReplay}
             onPickAgain={handlePickAgain}
             onExit={handleExit}

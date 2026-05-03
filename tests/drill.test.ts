@@ -3,6 +3,7 @@ import {
   countFirstTryPasses,
   createDrillQueue,
   deferDrillCard,
+  maskLemma,
   normalizeDrillAnswer,
   remainingInDrill,
   submitDrillAnswer,
@@ -53,6 +54,28 @@ describe("normalizeDrillAnswer", () => {
     // cat vs cats must remain distinct — drill demands exact recall.
     expect(normalizeDrillAnswer("cats")).toBe("cats");
     expect(normalizeDrillAnswer("cat")).toBe("cat");
+  });
+});
+
+describe("maskLemma", () => {
+  it("shows the full word when length ≤ 3", () => {
+    expect(maskLemma("a")).toBe("a");
+    expect(maskLemma("at")).toBe("at");
+    expect(maskLemma("cat")).toBe("cat");
+  });
+
+  it("shows first + last with one blank for length 4", () => {
+    expect(maskLemma("test")).toBe("t▢▢t");
+  });
+
+  it("shows first + last with all blanks in between for length ≥ 5", () => {
+    expect(maskLemma("running")).toBe("r▢▢▢▢▢g");
+    expect(maskLemma("vocabulary")).toBe("v▢▢▢▢▢▢▢▢y");
+  });
+
+  it("preserves Unicode characters", () => {
+    expect(maskLemma("学习")).toBe("学习");
+    expect(maskLemma("学习ing")).toBe("学▢▢▢g");
   });
 });
 

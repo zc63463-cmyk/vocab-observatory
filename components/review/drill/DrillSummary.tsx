@@ -8,12 +8,14 @@ import {
   countFirstTryPasses,
   type DrillCard,
   type DrillQueueState,
+  type DrillMode,
 } from "@/lib/review/drill";
 
 interface DrillSummaryProps {
   state: DrillQueueState;
   /** Deck the session was launched with, for name lookup in the struggle list. */
   deck: ReadonlyArray<DrillCard>;
+  mode: DrillMode;
   onReplay: () => void;
   onPickAgain: () => void;
   onExit: () => void;
@@ -33,6 +35,7 @@ interface DrillSummaryProps {
 export function DrillSummary({
   state,
   deck,
+  mode,
   onReplay,
   onPickAgain,
   onExit,
@@ -66,13 +69,13 @@ export function DrillSummary({
     >
       <div className="panel-strong rounded-[2rem] p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
-          Drill Complete
+          {mode === "definition" ? "Definition Drill" : "Cloze Drill"} Complete
         </p>
         <h2
           className="section-title mt-3 text-4xl font-semibold"
           style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
         >
-          自测完成
+          {mode === "definition" ? "词汇填空完成" : "完形填空完成"}
         </h2>
         <p className="mt-3 text-sm text-[var(--color-ink-soft)]">
           这一轮的数据只存在于这次会话里，不会进入 FSRS 复习日志。

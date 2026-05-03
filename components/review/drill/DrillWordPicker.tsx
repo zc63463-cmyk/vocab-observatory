@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { DrillCandidate } from "./types";
+import { DRILL_MODES, type DrillMode } from "@/lib/review/drill";
 
 const STATE_CHIPS: Array<{ id: string; label: string }> = [
   { id: "all", label: "全部" },
@@ -14,7 +15,7 @@ const STATE_CHIPS: Array<{ id: string; label: string }> = [
 
 interface DrillWordPickerProps {
   candidates: ReadonlyArray<DrillCandidate>;
-  onStart: (selected: DrillCandidate[]) => void;
+  onStart: (selected: DrillCandidate[], mode: DrillMode) => void;
   onExit: () => void;
 }
 
@@ -33,6 +34,7 @@ interface DrillWordPickerProps {
  *     boundary, so every item shown is drillable.
  */
 export function DrillWordPicker({ candidates, onStart, onExit }: DrillWordPickerProps) {
+  const [mode, setMode] = useState<DrillMode>("cloze");
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -84,14 +86,14 @@ export function DrillWordPicker({ candidates, onStart, onExit }: DrillWordPicker
     // Preserve the user's filter-order (most recent due first since the
     // server already ordered by due_at asc) for a consistent session.
     const chosen = candidates.filter((c) => selected.has(c.progressId));
-    onStart(chosen);
-  }, [candidates, selected, selectedCount, onStart]);
+    onStart(chosen, mode);
+  }, [candidates, selected, selectedCount, mode, onStart]);
 
   if (candidates.length === 0) {
     return (
       <EmptyState
         title="暂无可自测的词"
-        description="自测需要词条里至少有一句包含本词的例句。你可以先在复习队列里复习过一次再过来。"
+        description="测试模式需要词条有可用例句或释义。你可以先在复习队列里积累一些词汇再过来。"
         action={
           <Button type="button" variant="secondary" size="sm" onClick={onExit}>
             返回复习页
@@ -103,6 +105,42 @@ export function DrillWordPicker({ candidates, onStart, onExit }: DrillWordPicker
 
   return (
     <div className="space-y-4">
+      {/* ── Mode selector ───────────────────────────────────────────── */}
+      <div className="panel rounded-[1.75rem] p-4 sm:p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+          测试方案
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {DRILL_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setMode(m.id)}
+              className={`flex flex-col items-start rounded-2xl border px-4 py-3 text-left transition ${
+                mode === m.id
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/8"
+                  : "border-[var(--color-border)] bg-[var(--color-panel)] hover:bg-[var(--color-surface-soft)]"
+              }`}
+              style={{
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <span
+                className={`text-sm font-semibold ${
+                  mode === m.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]"
+                }`}
+              >
+                {m.label}
+              </span>
+              <span className="mt-0.5 text-xs text-[var(--color-ink-soft)]">
+                {m.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Filter / search row ─────────────────────────────────────── */}
       <div className="panel rounded-[1.75rem] p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

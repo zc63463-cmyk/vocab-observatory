@@ -10,6 +10,7 @@ import {
   submitDrillAnswer,
   type DrillCard as DrillCardType,
   type DrillQueueState,
+  type DrillMode,
 } from "@/lib/review/drill";
 import { DrillCard, type DrillCardFeedback } from "./DrillCard";
 
@@ -22,6 +23,11 @@ interface DrillSessionProps {
    * the source array later without affecting the running session.
    */
   initialCards: ReadonlyArray<DrillCardType>;
+  /**
+   * Test mode governing how each card is rendered and what the user
+   * is asked to recall.
+   */
+  mode: DrillMode;
   /**
    * Called once the queue has fully drained. The terminal state is
    * handed back so the summary screen can read passedByCard /
@@ -42,7 +48,7 @@ interface DrillSessionProps {
  * alive, but pressing Enter during feedback advances immediately. Both
  * paths call the same `advance()` to ensure we never double-fire.
  */
-export function DrillSession({ initialCards, onDone, onExit }: DrillSessionProps) {
+export function DrillSession({ initialCards, mode, onDone, onExit }: DrillSessionProps) {
   const [state, setState] = useState<DrillQueueState>(() =>
     createDrillQueue(initialCards),
   );
@@ -150,11 +156,13 @@ export function DrillSession({ initialCards, onDone, onExit }: DrillSessionProps
 
   const currentAttempts = state.attemptsByCard[current.progressId] ?? 0;
 
+  const modeLabel = mode === "definition" ? "词汇填空" : "完形填空";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-2 text-xs text-[var(--color-ink-soft)]">
         <span>
-          剩 <strong className="text-[var(--color-ink)]">{remaining}</strong> 张 · 通过{" "}
+          {modeLabel} · 剩 <strong className="text-[var(--color-ink)]">{remaining}</strong> 张 · 通过{" "}
           <strong className="text-[var(--color-accent)]">{passed}</strong>/{unique}{" "}
           ({passedPct}%)
         </span>
@@ -172,6 +180,7 @@ export function DrillSession({ initialCards, onDone, onExit }: DrillSessionProps
         <DrillCard
           key={`${current.progressId}-${sessionIndex}`}
           card={current}
+          mode={mode}
           sessionIndex={sessionIndex}
           attempts={currentAttempts}
           feedback={feedback}

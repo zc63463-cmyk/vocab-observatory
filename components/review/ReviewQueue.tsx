@@ -323,7 +323,7 @@ export function ReviewQueue() {
             className="flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium text-[var(--color-ink-soft)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] sm:px-5"
           >
             <SpellCheck2 className="h-4 w-4 text-[var(--color-accent-2)]" />
-            <span>完形自测</span>
+            <span>测试模式</span>
           </a>
         </div>
       </div>
