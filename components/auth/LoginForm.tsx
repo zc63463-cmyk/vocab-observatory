@@ -165,7 +165,14 @@ export function LoginForm({
       </div>
 
       {step === "email" ? (
-        <form onSubmit={handleEmailSubmit} className="mt-8">
+        // `key` forces React to unmount the email form and mount a fresh
+        // OTP form when `step` changes. Without distinct keys both branches
+        // produce identical `<form><label><Input/></label>...</form>`
+        // structure at the same tree position, so React's reconciler reuses
+        // the underlying `<input>` DOM node — and triggers the
+        // "uncontrolled (defaultValue) → controlled (value)" warning when
+        // the same node receives different prop sets across steps.
+        <form key="email" onSubmit={handleEmailSubmit} className="mt-8">
           <label className="block">
             <span className="mb-2 block text-sm font-semibold">邮箱</span>
             <Input
@@ -187,7 +194,7 @@ export function LoginForm({
           </p>
         </form>
       ) : (
-        <form onSubmit={handleVerify} className="mt-8">
+        <form key="otp" onSubmit={handleVerify} className="mt-8">
           <label className="block">
             <span className="mb-2 block text-sm font-semibold">6 位验证码</span>
             <Input
