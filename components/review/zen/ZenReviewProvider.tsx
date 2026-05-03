@@ -19,7 +19,7 @@ import { useZenShortcuts } from "./useZenShortcuts";
 import { useReviewPreferences } from "./useReviewPreferences";
 import { useOmniStore } from "@/components/omni/useOmniStore";
 import type { ReviewQueueItem } from "@/lib/review/types";
-import type { UserReviewPreferences } from "@/lib/review/settings";
+import type { ReviewPromptMode, UserReviewPreferences } from "@/lib/review/settings";
 import { resolvePrompt, type ResolvedPrompt } from "@/lib/review/prompt-mode";
 import type { ZenState, ZenAction, RatingKey, ZenReviewedItem, ZenUiState } from "./types";
 import { RATING_CONFIG } from "./types";
@@ -333,7 +333,13 @@ export function ZenReviewProvider({ children }: ZenProviderProps) {
     }
     const cache = promptCacheRef.current;
     const cached = cache.get(state.item.progress_id);
-    if (cached && preferences.promptModes.includes(cached.mode)) {
+    // Widen the zen-narrow allowlist to ReviewPromptMode for the `.includes`
+    // check: `cached.mode` is the broader type (ReviewPromptMode) because
+    // ResolvedPrompt remains shared with drill mode. A stale cloze-tagged
+    // cache entry (e.g. from a browser tab older than the cloze excision)
+    // will fail this check and get re-resolved on the next render.
+    const allowedBroad: ReadonlyArray<ReviewPromptMode> = preferences.promptModes;
+    if (cached && allowedBroad.includes(cached.mode)) {
       return cached;
     }
     const fresh = resolvePrompt(state.item, {

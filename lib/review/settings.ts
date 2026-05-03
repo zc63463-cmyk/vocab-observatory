@@ -326,26 +326,48 @@ export async function updateUserFsrsWeightsSetting(
 // rating log.
 
 /**
- * Order matters: it's the canonical iteration order for both the settings UI
- * and persisted prompt_modes arrays. Declared as `as const` so zod can take
- * the same value without losing literal types — the schema layer treats this
- * as the single source of truth for which mode strings are valid.
+ * Canonical prompt-mode enum — covers everything the renderer layer knows
+ * about. Used by `resolvePrompt`, schema validation for review_logs metadata,
+ * and the drill self-test page.
+ *
+ * `cloze` belongs here but INTENTIONALLY does NOT belong in the Zen FSRS
+ * flow (see `ZEN_PROMPT_MODES` below). Cloze is fact-retrieval — right vs
+ * wrong — while FSRS ratings are metacognitive self-assessments of recall
+ * strength. Mixing the two biases the scheduler: a user who blanks on the
+ * cloze but would have self-rated "Good" on a forward prompt gets
+ * systematically penalised. Cloze lives in the separate drill mode where
+ * no review_logs are written at all.
  */
 export const REVIEW_PROMPT_MODES = ["forward", "reverse", "cloze"] as const;
 
 export type ReviewPromptMode = (typeof REVIEW_PROMPT_MODES)[number];
 
-const PROMPT_MODE_SET = new Set<ReviewPromptMode>(REVIEW_PROMPT_MODES);
+/**
+ * Subset of modes exposed to the Zen review preferences UI and actually
+ * served to FSRS-rated cards. Kept as a separate const so the type system
+ * catches any accidental attempt to reintroduce cloze into zen (e.g. a
+ * future refactor calling `REVIEW_PROMPT_MODES.filter(...)`) — the form
+ * iteration and persisted-prefs normalization both key off ZEN_PROMPT_MODES
+ * exclusively. Drill mode continues to pull from REVIEW_PROMPT_MODES so it
+ * can still tag its resolved prompts as `cloze`.
+ */
+export const ZEN_PROMPT_MODES = ["forward", "reverse"] as const;
+
+export type ZenPromptMode = (typeof ZEN_PROMPT_MODES)[number];
+
+const ZEN_PROMPT_MODE_SET = new Set<ZenPromptMode>(ZEN_PROMPT_MODES);
 
 export interface UserReviewPreferences {
   /** When true the front face shows a 0–100% confidence slider before flip. */
   predictionEnabled: boolean;
   /**
-   * Allowed front-face prompt modes. Per-card the renderer picks one at
-   * random from this list, with a guaranteed fallback to "forward" so a
-   * never-defined / cleared list is still recoverable.
+   * Allowed front-face prompt modes for the Zen FSRS flow. Per-card the
+   * renderer picks one at random from this list, with a guaranteed fallback
+   * to "forward" so a never-defined / cleared list is still recoverable.
+   * Note: `cloze` is intentionally absent from the type — it lives in the
+   * drill self-test only. See the comment on `ZEN_PROMPT_MODES`.
    */
-  promptModes: ReviewPromptMode[];
+  promptModes: ZenPromptMode[];
 }
 
 export const DEFAULT_REVIEW_PREFERENCES: UserReviewPreferences = {
@@ -353,32 +375,37 @@ export const DEFAULT_REVIEW_PREFERENCES: UserReviewPreferences = {
   promptModes: ["forward"],
 };
 
-function isPromptMode(value: unknown): value is ReviewPromptMode {
-  return typeof value === "string" && PROMPT_MODE_SET.has(value as ReviewPromptMode);
+function isZenPromptMode(value: unknown): value is ZenPromptMode {
+  return typeof value === "string" && ZEN_PROMPT_MODE_SET.has(value as ZenPromptMode);
 }
 
 /**
  * Reads and normalises the prompt-mode list. Unknown / non-string entries
  * are dropped silently (forward-compat with future modes); duplicates are
- * collapsed; the result is ordered to match REVIEW_PROMPT_MODES so the
+ * collapsed; the result is ordered to match ZEN_PROMPT_MODES so the
  * settings UI stays stable across reloads. Empty result → forward fallback.
+ *
+ * Forward-migration: if a user's persisted prompt_modes array contains
+ * "cloze" from before cloze was excised from Zen, it's silently filtered
+ * out here. The stored JSON may still have cloze until the next save, but
+ * no consumer ever sees it.
  */
 export function readReviewPromptModes(
   settings: Json | null | undefined,
-): ReviewPromptMode[] {
+): ZenPromptMode[] {
   if (!isJsonObject(settings)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
   const reviewSettings = settings.review;
   if (!isJsonObject(reviewSettings)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
   const raw = reviewSettings.prompt_modes;
   if (!Array.isArray(raw)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
 
-  const valid = new Set<ReviewPromptMode>();
+  const valid = new Set<ZenPromptMode>();
   for (const entry of raw) {
-    if (isPromptMode(entry)) valid.add(entry);
+    if (isZenPromptMode(entry)) valid.add(entry);
   }
   if (valid.size === 0) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
 
-  return REVIEW_PROMPT_MODES.filter((mode) => valid.has(mode));
+  return ZEN_PROMPT_MODES.filter((mode) => valid.has(mode));
 }
 
 export function readReviewPredictionEnabled(
@@ -453,13 +480,17 @@ export async function updateUserReviewPreferences(
   }
 
   if (update.promptModes !== undefined) {
-    // Normalise to the canonical order before persisting, dropping unknowns.
+    // Normalise against ZEN_PROMPT_MODES (not REVIEW_PROMPT_MODES) so any
+    // cloze values slipping through (from stale clients, mismatched schema,
+    // or a future code path that forgets the subset) are dropped at the
+    // persistence boundary. Matches the read-path narrowing in
+    // readReviewPromptModes: cloze never reaches the Zen UI.
     const requested = update.promptModes;
-    const normalised = REVIEW_PROMPT_MODES.filter((mode) =>
+    const normalised = ZEN_PROMPT_MODES.filter((mode) =>
       requested.includes(mode),
     );
-    const finalList = normalised.length > 0
-      ? normalised
+    const finalList: ZenPromptMode[] = normalised.length > 0
+      ? [...normalised]
       : [...DEFAULT_REVIEW_PREFERENCES.promptModes];
 
     ops.push(

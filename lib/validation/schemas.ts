@@ -3,14 +3,21 @@ import {
   MAX_DESIRED_RETENTION,
   MIN_DESIRED_RETENTION,
 } from "@/lib/review/fsrs-adapter";
-import { REVIEW_PROMPT_MODES } from "@/lib/review/settings";
+import { REVIEW_PROMPT_MODES, ZEN_PROMPT_MODES } from "@/lib/review/settings";
 
 export const reviewRatingSchema = z.enum(["again", "hard", "good", "easy"]);
 
 // REVIEW_PROMPT_MODES is declared `as const` in lib/review/settings, so zod
 // reads its literal types directly and `z.infer` of this schema is the same
 // `ReviewPromptMode` union — no manual cast needed at call sites.
+// Used for review_logs.metadata.prompt_mode where cloze IS a valid value
+// (drill mode doesn't write logs, but future analytics may surface cloze).
 export const reviewPromptModeSchema = z.enum(REVIEW_PROMPT_MODES);
+
+// Narrower schema for the Zen preferences PATCH endpoint. Cloze is
+// intentionally rejected at the API boundary — see the comment on
+// ZEN_PROMPT_MODES in lib/review/settings for the FSRS-rationale.
+export const zenPromptModeSchema = z.enum(ZEN_PROMPT_MODES);
 
 export const addToReviewSchema = z.object({
   wordId: z.string().uuid(),
@@ -85,11 +92,13 @@ export const reviewSettingsSchema = z.object({
 
 // PATCH-style preferences payload: any subset of keys is acceptable, an
 // empty object is a no-op (returns current state). promptModes constraints:
-// at least one mode required; duplicates allowed but normalised server-side.
+// at least one mode required; duplicates allowed but normalised server-side;
+// `cloze` is rejected here because the Zen FSRS flow intentionally excludes
+// it (see ZEN_PROMPT_MODES in lib/review/settings).
 export const reviewPreferencesSchema = z
   .object({
     predictionEnabled: z.boolean().optional(),
-    promptModes: z.array(reviewPromptModeSchema).min(1).max(3).optional(),
+    promptModes: z.array(zenPromptModeSchema).min(1).max(2).optional(),
   })
   .strict();
 

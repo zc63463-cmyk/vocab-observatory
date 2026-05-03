@@ -5,16 +5,19 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import {
   DEFAULT_REVIEW_PREFERENCES,
-  REVIEW_PROMPT_MODES,
-  type ReviewPromptMode,
+  ZEN_PROMPT_MODES,
   type UserReviewPreferences,
+  type ZenPromptMode,
 } from "@/lib/review/settings";
 import {
   useReviewPreferencesContext,
 } from "./ReviewPreferencesProvider";
 
+// Descriptions are keyed by ZenPromptMode — cloze is intentionally absent.
+// See lib/review/settings.ts (ZEN_PROMPT_MODES comment) for the FSRS
+// rationale. Cloze is available as a separate self-test mode at /review/drill.
 const MODE_DESCRIPTIONS: Record<
-  ReviewPromptMode,
+  ZenPromptMode,
   { label: string; description: string }
 > = {
   forward: {
@@ -24,10 +27,6 @@ const MODE_DESCRIPTIONS: Record<
   reverse: {
     label: "反向（义→词）",
     description: "看释义，回想词。强化产出导向的提取。",
-  },
-  cloze: {
-    label: "完形（句中挖空）",
-    description: "在例句里挖空目标词，按上下文推断。需要例句包含本词。",
   },
 };
 
@@ -107,16 +106,16 @@ export function ReviewPreferencesForm({
     [baseline, draft],
   );
 
-  function toggleMode(mode: ReviewPromptMode) {
+  function toggleMode(mode: ZenPromptMode) {
     setDraft((prev) => {
       const has = prev.promptModes.includes(mode);
-      const next = has
+      const next: ZenPromptMode[] = has
         ? prev.promptModes.filter((m) => m !== mode)
         : [...prev.promptModes, mode];
       if (next.length === 0) return prev; // Always keep ≥1 mode selected.
       return {
         ...prev,
-        promptModes: REVIEW_PROMPT_MODES.filter((m) => next.includes(m)),
+        promptModes: ZEN_PROMPT_MODES.filter((m) => next.includes(m)),
       };
     });
   }
@@ -175,10 +174,10 @@ export function ReviewPreferencesForm({
           className={
             isPopover
               ? "mt-2 grid gap-1.5"
-              : "mt-3 grid gap-2 md:grid-cols-3"
+              : "mt-3 grid gap-2 md:grid-cols-2"
           }
         >
-          {REVIEW_PROMPT_MODES.map((mode) => {
+          {ZEN_PROMPT_MODES.map((mode) => {
             const meta = MODE_DESCRIPTIONS[mode];
             const checked = draft.promptModes.includes(mode);
             return (
