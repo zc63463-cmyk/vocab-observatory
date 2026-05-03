@@ -20,6 +20,15 @@ interface MasteryCell {
 interface MasteryHeatmapProps {
   cells: MasteryCell[];
   relationGraph?: Record<string, { slug: string; lemma: string; relation: string }[]>;
+  /**
+   * Strip the outer panel chrome (`panel` class, rounded radius, padding,
+   * border, and the title+legend header row). Set this when embedding
+   * the heatmap inside an ancestor that already provides panel styling —
+   * e.g., `SectionModal` on the lab dashboard — to avoid double-card
+   * nesting visuals. The interactive content (SVG graph, tooltip,
+   * preview modal) is unaffected.
+   */
+  chromeless?: boolean;
 }
 
 function getRetrievabilityColor(r: number): string {
@@ -56,11 +65,29 @@ interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
 
 type SimEdge = Omit<GraphEdge, "source" | "target"> & { source: GraphNode; target: GraphNode };
 
-export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProps) {
+export function MasteryHeatmap({
+  cells,
+  relationGraph = {},
+  chromeless = false,
+}: MasteryHeatmapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const [dims, setDims] = useState({ width: 800, height: GRAPH_HEIGHT });
+  /* `width: 0` is a deliberate "unknown until measured" marker. The d3
+     simulation effect below short-circuits while width is 0, which has
+     two important benefits:
+       1. **No wasted first-frame work.** Without this, the simulation
+          would run once at the seed value (e.g. 800) and then again
+          after `ResizeObserver` reports the real width — doing the
+          force layout twice for every mount.
+       2. **Free dual-layout gate.** `LabClient` mounts both
+          `MobileLayout` and `DesktopLayout` simultaneously and lets CSS
+          (`md:hidden` / `hidden md:block`) hide the inactive one. A
+          `display: none` ancestor reports `contentRect.width === 0`
+          via ResizeObserver, so the hidden copy of the heatmap
+          *never* initialises its d3 simulation. Only the visible copy
+          does. This eliminates the previous ~2× CPU cost on hydration. */
+  const [dims, setDims] = useState({ width: 0, height: GRAPH_HEIGHT });
   const [tooltip, setTooltip] = useState<{
     cell: MasteryCell;
     neighbors: { slug: string; lemma: string; relation: string }[];
@@ -223,6 +250,10 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
 
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
+    /* Width-0 gate — see comment on the `dims` useState above. Skipping
+       here is what actually prevents the hidden mobile/desktop copy of
+       this component from spinning up a force simulation. */
+    if (dims.width === 0) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
@@ -395,30 +426,43 @@ export function MasteryHeatmap({ cells, relationGraph = {} }: MasteryHeatmapProp
 
   if (cells.length === 0) return null;
 
+  // The outer wrapper keeps a consistent `relative` positioning context
+  // (the tooltip and the preview modal rely on it). When `chromeless`,
+  // we drop only the panel visuals + redundant header — SectionModal
+  // provides both already.
+  const outerClassName = chromeless
+    ? "relative"
+    : "panel relative rounded-[1.75rem] p-6";
+
   return (
-    <section className="panel relative rounded-[1.75rem] p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
-            词汇掌握度
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">词汇网络图</h2>
+    <section className={outerClassName}>
+      {!chromeless && (
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-soft)]">
+              词汇掌握度
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">词汇网络图</h2>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-[var(--color-ink-soft)]">
+            {[
+              { color: "#16a34a", label: "牢固" },
+              { color: "#84cc16", label: "较好" },
+              { color: "#eab308", label: "一般" },
+              { color: "#f97316", label: "薄弱" },
+              { color: "#ef4444", label: "濒危" },
+            ].map((item) => (
+              <span key={item.label} className="flex items-center gap-1">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: item.color }}
+                />
+                {item.label}
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-[var(--color-ink-soft)]">
-          {[
-            { color: "#16a34a", label: "牢固" },
-            { color: "#84cc16", label: "较好" },
-            { color: "#eab308", label: "一般" },
-            { color: "#f97316", label: "薄弱" },
-            { color: "#ef4444", label: "濒危" },
-          ].map((item) => (
-            <span key={item.label} className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-              {item.label}
-            </span>
-          ))}
-        </div>
-      </div>
+      )}
 
       <div className="mt-3 flex gap-4 text-[11px] text-[var(--color-ink-soft)]">
         <span>

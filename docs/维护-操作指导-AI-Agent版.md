@@ -127,6 +127,13 @@ curl -X POST https://vocab-observatory.vercel.app/api/imports/github \
    - counts
    - errors if any
 
+   The import panel (`id="import-run"`) is inline on desktop (right
+   side of the "Review Load + Import" row). On mobile it is gated
+   behind the 9-dot pattern lock — draw the middle-row horizontal
+   line (left-middle → centre → right-middle) to open the modal. See
+   `components/dashboard/lab/sections.ts` for the canonical pattern
+   → section mapping.
+
 ## 7. Import Maintenance Procedure
 
 ### Local import check
