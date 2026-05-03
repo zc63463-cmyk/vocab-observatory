@@ -127,12 +127,17 @@ curl -X POST https://vocab-observatory.vercel.app/api/imports/github \
    - counts
    - errors if any
 
-   The import panel (`id="import-run"`) is inline on desktop (right
-   side of the "Review Load + Import" row). On mobile it is gated
-   behind the 9-dot pattern lock — draw the middle-row horizontal
-   line (left-middle → centre → right-middle) to open the modal. See
-   `components/dashboard/lab/sections.ts` for the canonical pattern
-   → section mapping.
+   Phase 4 desktop layout no longer renders body panels inline.
+   The import panel (`id="import-run"`) is reachable via two
+   discoverable paths on both viewports:
+     1. Draw the middle-row horizontal line on the 9-dot pattern
+        lock (left-middle → centre → right-middle) to open the modal.
+     2. Scroll to the bottom-of-page Directory bento and click the
+        card whose glyph is a horizontal bar with the title "最近
+        Import 运行".
+   See `components/dashboard/lab/sections.ts` for the canonical
+   pattern → section mapping and `components/dashboard/lab/SectionDirectory.tsx`
+   for the directory itself.
 
 ## 7. Import Maintenance Procedure
 

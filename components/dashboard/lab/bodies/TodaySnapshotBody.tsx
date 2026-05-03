@@ -20,13 +20,48 @@ interface TodaySnapshotBodyProps {
  * Pure body for the today-snapshot section. Triggered by the diagonal
  * pattern (1-5-9). Acts as the "executive summary" — re-states the four
  * hero metrics in a denser layout plus the day's headline ratios.
+ *
+ * Absorbed scope (Phase 4): formerly the desktop layout rendered a
+ * separate `TodayNarrative` panel next to the pattern lock, which
+ * duplicated most of this body's editorial content. That panel was
+ * removed and its two unique pieces — the headline verdict and the
+ * streak-milestone language — are now folded in here so they remain
+ * reachable through the diagonal-pattern modal.
  */
 export function TodaySnapshotBody({ summary }: TodaySnapshotBodyProps) {
   const total = Object.values(summary.ratingDistribution).reduce((a, b) => a + b, 0);
   const againPct = total > 0 ? summary.ratingDistribution.again / total : 0;
+  const { dueToday, streakDays } = summary.metrics;
+  const drift = summary.fsrsCalibrationGap30d;
+
+  /* Headline verdict (formerly in TodayNarrative). Two-axis call:
+       1. load   — based on dueToday count
+       2. drift  — FSRS calibration gap sign + magnitude
+     The pair is composed into a single sentence so the snapshot opens
+     with a single bold takeaway before any tabular numbers. */
+  const loadVerdict =
+    dueToday === 0
+      ? "今日没有到期卡片"
+      : dueToday < 15
+        ? "今日负载轻松"
+        : dueToday < 30
+          ? "今日负载适中"
+          : "今日负载偏重";
+  const driftVerdict =
+    Math.abs(drift) < 0.02
+      ? "FSRS 校准与目标吻合"
+      : drift > 0
+        ? "实际遗忘略高于目标"
+        : "实际记忆优于目标预期";
 
   return (
     <div className="space-y-6">
+      {/* Headline verdict — single bold sentence pulled from the
+          retired TodayNarrative component. */}
+      <p className="section-title text-2xl font-semibold leading-snug text-[var(--color-ink)] sm:text-[1.7rem]">
+        {loadVerdict}，{driftVerdict}。
+      </p>
+
       {/* Hero stat block */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Hero label="连续天数" value={summary.metrics.streakDays} suffix="d" />
@@ -55,6 +90,23 @@ export function TodaySnapshotBody({ summary }: TodaySnapshotBodyProps) {
             </>
           )}
         </p>
+        {/* Streak-milestone callouts — second piece pulled from the
+            retired TodayNarrative. Only renders when there is actually
+            something noteworthy to say (≥7 days). */}
+        {streakDays >= 7 && (
+          <p className="mt-3 text-sm leading-6 text-[var(--color-ink-soft)]">
+            连续学习{" "}
+            <strong className="font-semibold tabular-nums text-[var(--color-ink)]">
+              {streakDays}
+            </strong>{" "}
+            天，节奏稳定。
+            {streakDays >= 100
+              ? " 三位数连续，是真正的复习训练。"
+              : streakDays >= 30
+                ? " 已达成 30 天习惯里程碑。"
+                : ""}
+          </p>
+        )}
       </div>
 
       {/* Active session callout */}

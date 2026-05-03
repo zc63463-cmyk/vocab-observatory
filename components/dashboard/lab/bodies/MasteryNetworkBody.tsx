@@ -21,11 +21,13 @@ interface MasteryNetworkBodyProps {
  *   - `MobileLayout` hero featured card → chromeless=false (heatmap
  *     brings its own panel so the vertical rhythm stays consistent
  *     with sibling mobile cards).
- *   - `DesktopLayout` Observation Deck cell → chromeless=true (the
- *     enclosing `SectionPanel` already provides panel chrome and the
- *     bento header; the heatmap's own would nest visually).
+ *   - `DesktopLayout` Observation Deck (Phase 4) → chromeless=false.
+ *     The Phase 4 desktop layout removed the wrapping SectionPanel and
+ *     renders this body directly, so the heatmap supplies its own
+ *     panel chrome. Only an external eyebrow ("Observation Deck") is
+ *     printed above it.
  *   - `SectionModal` drill-down → chromeless=true (modal already has
- *     panel-strong chrome; same reason).
+ *     panel-strong chrome; nesting would produce double-card visuals).
  */
 export function MasteryNetworkBody({
   summary,
