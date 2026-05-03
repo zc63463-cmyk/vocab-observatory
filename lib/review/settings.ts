@@ -315,3 +315,170 @@ export async function updateUserFsrsWeightsSetting(
 
   return readFsrsWeightsSetting(data ?? null);
 }
+
+// ── Prompt mode + self-calibration prediction preferences ────────────────
+// Stored under settings.review.{prompt_modes, prediction_enabled}. These are
+// pure UX preferences — they do NOT change scheduling math; the FSRS core
+// stays untouched. They DO get logged into review_logs.metadata for later
+// analytics (which mode was actually shown / how confident the user said
+// they were), so the data path is one-way: preferences pick the front-face
+// rendering, the rendering result + user prediction get attached to the
+// rating log.
+
+/**
+ * Order matters: it's the canonical iteration order for both the settings UI
+ * and persisted prompt_modes arrays. Declared as `as const` so zod can take
+ * the same value without losing literal types — the schema layer treats this
+ * as the single source of truth for which mode strings are valid.
+ */
+export const REVIEW_PROMPT_MODES = ["forward", "reverse", "cloze"] as const;
+
+export type ReviewPromptMode = (typeof REVIEW_PROMPT_MODES)[number];
+
+const PROMPT_MODE_SET = new Set<ReviewPromptMode>(REVIEW_PROMPT_MODES);
+
+export interface UserReviewPreferences {
+  /** When true the front face shows a 0–100% confidence slider before flip. */
+  predictionEnabled: boolean;
+  /**
+   * Allowed front-face prompt modes. Per-card the renderer picks one at
+   * random from this list, with a guaranteed fallback to "forward" so a
+   * never-defined / cleared list is still recoverable.
+   */
+  promptModes: ReviewPromptMode[];
+}
+
+export const DEFAULT_REVIEW_PREFERENCES: UserReviewPreferences = {
+  predictionEnabled: false,
+  promptModes: ["forward"],
+};
+
+function isPromptMode(value: unknown): value is ReviewPromptMode {
+  return typeof value === "string" && PROMPT_MODE_SET.has(value as ReviewPromptMode);
+}
+
+/**
+ * Reads and normalises the prompt-mode list. Unknown / non-string entries
+ * are dropped silently (forward-compat with future modes); duplicates are
+ * collapsed; the result is ordered to match REVIEW_PROMPT_MODES so the
+ * settings UI stays stable across reloads. Empty result → forward fallback.
+ */
+export function readReviewPromptModes(
+  settings: Json | null | undefined,
+): ReviewPromptMode[] {
+  if (!isJsonObject(settings)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
+  const reviewSettings = settings.review;
+  if (!isJsonObject(reviewSettings)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
+  const raw = reviewSettings.prompt_modes;
+  if (!Array.isArray(raw)) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
+
+  const valid = new Set<ReviewPromptMode>();
+  for (const entry of raw) {
+    if (isPromptMode(entry)) valid.add(entry);
+  }
+  if (valid.size === 0) return [...DEFAULT_REVIEW_PREFERENCES.promptModes];
+
+  return REVIEW_PROMPT_MODES.filter((mode) => valid.has(mode));
+}
+
+export function readReviewPredictionEnabled(
+  settings: Json | null | undefined,
+): boolean {
+  if (!isJsonObject(settings)) return DEFAULT_REVIEW_PREFERENCES.predictionEnabled;
+  const reviewSettings = settings.review;
+  if (!isJsonObject(reviewSettings)) return DEFAULT_REVIEW_PREFERENCES.predictionEnabled;
+  const raw = reviewSettings.prediction_enabled;
+  return typeof raw === "boolean" ? raw : DEFAULT_REVIEW_PREFERENCES.predictionEnabled;
+}
+
+export function readReviewPreferences(
+  settings: Json | null | undefined,
+): UserReviewPreferences {
+  return {
+    predictionEnabled: readReviewPredictionEnabled(settings),
+    promptModes: readReviewPromptModes(settings),
+  };
+}
+
+export async function getUserReviewPreferences(
+  supabase: AppSupabaseClient,
+  userId: string,
+): Promise<UserReviewPreferences> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("settings")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return readReviewPreferences(data?.settings ?? null);
+}
+
+/**
+ * Partial-update preferences: only keys present on `update` are persisted.
+ * Each key writes via the existing upsert_profile_review_setting RPC, so
+ * concurrent writes against unrelated review settings (desired_retention,
+ * fsrs_weights) cannot clobber us. Two RPCs run in parallel when both keys
+ * are present; either failing surfaces as a thrown error and the caller is
+ * expected to refetch authoritative state.
+ */
+export async function updateUserReviewPreferences(
+  supabase: AppSupabaseClient,
+  userId: string,
+  update: Partial<UserReviewPreferences>,
+  nowIso: string,
+): Promise<UserReviewPreferences> {
+  // The supabase rpc builder returns PromiseLike, which Promise.all rejects.
+  // Wrap each call in an async IIFE so we get a real Promise back without
+  // losing the parallel-write benefit (still two concurrent network calls
+  // when both keys are present).
+  const ops: Array<Promise<void>> = [];
+
+  if (update.predictionEnabled !== undefined) {
+    const value = update.predictionEnabled;
+    ops.push(
+      (async () => {
+        const { error } = await supabase.rpc("upsert_profile_review_setting", {
+          p_user_id: userId,
+          p_key: "prediction_enabled",
+          p_value: asJson(value),
+          p_now: nowIso,
+        });
+        if (error) throw error;
+      })(),
+    );
+  }
+
+  if (update.promptModes !== undefined) {
+    // Normalise to the canonical order before persisting, dropping unknowns.
+    const requested = update.promptModes;
+    const normalised = REVIEW_PROMPT_MODES.filter((mode) =>
+      requested.includes(mode),
+    );
+    const finalList = normalised.length > 0
+      ? normalised
+      : [...DEFAULT_REVIEW_PREFERENCES.promptModes];
+
+    ops.push(
+      (async () => {
+        const { error } = await supabase.rpc("upsert_profile_review_setting", {
+          p_user_id: userId,
+          p_key: "prompt_modes",
+          p_value: asJson(finalList),
+          p_now: nowIso,
+        });
+        if (error) throw error;
+      })(),
+    );
+  }
+
+  if (ops.length === 0) {
+    return getUserReviewPreferences(supabase, userId);
+  }
+
+  await Promise.all(ops);
+  return getUserReviewPreferences(supabase, userId);
+}

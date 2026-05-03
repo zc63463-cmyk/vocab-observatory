@@ -2,70 +2,189 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { springs } from "@/components/motion";
 import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
 import { speakLemma, canSpeak } from "@/lib/tts";
 import { WordRelationLinks } from "./WordRelationLinks";
+import { PredictionSlider } from "./PredictionSlider";
+import { CLOZE_BLANK_TOKEN, type ResolvedPrompt } from "@/lib/review/prompt-mode";
 
 interface FlashcardFrontProps {
   item: ReviewQueueItem;
   onReveal: () => void;
+  resolvedPrompt: ResolvedPrompt;
+  predictionEnabled: boolean;
+  predictionCommitted: boolean;
 }
 
-function FlashcardFront({ item, onReveal }: FlashcardFrontProps) {
+function FlashcardFront({
+  item,
+  onReveal,
+  resolvedPrompt,
+  predictionEnabled,
+  predictionCommitted,
+}: FlashcardFrontProps) {
+  const flipDisabled = predictionEnabled && !predictionCommitted;
+
   return (
     <motion.div
       key="front"
-      className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center backface-hidden"
+      className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden ${
+        flipDisabled ? "cursor-default" : "cursor-pointer"
+      }`}
       style={{ backfaceVisibility: "hidden" }}
-      onClick={onReveal}
+      onClick={flipDisabled ? undefined : onReveal}
       initial={{ rotateY: 0 }}
       animate={{ rotateY: 0 }}
       exit={{ rotateY: 180 }}
       transition={{ type: "spring", ...springs.smooth }}
     >
-      {/* Word Display */}
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            speakLemma(item.lemma, item.lang_code);
-          }}
-          className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
-          title="点击朗读"
-        >
-          <h1
-            className="text-6xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-7xl md:text-8xl"
-            style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
-          >
-            {item.lemma}
-          </h1>
-          {canSpeak() && (
-            <span className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-70 sm:-right-10">
-              <Volume2 size={22} className="text-[var(--color-ink-soft)]" />
-            </span>
-          )}
-        </button>
-
-        {item.ipa && (
-          <p className="mt-4 text-xl text-[var(--color-ink-soft)] sm:text-2xl">
-            {item.ipa}
-          </p>
-        )}
+      {/* Front-face content varies by mode — see resolvePrompt() for the
+          mode-selection algorithm. Prediction slider sits below the prompt
+          content, never replacing it. */}
+      <div className="flex w-full flex-1 items-center justify-center px-6 sm:px-10">
+        <FrontPromptBody item={item} resolvedPrompt={resolvedPrompt} />
       </div>
 
+      {predictionEnabled && (
+        <div className="w-full px-6 pb-6 sm:px-10">
+          <PredictionSlider />
+        </div>
+      )}
+
       {/* Hint */}
-      <div className="absolute bottom-8 left-0 right-0 text-center">
+      <div className="absolute bottom-3 left-0 right-0 text-center">
         <p className="text-sm text-[var(--color-ink-soft)] opacity-60">
-          按 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">Space</kbd> 或点击显示释义
-          <span className="mx-2">·</span>
-          <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">P</kbd> 朗读
+          {flipDisabled ? (
+            <>先设定你的把握度再翻面</>
+          ) : (
+            <>
+              按 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">Space</kbd> 或点击显示答案
+              <span className="mx-2">·</span>
+              <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-xs">P</kbd> 朗读
+            </>
+          )}
         </p>
       </div>
     </motion.div>
+  );
+}
+
+interface FrontPromptBodyProps {
+  item: ReviewQueueItem;
+  resolvedPrompt: ResolvedPrompt;
+}
+
+/**
+ * Renders the actual prompt content that the user must respond to before
+ * flipping. Three modes:
+ *   - forward: the lemma + IPA, with click-to-speak. The classic flashcard
+ *     front; what the user sees on every card today.
+ *   - reverse: the gloss / definition only. Lemma and IPA hidden because
+ *     they're the answer; we want the user to retrieve the word from the
+ *     meaning. Click-to-speak is suppressed for the same reason.
+ *   - cloze: a sample sentence with the lemma redacted to CLOZE_BLANK_TOKEN.
+ *     Length hint shown faintly so the user has a coarse anchor without
+ *     it doubling as a spell-checker.
+ */
+function FrontPromptBody({ item, resolvedPrompt }: FrontPromptBodyProps) {
+  if (resolvedPrompt.mode === "reverse") {
+    const definition = item.short_definition || item.definition_md || "暂无释义";
+    return (
+      <div className="text-center">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+          从释义回想
+        </p>
+        <p
+          className="max-w-xl text-2xl leading-relaxed text-[var(--color-ink)] sm:text-3xl md:text-4xl"
+          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        >
+          {definition}
+        </p>
+      </div>
+    );
+  }
+
+  if (resolvedPrompt.mode === "cloze" && resolvedPrompt.clozeText) {
+    return (
+      <div className="text-center">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
+          填空
+        </p>
+        <p
+          className="max-w-2xl text-2xl leading-relaxed text-[var(--color-ink)] sm:text-3xl md:text-4xl"
+          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        >
+          <ClozeRender text={resolvedPrompt.clozeText} />
+        </p>
+        {resolvedPrompt.clozeLength !== null && (
+          <p className="mt-4 text-xs uppercase tracking-[0.16em] text-[var(--color-ink-soft)] opacity-60">
+            {resolvedPrompt.clozeLength} 个字符
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Forward (default + fallback)
+  return (
+    <div className="text-center">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          speakLemma(item.lemma, item.lang_code);
+        }}
+        className="group relative cursor-pointer appearance-none border-none bg-transparent p-0"
+        title="点击朗读"
+      >
+        <h1
+          className="text-6xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-7xl md:text-8xl"
+          style={{ fontFamily: "var(--font-heading), Georgia, serif" }}
+        >
+          {item.lemma}
+        </h1>
+        {canSpeak() && (
+          <span className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-70 sm:-right-10">
+            <Volume2 size={22} className="text-[var(--color-ink-soft)]" />
+          </span>
+        )}
+      </button>
+
+      {item.ipa && (
+        <p className="mt-4 text-xl text-[var(--color-ink-soft)] sm:text-2xl">
+          {item.ipa}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Splits the cloze sentence on CLOZE_BLANK_TOKEN and renders each blank as
+ * a styled span. Visually distinguishes the gap from the surrounding text
+ * via a contrasting background pill so the user can't miss what to fill in.
+ */
+function ClozeRender({ text }: { text: string }) {
+  const parts = text.split(CLOZE_BLANK_TOKEN);
+  return (
+    <>
+      {parts.map((part, idx) => (
+        <Fragment key={idx}>
+          {part}
+          {idx < parts.length - 1 && (
+            <span
+              aria-label="需要填空的单词"
+              className="mx-1 inline-flex items-center justify-center rounded-md border border-dashed border-[var(--color-accent)]/60 bg-[var(--color-accent)]/10 px-3 py-0.5 align-baseline text-[var(--color-accent)]"
+            >
+              ? ? ?
+            </span>
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }
 
@@ -245,17 +364,27 @@ function FlashcardBack({ item }: FlashcardBackProps) {
 }
 
 export function ZenFlashcard() {
-  const { item, phase, reveal } = useZenReviewContext();
+  const { item, phase, reveal, resolvedPrompt, preferences, prediction } =
+    useZenReviewContext();
 
   if (!item) return null;
 
   const showBack = phase === "back" || phase === "rating";
+  const predictionCommitted = prediction !== null;
+  // When prediction is enabled and not yet committed, the wrapping click
+  // area must NOT trigger reveal: otherwise tapping the card body would
+  // race the slider's stop-propagation guard. Component-level gate keeps
+  // the slider as the only viable interaction until a value is committed.
+  const wrapperClickEnabled =
+    phase === "front" && (!preferences.predictionEnabled || predictionCommitted);
 
   return (
     <div 
-      className="relative mx-auto aspect-[4/3] w-full max-w-3xl cursor-pointer sm:aspect-[16/10]"
+      className={`relative mx-auto aspect-[4/3] w-full max-w-3xl sm:aspect-[16/10] ${
+        wrapperClickEnabled ? "cursor-pointer" : "cursor-default"
+      }`}
       style={{ perspective: "1200px" }}
-      onClick={phase === "front" ? reveal : undefined}
+      onClick={wrapperClickEnabled ? reveal : undefined}
     >
       <motion.div
         className="relative h-full w-full"
@@ -279,7 +408,13 @@ export function ZenFlashcard() {
             WebkitBackfaceVisibility: "hidden",
           }}
         >
-          <FlashcardFront item={item} onReveal={reveal} />
+          <FlashcardFront
+            item={item}
+            onReveal={reveal}
+            resolvedPrompt={resolvedPrompt}
+            predictionEnabled={preferences.predictionEnabled}
+            predictionCommitted={predictionCommitted}
+          />
         </div>
 
         {/* Back Face */}

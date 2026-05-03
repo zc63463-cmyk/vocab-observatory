@@ -1,4 +1,8 @@
 import type { ZenReviewedItem } from "./types";
+import {
+  summarizeSessionCalibration,
+  type SessionCalibrationStats,
+} from "@/lib/review/calibration";
 
 /**
  * Local, session-scoped summary derived purely from the in-memory `sessionHistory`.
@@ -18,6 +22,12 @@ export interface ZenSessionSummary {
   totalDurationMs: number;
   /** Average across only active (non-undone) items that have durationMs */
   averageDurationMs: number | null;
+  /**
+   * Calibration roll-up across active history entries that recorded a
+   * prediction. `count === 0` means the user either had prediction off or
+   * skipped on every card; the SessionSummary UI then hides the row.
+   */
+  calibration: SessionCalibrationStats;
   startedAt?: string;
   endedAt: string;
 }
@@ -31,6 +41,9 @@ export interface ZenSessionSummary {
  * 3. Rating distribution counts only ACTIVE (undone === false) items.
  * 4. againRate = againCount / activeReviewed; 0 when activeReviewed = 0.
  * 5. averageDurationMs is null if no active items have a recorded durationMs.
+ * 6. calibration aggregates predictions across active items. summarize-
+ *    SessionCalibration internally drops undone + null-prediction entries,
+ *    so we hand it the full history without pre-filtering.
  */
 export function deriveZenSessionSummary(
   history: ZenReviewedItem[],
@@ -63,6 +76,14 @@ export function deriveZenSessionSummary(
     .filter((d): d is number => typeof d === "number")
     .reduce((sum, d) => sum + d, 0);
 
+  const calibration = summarizeSessionCalibration(
+    history.map((h) => ({
+      predictedRecall: h.predictedRecall ?? null,
+      rating: h.rating,
+      undone: h.undone,
+    })),
+  );
+
   return {
     totalReviewed,
     activeReviewed,
@@ -74,6 +95,7 @@ export function deriveZenSessionSummary(
     againRate,
     totalDurationMs,
     averageDurationMs,
+    calibration,
     startedAt,
     endedAt: new Date().toISOString(),
   };

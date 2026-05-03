@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/Badge";
 import { RetentionDiagnostics } from "@/components/review/RetentionDiagnostics";
 import { ReviewRetentionSettings } from "@/components/review/ReviewRetentionSettings";
+import { ReviewPreferencesPanel } from "@/components/review/ReviewPreferencesPanel";
 import { formatPercent, formatSignedPoints } from "../format";
 import type { DashboardSummary } from "../types";
 
@@ -57,6 +58,8 @@ export function ReviewLoadBody({ summary }: ReviewLoadBodyProps) {
         averageDesiredRetention={summary.averageDesiredRetention}
         trackedWords={summary.metrics.trackedWords}
       />
+
+      <ReviewPreferencesPanel />
 
       <RetentionDiagnostics diagnostic={summary.retentionDiagnostic} />
 
