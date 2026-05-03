@@ -1,5 +1,4 @@
 import type { ReviewQueueItem, ReviewQueueStats, ReviewSessionSummary } from "@/lib/review/types";
-import type { ReviewPromptMode } from "@/lib/review/settings";
 
 export type RatingKey = "again" | "hard" | "good" | "easy";
 
@@ -20,13 +19,6 @@ export interface ZenState {
   message: string;
   pending: boolean;
   lastRating: RatingKey | null;
-  /**
-   * Confidence prediction the user set on the front face this turn, in
-   * [0, 100]. Reset to null on every NEXT_CARD / RESTORE_CARD so the
-   * prior card's value never leaks. When prediction is enabled and this
-   * is null, the REVEAL action is gated until the user commits a value.
-   */
-  prediction: number | null;
 }
 
 export type ZenAction =
@@ -37,7 +29,6 @@ export type ZenAction =
   | { type: "SET_MESSAGE"; message: string }
   | { type: "SET_ERROR"; message: string }
   | { type: "SET_PENDING"; pending: boolean }
-  | { type: "SET_PREDICTION"; value: number | null }
   | { type: "REFRESH_QUEUE"; items: ReviewQueueItem[]; session: ReviewSessionSummary | null; stats: ReviewQueueStats | null }
   | { type: "RESTORE_BACK" }
   | { type: "RESTORE_CARD"; item: ReviewQueueItem }
@@ -56,10 +47,6 @@ export interface ZenReviewedItem {
   durationMs?: number;
   canUndo: boolean;
   undone?: boolean;
-  /** What the user predicted before flipping. Null when not provided. */
-  predictedRecall?: number | null;
-  /** Front-face mode the card was actually shown in. */
-  promptMode?: ReviewPromptMode;
 }
 
 export interface ZenUiState {

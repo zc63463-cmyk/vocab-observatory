@@ -1,6 +1,3 @@
-import type { ReviewQueueItem } from "@/lib/review/types";
-import type { ReviewPromptMode } from "@/lib/review/settings";
-
 /**
  * Front-face placeholder used when redacting the target lemma in a cloze
  * sentence. Picked from the Geometric Shapes block (U+25A2) for high
@@ -11,111 +8,10 @@ import type { ReviewPromptMode } from "@/lib/review/settings";
  */
 export const CLOZE_BLANK_TOKEN = "▢▢▢";
 
-export interface ResolvedPrompt {
-  mode: ReviewPromptMode;
-  /** Cloze sentence with the lemma replaced by `CLOZE_BLANK_TOKEN`. */
-  clozeText: string | null;
-  /** Letter count of the matched form. Surfaced as a faint length hint. */
-  clozeLength: number | null;
-  /** Raw source sentence pre-redaction. Useful for debugging / analytics. */
-  clozeSource: string | null;
-}
-
-const FORWARD_PROMPT: ResolvedPrompt = {
-  mode: "forward",
-  clozeText: null,
-  clozeLength: null,
-  clozeSource: null,
-};
-
-export interface ResolvePromptOptions {
-  allowedModes: ReadonlyArray<ReviewPromptMode>;
-  /** Returns 0 ≤ x < 1. Inject `() => 0.5` (or similar) for deterministic tests. */
-  random?: () => number;
-}
-
-/**
- * Picks the actual prompt mode for a card given the user's allowed-modes
- * setting. Hard rules (override randomness):
- *
- *   1. First-ever exposure (item.is_new) → always forward. The user must
- *      see the word at least once before being asked to retrieve it from a
- *      definition or sentence; otherwise the first review degenerates into
- *      "guess what English word fits this gloss" with no prior anchor.
- *
- *   2. reverse needs a non-empty short_definition / definition_md. Should
- *      be true for every well-formed word, but defensive in case of broken
- *      upstream parse.
- *
- *   3. cloze needs at least one preview example whose text contains the
- *      lemma in a redactable form (whole-word or basic morphology).
- *      Otherwise the cloze would be unsolvable or trivially the source
- *      sentence with no redaction.
- *
- * After hard-rule filtering, the function picks uniformly at random from
- * the surviving candidates. If the candidate list collapses to empty, we
- * fall back to forward — never throw.
- */
-export function resolvePrompt(
-  item: ReviewQueueItem,
-  options: ResolvePromptOptions,
-): ResolvedPrompt {
-  const random = options.random ?? Math.random;
-
-  if (item.is_new) {
-    return FORWARD_PROMPT;
-  }
-
-  // Pre-compute the cloze candidate once so we don't redact twice if
-  // cloze ends up being the picked mode.
-  const clozeCandidate = options.allowedModes.includes("cloze")
-    ? findClozeFromExamples(item)
-    : null;
-
-  const candidates = options.allowedModes.filter((mode) => {
-    if (mode === "forward") return true;
-    if (mode === "reverse") {
-      const hasDefinition = Boolean(
-        (item.short_definition ?? "").trim() ||
-          (item.definition_md ?? "").trim(),
-      );
-      return hasDefinition;
-    }
-    if (mode === "cloze") return clozeCandidate !== null;
-    return false;
-  });
-
-  if (candidates.length === 0) {
-    return FORWARD_PROMPT;
-  }
-
-  const idx = Math.min(
-    candidates.length - 1,
-    Math.max(0, Math.floor(random() * candidates.length)),
-  );
-  const pick = candidates[idx] ?? "forward";
-
-  if (pick === "cloze" && clozeCandidate) {
-    return {
-      mode: "cloze",
-      clozeText: clozeCandidate.text,
-      clozeLength: clozeCandidate.matchedLength,
-      clozeSource: clozeCandidate.source,
-    };
-  }
-
-  if (pick === "reverse") {
-    return { mode: "reverse", clozeText: null, clozeLength: null, clozeSource: null };
-  }
-
-  return FORWARD_PROMPT;
-}
-
 /**
  * Tries to redact `lemma` (and basic morphological variants) inside a
  * sentence. Returns `null` when the sentence does not contain the lemma
- * in any redactable form — caller should drop cloze for that example and
- * (if no other example matches) fall back to a different mode.
+ * in any redactable form.
  *
  * Strategy, in priority order:
  *   1. Strip simple markdown emphasis so `**runs**` is treated as `runs`.
@@ -205,24 +101,4 @@ function stripSimpleMarkdown(input: string): string {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findClozeFromExamples(
-  item: ReviewQueueItem,
-): { text: string; matchedLength: number; source: string } | null {
-  const examples = item.previewExamples;
-  if (!examples || examples.length === 0) return null;
-
-  for (const ex of examples) {
-    if (!ex.text) continue;
-    const redacted = redactLemmaInSentence(ex.text, item.lemma);
-    if (redacted) {
-      return {
-        text: redacted.text,
-        matchedLength: redacted.matchedLength,
-        source: ex.text,
-      };
-    }
-  }
-  return null;
 }

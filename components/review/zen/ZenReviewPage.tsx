@@ -9,10 +9,8 @@ import { ZenRatingButtons } from "./ZenRatingButtons";
 import { ZenExitButton } from "./ZenExitButton";
 import { ZenHistoryDrawer } from "./ZenHistoryDrawer";
 import { ZenSessionSummary } from "./ZenSessionSummary";
-import { RatingFeedback } from "./RatingFeedback";
 import { useAutoHideCursor } from "./useAutoHideCursor";
 import { ZenRadialMenu } from "./radial/ZenRadialMenu";
-import { ReviewPreferencesGearButton } from "@/components/review/ReviewPreferencesGearButton";
 import { springs } from "@/components/motion";
 
 function ZenModeEffect({ enabled }: { enabled: boolean }) {
@@ -209,16 +207,8 @@ function ZenReviewInner() {
       <div className="zen-ambient-bg pointer-events-none absolute inset-0" aria-hidden="true" />
       
       <ZenModeEffect enabled={true} />
-      <RatingFeedback />
       <ZenExitButton />
-      {/* Sit the preferences gear LEFT of the exit X. Both buttons are
-          `position: fixed`, both portal their popovers to document.body,
-          so the zen UI stays visually pristine — the gear is the only
-          new pixel and matches the exit button's chrome exactly. The
-          popover is gear-internal so we don't have to wire any state
-          here. */}
-      <ReviewPreferencesGearButton variant="zen" />
-      
+
       <motion.main
         className="relative z-10"
         animate={{

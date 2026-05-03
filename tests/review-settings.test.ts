@@ -4,8 +4,6 @@ import {
   getNearestReviewRetentionPreset,
   readDesiredRetentionSetting,
   readFsrsWeightsSetting,
-  readReviewPreferences,
-  readReviewPromptModes,
   validateFsrsWeightsArray,
   writeDesiredRetentionSetting,
   writeFsrsWeightsSetting,
@@ -265,69 +263,3 @@ describe("validateFsrsWeightsArray", () => {
   });
 });
 
-describe("zen prompt-mode preferences", () => {
-  // Cloze was previously one of three modes exposed to the Zen FSRS flow;
-  // it now lives exclusively in the drill self-test. These tests lock in
-  // the migration promise: older payloads keep working, but cloze never
-  // leaks back into Zen's allowed-modes list.
-  it("reads forward + reverse when stored as such", () => {
-    expect(
-      readReviewPromptModes({
-        review: { prompt_modes: ["forward", "reverse"] },
-      }),
-    ).toEqual(["forward", "reverse"]);
-  });
-
-  it("silently strips cloze from a stale stored list", () => {
-    expect(
-      readReviewPromptModes({
-        review: { prompt_modes: ["forward", "cloze", "reverse"] },
-      }),
-    ).toEqual(["forward", "reverse"]);
-  });
-
-  it("falls back to forward when stored list was only cloze", () => {
-    expect(
-      readReviewPromptModes({
-        review: { prompt_modes: ["cloze"] },
-      }),
-    ).toEqual(["forward"]);
-  });
-
-  it("drops unknown entries and keeps the canonical ordering", () => {
-    // Reverse first in input — output must still follow ZEN_PROMPT_MODES
-    // order (forward, reverse) so the UI chip row doesn't reshuffle.
-    expect(
-      readReviewPromptModes({
-        review: { prompt_modes: ["reverse", "forward", "martian"] },
-      }),
-    ).toEqual(["forward", "reverse"]);
-  });
-
-  it("falls back on missing / malformed settings", () => {
-    expect(readReviewPromptModes(null)).toEqual(["forward"]);
-    expect(readReviewPromptModes({})).toEqual(["forward"]);
-    expect(readReviewPromptModes({ review: {} })).toEqual(["forward"]);
-    expect(readReviewPromptModes({ review: { prompt_modes: "nope" } })).toEqual(
-      ["forward"],
-    );
-  });
-
-  it("readReviewPreferences bundles both keys with defaults", () => {
-    expect(readReviewPreferences(null)).toEqual({
-      predictionEnabled: false,
-      promptModes: ["forward"],
-    });
-  });
-
-  it("readReviewPreferences respects cloze-stripping and prediction flag", () => {
-    expect(
-      readReviewPreferences({
-        review: {
-          prompt_modes: ["cloze", "reverse"],
-          prediction_enabled: true,
-        },
-      }),
-    ).toEqual({ predictionEnabled: true, promptModes: ["reverse"] });
-  });
-});
