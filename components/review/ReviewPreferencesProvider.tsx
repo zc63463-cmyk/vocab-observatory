@@ -114,6 +114,8 @@ export function ReviewPreferencesProvider({ children }: { children: ReactNode })
       setPreferences(optimistic);
 
       try {
+        // [REVIEW_PREFS_DEBUG] temporary: log what we're sending.
+        console.log("[REVIEW_PREFS_DEBUG] save() partial =", partial);
         const res = await fetch("/api/review/preferences", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -121,7 +123,10 @@ export function ReviewPreferencesProvider({ children }: { children: ReactNode })
         });
         const payload = (await res.json()) as UserReviewPreferences & {
           error?: unknown;
+          _debug?: unknown;
         };
+        // [REVIEW_PREFS_DEBUG] temporary: full server round-trip trace.
+        console.log("[REVIEW_PREFS_DEBUG] save() response status =", res.status, "payload =", payload);
         if (!res.ok) {
           throw new Error(
             typeof payload.error === "string" ? payload.error : "保存失败",

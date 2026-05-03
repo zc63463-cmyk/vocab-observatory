@@ -135,7 +135,11 @@ export function ReviewPreferencesForm({
       if (!arraysEqual(draft.promptModes, baseline.promptModes)) {
         partial.promptModes = draft.promptModes;
       }
+      // [REVIEW_PREFS_DEBUG] temporary: log dirty diff before sending.
+      console.log("[REVIEW_PREFS_DEBUG] handleSave: baseline =", baseline, "draft =", draft, "→ partial =", partial);
       const next = await ctx.save(partial);
+      // [REVIEW_PREFS_DEBUG] temporary: log what we adopt as new draft.
+      console.log("[REVIEW_PREFS_DEBUG] handleSave: ctx.save resolved with next =", next);
       // Provider has already updated `ctx.preferences` (the baseline)
       // optimistically + reconciled with the server's reply. Pulling
       // draft up to `next` snaps it back to clean — no separate

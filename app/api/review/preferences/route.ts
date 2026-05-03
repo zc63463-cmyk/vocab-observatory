@@ -53,12 +53,65 @@ export async function POST(request: NextRequest) {
   const userId = ownerSession.user!.id;
   const nowIso = new Date().toISOString();
 
-  const prefs = await updateUserReviewPreferences(
-    supabase,
+  // ── TEMPORARY DIAGNOSTIC ─────────────────────────────────────────────
+  // The user reports "click save → toast 已保存 → state reverts to defaults".
+  // To pinpoint whether the write was lost or the read returned stale data,
+  // we capture the raw settings.review JSON both before the update and after,
+  // and echo the full trace back in the response. Remove once the bug is
+  // localized.
+  const trace: Record<string, unknown> = {
+    received: parsed.data,
     userId,
-    parsed.data,
     nowIso,
-  );
+  };
 
-  return NextResponse.json(prefs);
+  try {
+    const { data: beforeRow, error: beforeError } = await supabase
+      .from("profiles")
+      .select("settings, id")
+      .eq("id", userId)
+      .maybeSingle();
+    trace.before_row_id = beforeRow?.id ?? null;
+    trace.before_review = (beforeRow?.settings as { review?: unknown })?.review ?? null;
+    trace.before_select_error = beforeError?.message ?? null;
+  } catch (e) {
+    trace.before_select_throw = e instanceof Error ? e.message : String(e);
+  }
+
+  let prefs;
+  try {
+    prefs = await updateUserReviewPreferences(
+      supabase,
+      userId,
+      parsed.data,
+      nowIso,
+    );
+    trace.update_ok = true;
+    trace.update_returned = prefs;
+  } catch (e) {
+    trace.update_ok = false;
+    trace.update_throw = e instanceof Error ? e.message : String(e);
+    console.error("[REVIEW_PREFS_DEBUG] update threw:", trace);
+    return NextResponse.json(
+      { error: trace.update_throw, _debug: trace },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const { data: afterRow, error: afterError } = await supabase
+      .from("profiles")
+      .select("settings, id")
+      .eq("id", userId)
+      .maybeSingle();
+    trace.after_row_id = afterRow?.id ?? null;
+    trace.after_review = (afterRow?.settings as { review?: unknown })?.review ?? null;
+    trace.after_select_error = afterError?.message ?? null;
+  } catch (e) {
+    trace.after_select_throw = e instanceof Error ? e.message : String(e);
+  }
+
+  console.log("[REVIEW_PREFS_DEBUG]", JSON.stringify(trace));
+
+  return NextResponse.json({ ...prefs, _debug: trace });
 }
