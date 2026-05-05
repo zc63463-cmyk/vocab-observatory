@@ -7,6 +7,14 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { canRunImport, jsonError } from "@/lib/request-auth";
 import { syncGitHubWords } from "@/lib/sync/upsertWord";
 
+// Multi-prefix imports (L0_单词集合 + L0_基础词 + L0_超纲词 = ~5000 files)
+// take several minutes end-to-end. Vercel's default 10s/60s function caps
+// trip well before that, surfacing as a generic HTTP 500 to the caller and
+// leaving the run half-finished. 300s matches the Pro-plan ceiling and gives
+// headroom for the full-vault upsert path; the cron worker uses the same
+// route so this also keeps daily sync stable as the corpus grows.
+export const maxDuration = 300;
+
 async function runImport(request: NextRequest) {
   const authorization = await canRunImport(request);
   if (!authorization.authorized) {
