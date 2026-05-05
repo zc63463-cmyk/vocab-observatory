@@ -53,6 +53,48 @@ function buildSourcePathLikeFilter(prefixes: readonly string[]) {
     .join(",");
 }
 
+// PostgREST returns at most `db-max-rows` (1000 by default on Supabase) per
+// SELECT, even without an explicit `.limit()`. The import pipeline has two
+// reads that must enumerate every existing row in scope:
+//   1. `existingRows` — drives create/update/unchanged classification and the
+//      soft-delete plan. A truncated set silently mis-classifies surplus rows
+//      as `create`; the upsert still fixes the data via `onConflict`, but the
+//      reported counts diverge from reality and any orphan rows past the
+//      first 1000 escape soft-delete entirely.
+//   2. `wordsWithIds` — builds the `slug → id` map used to insert
+//      `word_tags`. Truncation here is a real data bug: every word past the
+//      first 1000 in a prefix gets no tag associations.
+// Paginate explicitly so both reads stay correct as the corpus grows.
+async function selectAllInScope<TRow>(
+  admin: AdminClient,
+  table: "words",
+  columns: string,
+  prefixes: readonly string[],
+): Promise<TRow[]> {
+  const PAGE_SIZE = 1000;
+  const filter = buildSourcePathLikeFilter(prefixes);
+  const accumulated: TRow[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await admin
+      .from(table)
+      .select(columns)
+      .or(filter)
+      .order("source_path")
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      throw error;
+    }
+    const rows = (data ?? []) as TRow[];
+    accumulated.push(...rows);
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
+  }
+  return accumulated;
+}
+
 function buildWordFilterFacetRows(
   words: ImportedWords,
   now: string,
@@ -202,14 +244,17 @@ export async function syncGitHubWords(
     const incomingWords = imported.words;
     importErrors.push(...imported.errors);
 
-    const { data: existingRows, error: existingError } = await admin
-      .from("words")
-      .select("slug, source_path, content_hash, is_deleted")
-      .or(buildSourcePathLikeFilter(activePrefixes));
-
-    if (existingError) {
-      throw existingError;
-    }
+    const existingRows = await selectAllInScope<{
+      content_hash: string | null;
+      is_deleted: boolean;
+      slug: string;
+      source_path: string;
+    }>(
+      admin,
+      "words",
+      "slug, source_path, content_hash, is_deleted",
+      activePrefixes,
+    );
 
     let collectionNotesAvailable = true;
     const { data: existingCollectionRows, error: existingCollectionError } = await admin
@@ -407,14 +452,12 @@ export async function syncGitHubWords(
       }
     }
 
-    const { data: wordsWithIds, error: wordsError } = await admin
-      .from("words")
-      .select("id, slug")
-      .or(buildSourcePathLikeFilter(activePrefixes));
-
-    if (wordsError) {
-      throw wordsError;
-    }
+    const wordsWithIds = await selectAllInScope<{ id: string; slug: string }>(
+      admin,
+      "words",
+      "id, slug",
+      activePrefixes,
+    );
 
     const { data: tagsWithIds, error: tagsError } = await admin
       .from("tags")
