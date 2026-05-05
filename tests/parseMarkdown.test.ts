@@ -49,6 +49,222 @@ describe("parseWordMarkdown", () => {
     expect(word.ipa).toBeTruthy();
   });
 
+  it("does not synthesize mastery into metadata or 掌握 tags (deprecated)", () => {
+    // A document that has `mastery: L0` in frontmatter but does NOT list
+    // 掌握/L0 in its `tags:` array. Previously the parser synthesised both
+    // metadata.mastery and a `掌握/{mastery}` tag from this field; both
+    // behaviours are now removed.
+    const word = parseWordMarkdown(
+      `---
+title: "demo"
+tags:
+  - 学习/英语/词汇
+mastery: L0
+---
+
+# demo
+
+## 核心释义
+
+**v.** ①测试；
+`,
+      "Wiki/L0_超纲词/demo.md",
+    );
+
+    expect(word.metadata).not.toHaveProperty("mastery");
+    expect(word.tags).not.toContain("掌握/L0");
+  });
+
+  it("parses the new abdicate fixture (rich frontmatter + body callouts)", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.slug).toBe("abdicate");
+    expect(word.lemma).toBe("abdicate");
+    expect(word.ipa).toBeTruthy();
+    expect(word.pos).toBe("v");
+
+    // New frontmatter fields surfaced as metadata.
+    expect(word.metadata.metaphor_type).toBe("方位隐喻");
+    expect(word.metadata.word_root).toBe("dic");
+    expect(word.metadata.network_activation).toEqual([
+      "词根",
+      "同义辨析",
+      "反义词群",
+      "派生词族",
+    ]);
+
+    // Body fallbacks (already in frontmatter here so frontmatter wins).
+    expect(word.metadata.extension_dim).toBe("社会路径");
+    expect(word.metadata.semantic_field).toBe("社会专业");
+    expect(word.metadata.word_freq).toBe("超纲词");
+
+    // Existing structured pipeline still works against the new layout.
+    expect(word.coreDefinitions.length).toBeGreaterThan(0);
+    expect(word.prototypeText).toContain("离开权力");
+    expect(word.synonymItems.length).toBeGreaterThan(0);
+    expect(word.antonymItems.length).toBeGreaterThan(0);
+    expect(word.collocations.length).toBeGreaterThan(0);
+    expect(word.corpusItems.length).toBeGreaterThan(0);
+  });
+
+  it("extracts morphology parts from the inline 词根词缀 line", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.morphology).not.toBeNull();
+    expect(word.morphology?.parts.length).toBe(3);
+    const [prefix, root, suffix] = word.morphology!.parts;
+    expect(prefix.text).toBe("ab");
+    expect(prefix.gloss).toBe("离开，远离");
+    expect(prefix.kind).toBe("prefix");
+    expect(suffix.text).toBe("ate");
+    expect(suffix.kind).toBe("suffix");
+    expect(root.gloss).toBe("说，宣称");
+  });
+
+  it("extracts semantic chain summary fields", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.semanticChain).not.toBeNull();
+    expect(word.semanticChain?.oneWord).toContain("弃权");
+    expect(word.semanticChain?.centerExtension).toContain("放弃责任");
+    expect(word.semanticChain?.chain).toContain("宣布离开");
+    expect(word.semanticChain?.validation).toContain("可逆性");
+  });
+
+  it("extracts mnemonic etymology + breakdown blocks", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.mnemonic).not.toBeNull();
+    expect(word.mnemonic?.etymology).toContain("ab");
+    expect(word.mnemonic?.breakdown).toContain("dic");
+  });
+
+  it("extracts derived word table rows", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.derivedWords.length).toBe(2);
+    expect(word.derivedWords[0]).toMatchObject({
+      word: "abdication",
+      formation: "abdicate + -ion",
+      meaning: "退位，退位事件",
+    });
+    expect(word.derivedWords[1].word).toBe("abdicable");
+  });
+
+  it("extracts pos conversion table rows", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.posConversions.length).toBe(1);
+    expect(word.posConversions[0]).toMatchObject({
+      pos: "v.",
+      meaning: "退位；放弃权力/责任",
+    });
+  });
+
+  it("extracts corpus translation + source from nested bullets", () => {
+    const word = parseWordMarkdown(
+      fixture("abdicate.md"),
+      "Wiki/L0_超纲词/abdicate.md",
+    );
+
+    expect(word.corpusItems.length).toBe(2);
+    const [first] = word.corpusItems;
+    expect(first.text).toContain("King Edward VIII");
+    expect(first.translation).toContain("国王爱德华八世");
+    expect(first.source).toContain("Oxford");
+  });
+
+  it("preserves legacy flat corpus parsing for older fixtures", () => {
+    const word = parseWordMarkdown(fixture("ability.md"), "Wiki/L0_words/ability.md");
+
+    // Legacy fixture has flat bullets only — translation/source should remain undefined.
+    for (const item of word.corpusItems) {
+      expect(item.translation ?? undefined).toBeUndefined();
+      expect(item.source ?? undefined).toBeUndefined();
+    }
+  });
+
+  it("derives word_freq from sourcePath when frontmatter omits it", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "demo"
+tags: []
+---
+
+# demo
+
+## 核心释义
+
+**v.** ①测试；
+`,
+      "Wiki/L0_超纲词/demo.md",
+    );
+
+    expect(word.metadata.word_freq).toBe("超纲词");
+  });
+
+  it("derives word_freq for L0_单词集合 → 必备词", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "core"
+tags: []
+---
+
+# core
+
+## 核心释义
+
+**n.** ①核心；
+`,
+      "Wiki/L0_单词集合/core.md",
+    );
+
+    expect(word.metadata.word_freq).toBe("必备词");
+  });
+
+  it("falls back to body callouts for extension_dim and metaphor_type", () => {
+    const word = parseWordMarkdown(
+      `---
+title: "demo"
+tags: []
+---
+
+# demo
+
+## 核心释义
+
+**v.** ①测试；
+
+> [!tip] 原型义
+> **原型义**：核心比喻
+> **延伸维度**：抽象路径
+> **隐喻类型**：本体隐喻（具体说明被忽略）
+`,
+      "Wiki/L0_超纲词/demo.md",
+    );
+
+    expect(word.metadata.extension_dim).toBe("抽象路径");
+    expect(word.metadata.metaphor_type).toBe("本体隐喻");
+  });
+
   it("parses synonym tables nested inside callouts", () => {
     const word = parseWordMarkdown(
       `---

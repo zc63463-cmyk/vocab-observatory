@@ -3,14 +3,22 @@ import type { Json } from "@/types/database.types";
 import {
   castStructuredWordJson,
   createEmptyStructuredWordFields,
+  createEmptyWordExtendedFields,
   type AntonymItem,
   type CollocationExample,
   type CollocationItem,
   type CoreDefinition,
   type CorpusItem,
+  type DerivedWord,
+  type Mnemonic,
+  type Morphology,
+  type MorphologyPart,
+  type PosConversion,
+  type SemanticChain,
   type StructuredParseWarning,
   type StructuredWordFields,
   type SynonymItem,
+  type WordExtendedFields,
 } from "@/lib/structured-word";
 import { getSection } from "@/lib/markdown";
 import { sha256 } from "@/lib/sync/hash";
@@ -22,7 +30,7 @@ export interface ParsedExample {
   text: string;
 }
 
-export interface ParsedWord extends StructuredWordFields {
+export interface ParsedWord extends StructuredWordFields, WordExtendedFields {
   aliases: string[];
   bodyMd: string;
   contentHash: string;
@@ -40,6 +48,26 @@ export interface ParsedWord extends StructuredWordFields {
   tags: string[];
   title: string;
   warnings: StructuredParseWarning[];
+}
+
+// Maps each `Wiki/L0_<dir>` directory name to the human-readable `word_freq` label.
+// New directories should be added here so path-derived word_freq stays accurate
+// when the source file's frontmatter omits `word_freq`.
+const WORD_FREQ_LABEL_MAP: Record<string, string> = {
+  L0_超纲词: "超纲词",
+  L0_基础词: "基础词",
+  L0_单词集合: "必备词",
+};
+
+function deriveFreqFromSourcePath(sourcePath: string): string | null {
+  // sourcePath looks like "Wiki/L0_超纲词/abdicate.md"
+  const segments = sourcePath.split("/");
+  for (const segment of segments) {
+    if (segment in WORD_FREQ_LABEL_MAP) {
+      return WORD_FREQ_LABEL_MAP[segment];
+    }
+  }
+  return null;
 }
 
 function matchFirst(content: string, pattern: RegExp) {
@@ -313,6 +341,21 @@ function parsePrototypeText(section: string) {
   return matchFirst(section, /\*\*原型义\*\*：(.+)/)?.trim() ?? null;
 }
 
+function parseExtensionDim(section: string) {
+  return matchFirst(section, /\*\*延伸维度\*\*[：:]\s*(.+)/)?.trim() ?? null;
+}
+
+function parseMetaphorType(section: string) {
+  // Captures the part before the first parenthesis when present, since the
+  // parenthesised text is usually a long explanation rather than the type itself.
+  const raw = matchFirst(section, /\*\*隐喻类型\*\*[：:]\s*(.+)/);
+  if (!raw) {
+    return null;
+  }
+  const trimmed = raw.split(/[（(]/u, 1)[0]?.trim();
+  return trimmed || null;
+}
+
 function looksLikeEnglishExample(value: string) {
   return /[A-Za-z]/.test(value);
 }
@@ -435,21 +478,56 @@ function parseCollocations(section: string) {
   return items;
 }
 
-function parseCorpusItems(section: string) {
-  return extractSectionBulletLines(section).map((line) => {
-    const [rawText, trailingNote] = line.split(/——|—/, 2);
-    const quotedMatch = /^["“]?(.+?)["”]?[（(]([^()（）]+)[）)]$/.exec(rawText.trim());
-    const text = quotedMatch ? stripFormatting(quotedMatch[1]) : stripFormatting(rawText);
-    const noteParts = [
-      quotedMatch ? stripFormatting(quotedMatch[2]) : null,
-      trailingNote ? stripFormatting(trailingNote) : null,
-    ].filter((value): value is string => Boolean(value));
+function parseCorpusItems(section: string): CorpusItem[] {
+  const entries = extractCorpusEntries(section);
+  // No grouped entries (e.g. older fixture without nested bullets) — fall back
+  // to the flat per-bullet parser to preserve historical behaviour.
+  if (entries.every((entry) => entry.length === 1)) {
+    return extractSectionBulletLines(section).map(parseFlatCorpusBullet);
+  }
+
+  return entries.map((entry) => {
+    const [parent, ...children] = entry;
+    const flat = parseFlatCorpusBullet(parent);
+    let translation: string | null = null;
+    let source: string | null = null;
+
+    for (const child of children) {
+      const translationMatch = /^中译[:：]\s*(.+)$/u.exec(child);
+      if (translationMatch) {
+        translation = stripFormatting(translationMatch[1]);
+        continue;
+      }
+      const sourceMatch = /^来源[:：]\s*(.+)$/u.exec(child);
+      if (sourceMatch) {
+        source = stripFormatting(sourceMatch[1]);
+      }
+    }
 
     return {
-      note: noteParts.length > 0 ? noteParts.join("；") : null,
-      text,
-    } satisfies CorpusItem;
+      ...flat,
+      source,
+      translation,
+    };
   });
+}
+
+function parseFlatCorpusBullet(line: string): CorpusItem {
+  // Strip an optional `[例]` (or similar) annotation backtick used by the
+  // newer corpus format so the text stays clean.
+  const cleaned = line.replace(/`\[[^\]]+\]`\s*$/u, "").trim();
+  const [rawText, trailingNote] = cleaned.split(/——|—/, 2);
+  const quotedMatch = /^["“]?(.+?)["”]?[（(]([^()（）]+)[）)]$/.exec(rawText.trim());
+  const text = quotedMatch ? stripFormatting(quotedMatch[1]) : stripFormatting(rawText);
+  const noteParts = [
+    quotedMatch ? stripFormatting(quotedMatch[2]) : null,
+    trailingNote ? stripFormatting(trailingNote) : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    note: noteParts.length > 0 ? noteParts.join("；") : null,
+    text,
+  };
 }
 
 function parseMarkdownTable(section: string) {
@@ -527,6 +605,210 @@ function parseAntonymItems(section: string) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// New Obsidian sections (词根词缀 / 词义链路 / 词性转换 / 记忆锚点 / 派生词链接)
+// All extended structured fields land in metadata only — no dedicated columns.
+// ---------------------------------------------------------------------------
+
+function stripQuotePrefix(line: string) {
+  return line.replace(/^>\s?/, "");
+}
+
+function dewikilink(value: string) {
+  return value.replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
+}
+
+/**
+ * Extract the body lines of an Obsidian callout, e.g. for marker `[!quote]-`
+ * captures every following `> ...` line until the callout ends.
+ */
+function extractCalloutBody(section: string, markerPattern: RegExp): string | null {
+  const lines = section.split("\n");
+  const startIndex = lines.findIndex((line) => markerPattern.test(line));
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const body: string[] = [];
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.startsWith(">")) {
+      // The first non-quoted line ends the callout (matches Obsidian semantics).
+      break;
+    }
+    body.push(stripQuotePrefix(line));
+  }
+  return body.join("\n").trim() || null;
+}
+
+function parseMorphology(section: string): Morphology | null {
+  const trimmed = section.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  // Take the first non-empty, non-callout line (the structured one-liner).
+  // The narrative format used by older fixtures lacks the inline pattern, so
+  // we still return a `raw` payload for them.
+  const firstLine = trimmed
+    .split("\n")
+    .map((line) => stripQuotePrefix(line).trim())
+    .find((line) => line && !line.startsWith("---") && !line.startsWith("**词源关联**"));
+
+  const raw = stripMarkdown(dewikilink(trimmed));
+  if (!firstLine) {
+    return { parts: [], raw };
+  }
+
+  const segments = firstLine.split(/\s*\+\s*/u).map((segment) => segment.trim()).filter(Boolean);
+  const parts: MorphologyPart[] = [];
+
+  for (const segment of segments) {
+    const match = /^(.+?)\s*[（(]([^()（）]+)[)）]\s*$/u.exec(dewikilink(segment));
+    if (!match) {
+      continue;
+    }
+    const rawText = stripFormatting(match[1]);
+    const gloss = stripFormatting(match[2]) || null;
+
+    const startsWithDash = /^[-‐‑‒–—―]/u.test(rawText);
+    const endsWithDash = /[-‐‑‒–—―]$/u.test(rawText);
+    const cleanedText = rawText.replace(/^[-‐‑‒–—―]+|[-‐‑‒–—―]+$/gu, "").trim();
+
+    let kind: MorphologyPart["kind"] = "unknown";
+    if (startsWithDash && !endsWithDash) {
+      kind = "suffix";
+    } else if (!startsWithDash && endsWithDash) {
+      kind = "prefix";
+    } else if (!startsWithDash && !endsWithDash) {
+      kind = "root";
+    }
+
+    parts.push({ gloss, kind, text: cleanedText || rawText });
+  }
+
+  return { parts, raw };
+}
+
+function extractBoldField(body: string, label: string): string | null {
+  // Matches `**label**：value` or `**label**(qualifier)：value`, returning value.
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `\\*\\*${escaped}\\*\\*(?:[\\uFF08(][^()（）]*[\\uFF09)])?\\s*[：:]\\s*(.+)`,
+  );
+  const match = pattern.exec(body);
+  return match ? stripFormatting(dewikilink(match[1])) : null;
+}
+
+function parseSemanticChain(section: string): SemanticChain | null {
+  const trimmed = section.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const chain = extractCalloutBody(trimmed, /\[!abstract\][-+]?\s*词义链路法/);
+  const validation = extractCalloutBody(trimmed, /\[!check\][-+]?\s*链路验证/);
+  const oneWord = extractBoldField(trimmed, "一字一词概括");
+  const centerExtension = extractBoldField(trimmed, "延伸中心");
+
+  if (!chain && !validation && !oneWord && !centerExtension) {
+    return null;
+  }
+
+  return { centerExtension, chain, oneWord, validation };
+}
+
+function parseMnemonic(section: string): Mnemonic | null {
+  const body = extractCalloutBody(section, /\[!quote\][-+]?\s*记忆方式/);
+  if (!body) {
+    return null;
+  }
+
+  const etymology = extractBoldField(body, "叙事化词源");
+  const breakdown = extractBoldField(body, "词拆分记忆");
+
+  if (!etymology && !breakdown) {
+    return null;
+  }
+
+  return { breakdown, etymology };
+}
+
+function parseDerivedWords(section: string): DerivedWord[] {
+  const table = parseMarkdownTable(section);
+  if (!table) {
+    return [];
+  }
+
+  const headerIndex = new Map(table.headerRow.map((header, index) => [header, index]));
+  const wordIdx = headerIndex.get("派生词") ?? -1;
+  const formIdx = headerIndex.get("构词分析") ?? -1;
+  const meaningIdx = headerIndex.get("释义") ?? -1;
+  const relationIdx = headerIndex.get("链接关系") ?? -1;
+
+  return table.dataRows
+    .map((row) => ({
+      formation: stripFormatting(dewikilink(row[formIdx] ?? "")),
+      meaning: stripFormatting(dewikilink(row[meaningIdx] ?? "")),
+      relation: stripFormatting(dewikilink(row[relationIdx] ?? "")),
+      word: stripFormatting(dewikilink(row[wordIdx] ?? "")),
+    }))
+    .filter((item) => item.word.length > 0);
+}
+
+function parsePosConversions(section: string): PosConversion[] {
+  const table = parseMarkdownTable(section);
+  if (!table) {
+    return [];
+  }
+
+  const headerIndex = new Map(table.headerRow.map((header, index) => [header, index]));
+  const posIdx = headerIndex.get("词性") ?? -1;
+  const meaningIdx = headerIndex.get("释义") ?? -1;
+  const pathIdx = headerIndex.get("转换路径") ?? -1;
+
+  return table.dataRows
+    .map((row) => ({
+      meaning: stripFormatting(row[meaningIdx] ?? ""),
+      path: stripFormatting(row[pathIdx] ?? ""),
+      pos: stripFormatting(row[posIdx] ?? ""),
+    }))
+    .filter((item) => item.pos.length > 0);
+}
+
+/**
+ * Newer corpus format groups each example with its `中译` and `来源` lines as
+ * indented bullets. Returns groups: `[parent, ...children]` per example.
+ */
+function extractCorpusEntries(section: string): string[][] {
+  const lines = section.split("\n").map(stripQuotePrefix);
+  const entries: string[][] = [];
+  let current: string[] | null = null;
+
+  for (const line of lines) {
+    const isTopBullet = /^- /.test(line);
+    const isNestedBullet = /^\s+- /.test(line);
+
+    if (isTopBullet) {
+      if (current) entries.push(current);
+      current = [line.replace(/^- /, "").trim()];
+    } else if (isNestedBullet && current) {
+      current.push(line.replace(/^\s+- /, "").trim());
+    } else if (!line.trim()) {
+      // blank line — keep current entry open in case nested bullet follows.
+      continue;
+    } else {
+      // Any other content terminates the current entry.
+      if (current) {
+        entries.push(current);
+        current = null;
+      }
+    }
+  }
+  if (current) entries.push(current);
+  return entries;
+}
+
 export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedWord {
   let parsedFrontmatter: { content: string; data: Record<string, Json> };
   try {
@@ -554,9 +836,16 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
         ? data.tags.filter((tag): tag is string => typeof tag === "string")
         : []),
       typeof data.semantic_field === "string" ? data.semantic_field : "",
-      typeof data.mastery === "string" ? `掌握/${data.mastery}` : "",
     ].filter(Boolean),
   );
+
+  // Word freq: prefer frontmatter, fall back to directory-name lookup so the
+  // new corpus layout (`Wiki/L0_超纲词/abdicate.md`) still emits a label.
+  const frontmatterWordFreq =
+    typeof data.word_freq === "string" && data.word_freq.trim()
+      ? data.word_freq.trim()
+      : null;
+  const wordFreq = frontmatterWordFreq ?? deriveFreqFromSourcePath(sourcePath);
 
   const collocationSection = getSection(content, "搭配与短语");
   const corpusSection = getSection(content, "真题/语料关联");
@@ -586,6 +875,20 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
 
   structuredFields.antonymItems = parseAntonymItems(antonymSection);
 
+  // Newer Obsidian sections — display-only, mirrored into metadata for storage.
+  const morphologySection = getSection(content, "词根词缀");
+  const semanticChainSection = getSection(content, "词义链路");
+  const mnemonicSection = getSection(content, "记忆锚点");
+  const derivedWordsSection = getSection(content, "派生词链接");
+  const posConversionsSection = getSection(content, "词性转换");
+
+  const extendedFields: WordExtendedFields = createEmptyWordExtendedFields();
+  extendedFields.morphology = parseMorphology(morphologySection);
+  extendedFields.semanticChain = parseSemanticChain(semanticChainSection);
+  extendedFields.mnemonic = parseMnemonic(mnemonicSection);
+  extendedFields.derivedWords = parseDerivedWords(derivedWordsSection);
+  extendedFields.posConversions = parsePosConversions(posConversionsSection);
+
   return {
     aliases: Array.isArray(data.aliases)
       ? data.aliases.filter((alias): alias is string => typeof alias === "string")
@@ -597,6 +900,7 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
     coreDefinitions: structuredFields.coreDefinitions,
     corpusItems: structuredFields.corpusItems,
     definitionMd,
+    derivedWords: extendedFields.derivedWords,
     examples,
     ipa: extractIpa(content),
     langCode: "en",
@@ -604,21 +908,41 @@ export function parseWordMarkdown(markdown: string, sourcePath: string): ParsedW
     metadata: {
       ...castStructuredWordJson(structuredFields),
       date: sourceUpdatedAt,
+      derived_words: extendedFields.derivedWords as unknown as Json,
       extension_dim:
-        typeof data.extension_dim === "string" ? data.extension_dim : null,
-      mastery: typeof data.mastery === "string" ? data.mastery : null,
+        typeof data.extension_dim === "string" && data.extension_dim.trim()
+          ? data.extension_dim.trim()
+          : parseExtensionDim(definitionMd),
+      metaphor_type:
+        typeof data.metaphor_type === "string" && data.metaphor_type.trim()
+          ? data.metaphor_type.trim()
+          : parseMetaphorType(definitionMd),
+      mnemonic: extendedFields.mnemonic as unknown as Json,
+      morphology: extendedFields.morphology as unknown as Json,
+      network_activation: Array.isArray(data.network_activation)
+        ? data.network_activation.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : null,
+      pos_conversions: extendedFields.posConversions as unknown as Json,
       prototype: typeof data.prototype === "string" ? data.prototype : null,
       review_count:
         typeof data.review_count === "number" ? data.review_count : null,
+      semantic_chain: extendedFields.semanticChain as unknown as Json,
       semantic_field:
         typeof data.semantic_field === "string" ? data.semantic_field : null,
       source_repo: "Obsidian-Eg",
       source_title: rawTitle ?? title,
-      word_freq: typeof data.word_freq === "string" ? data.word_freq : null,
+      word_freq: wordFreq,
+      word_root: typeof data.word_root === "string" ? data.word_root : null,
       ...buildGraphRelationMetadata(data),
     },
+    mnemonic: extendedFields.mnemonic,
+    morphology: extendedFields.morphology,
     pos: extractPrimaryPos(definitionMd),
+    posConversions: extendedFields.posConversions,
     prototypeText: structuredFields.prototypeText,
+    semanticChain: extendedFields.semanticChain,
     shortDefinition,
     slug,
     sourcePath,
