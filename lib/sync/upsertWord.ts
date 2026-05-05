@@ -42,6 +42,12 @@ function isWordFilterFacetRelationMissing(error: unknown) {
   );
 }
 
+function buildSourcePathLikeFilter() {
+  return env.wordsPrefixes
+    .map((prefix) => `source_path.like.${prefix}/%`)
+    .join(",");
+}
+
 function buildWordFilterFacetRows(
   words: ImportedWords,
   now: string,
@@ -183,7 +189,7 @@ export async function syncGitHubWords(
     const { data: existingRows, error: existingError } = await admin
       .from("words")
       .select("slug, source_path, content_hash, is_deleted")
-      .like("source_path", `${env.wordsPrefix}/%`);
+      .or(buildSourcePathLikeFilter());
 
     if (existingError) {
       throw existingError;
@@ -388,7 +394,7 @@ export async function syncGitHubWords(
     const { data: wordsWithIds, error: wordsError } = await admin
       .from("words")
       .select("id, slug")
-      .like("source_path", `${env.wordsPrefix}/%`);
+      .or(buildSourcePathLikeFilter());
 
     if (wordsError) {
       throw wordsError;

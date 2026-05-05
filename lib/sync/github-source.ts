@@ -36,7 +36,8 @@ export async function fetchRepositoryArchive() {
 
 export async function importWordsFromGitHubArchive(): Promise<ImportedGitHubRepository> {
   const zip = await JSZip.loadAsync(await fetchRepositoryArchive());
-  const prefix = `${env.repoName}-${env.repoBranch}/${env.wordsPrefix}/`;
+  const repoRoot = `${env.repoName}-${env.repoBranch}/`;
+  const wordPrefixes = env.wordsPrefixes.map((prefix) => `${repoRoot}${prefix}/`);
   const collectionNotes: ParsedCollectionNote[] = [];
   const errors: ImportFileError[] = [];
   const words: ParsedWord[] = [];
@@ -46,8 +47,8 @@ export async function importWordsFromGitHubArchive(): Promise<ImportedGitHubRepo
       continue;
     }
 
-    const sourcePath = file.name.replace(`${env.repoName}-${env.repoBranch}/`, "");
-    const isWordFile = file.name.startsWith(prefix);
+    const sourcePath = file.name.replace(repoRoot, "");
+    const isWordFile = wordPrefixes.some((prefix) => file.name.startsWith(prefix));
     const collectionKind = detectCollectionNoteKind(sourcePath);
 
     if (!isWordFile && !collectionKind) {
