@@ -853,11 +853,19 @@ const getCachedPublicWordRows = unstable_cache(
         // cache) was the dominant latency on the owner /words fallback
         // path before this change.
         const PAGE_SIZE = 500;
+        // Same shape as getCachedPublicWordsCountValue elsewhere in this
+        // file: avoid `{ head: true }` because PostgREST HEAD requests
+        // have known edge cases where Content-Range is omitted and the
+        // returned count silently comes back as null. A null count here
+        // would short-circuit the fallback path (`total = 0` → returns
+        // []), making q-search and review-filter look broken to the
+        // owner, which is exactly the regression this comment commemorates.
         const { count, error: countError } = await supabase
           .from("words")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "exact" })
           .eq("is_published", true)
-          .eq("is_deleted", false);
+          .eq("is_deleted", false)
+          .limit(1);
         if (countError) {
           throw countError;
         }
