@@ -837,176 +837,213 @@ function withStructuredFallback(
   };
 }
 
-const getCachedPublicWordRows = unstable_cache(
-  async (): Promise<CachedPublicWordIndexRecord[] | null> => {
+// CACHE-POISONING NOTE
+// --------------------
+// The cached read-path functions below all share a common shape:
+//
+//   1. The `unstable_cache`-wrapped inner function does the work and lets
+//      *errors propagate*. It must NEVER catch and return a fallback like
+//      `null`, because `unstable_cache` faithfully memoises whatever the
+//      inner function returns — including `null` — and only skips
+//      caching when the inner function throws.
+//
+//   2. The outer `async` wrapper catches the propagated error and returns
+//      `null` so callers don't have to `try`/`catch`. The next call after
+//      a transient failure re-runs the query against a clean slot.
+//
+// Without this split, a single Supabase statement_timeout poisons the
+// cache for the full revalidate window (5 minutes) and the user sees
+// `counts.total: 0` until the TTL elapses. We hit this on the
+// /api/words?semantic=抽象关系 path before this refactor: the JSONB
+// containment query intermittently times out without a GIN index on
+// `metadata`, the catch arm returned `null`, and that `null` stuck.
+const fetchPublicWordRowsUncached = unstable_cache(
+  async (): Promise<CachedPublicWordIndexRecord[]> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
-      return null;
+      // Throw rather than `return []` because env state is cheap to recheck
+      // and we don't want to memoise an empty list across env changes.
+      throw new Error("Public Supabase client not configured");
     }
 
-    try {
-      return await withTransientPublicReadRetry("public word index", async () => {
-        // PostgREST caps unpaginated SELECTs at db-max-rows (1000 by default
-        // on Supabase) when no Range header is sent, so we have to paginate
-        // explicitly. Walk the full table sequentially with a 500-row page
-        // size.
-        //
-        // We tried a count + Promise.all parallel-fan-out variant in the
-        // perf push (commits e2f4e25 → 87ba36c) — on Supabase's shared
-        // worker pool, 11 concurrent ORDER BY lemma scans against an
-        // unindexed sort key were enough to push at least one query past
-        // the default 8s statement_timeout. A single failed page short-
-        // circuits the catch below to `null`, which the fallback path
-        // converts to an empty `safeWords`, which makes owner q-search
-        // and review-filter both return 0 rows. Sequential pagination is
-        // ~1.6s on cold cache and reliably stays under the per-query
-        // timeout; the 5-minute unstable_cache TTL absorbs the cost on
-        // every subsequent request.
-        const PAGE_SIZE = 500;
-        const accumulated: BarePublicWordSummary[] = [];
-        let offset = 0;
-        while (true) {
-          const { data, error } = await supabase
-            .from("words")
-            .select(WORD_SELECT)
-            .eq("is_published", true)
-            .eq("is_deleted", false)
-            .order("lemma")
-            .range(offset, offset + PAGE_SIZE - 1);
-          if (error) {
-            throw error;
-          }
-          const rows = (data ?? []) as BarePublicWordSummary[];
-          accumulated.push(...rows);
-          if (rows.length < PAGE_SIZE) {
-            break;
-          }
-          offset += PAGE_SIZE;
+    return await withTransientPublicReadRetry("public word index", async () => {
+      // PostgREST caps unpaginated SELECTs at db-max-rows (1000 by default
+      // on Supabase) when no Range header is sent, so we have to paginate
+      // explicitly. Walk the full table sequentially with a 500-row page
+      // size.
+      //
+      // We tried a count + Promise.all parallel-fan-out variant in the
+      // perf push (commits e2f4e25 → 87ba36c) — on Supabase's shared
+      // worker pool, 11 concurrent ORDER BY lemma scans against an
+      // unindexed sort key were enough to push at least one query past
+      // the default 8s statement_timeout, which used to short-circuit
+      // the whole fallback to `null`. Sequential pagination is ~1.6s on
+      // cold cache and reliably stays under the per-query timeout; the
+      // 5-minute unstable_cache TTL absorbs the cost on subsequent
+      // requests.
+      const PAGE_SIZE = 500;
+      const accumulated: BarePublicWordSummary[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from("words")
+          .select(WORD_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("lemma")
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) {
+          throw error;
+        }
+        const rows = (data ?? []) as BarePublicWordSummary[];
+        accumulated.push(...rows);
+        if (rows.length < PAGE_SIZE) {
+          break;
+        }
+        offset += PAGE_SIZE;
+      }
+
+      return accumulated.map(toCachedPublicWordIndexRecord);
+    });
+  },
+  // Cache key bumped to `-v4` (was `-v3`). Each previous bump was needed
+  // to evict `null` slots persisted by the old catch-inside pattern;
+  // this bump pairs with the catch-outside refactor so future timeouts
+  // can no longer poison the cache.
+  ["public-word-rows-v4"],
+  {
+    revalidate: PUBLIC_REVALIDATE_SECONDS,
+    tags: [PUBLIC_CACHE_TAGS.wordIndex],
+  },
+);
+
+async function getCachedPublicWordRows(): Promise<
+  CachedPublicWordIndexRecord[] | null
+> {
+  try {
+    return await fetchPublicWordRowsUncached();
+  } catch (err) {
+    console.error("[words] Failed to fetch public word index:", err);
+    return null;
+  }
+}
+
+const fetchDefaultPublicWordRowsUncached = unstable_cache(
+  async (offset: number, limit: number): Promise<CachedPublicWordIndexRecord[]> => {
+    const supabase = getPublicSupabaseClientOrNull();
+    if (!supabase) {
+      throw new Error("Public Supabase client not configured");
+    }
+
+    return await withTransientPublicReadRetry(
+      `default public word rows offset=${offset} limit=${limit}`,
+      async () => {
+        const { data, error } = await supabase
+          .from("words")
+          .select(WORD_SELECT)
+          .eq("is_published", true)
+          .eq("is_deleted", false)
+          .order("lemma")
+          .range(offset, offset + limit - 1);
+
+        if (error) {
+          throw error;
         }
 
-        return accumulated.map(toCachedPublicWordIndexRecord);
-      });
-    } catch (err) {
-      console.error("[words] Failed to fetch public word index:", err);
-      return null;
-    }
+        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+      },
+    );
   },
-  // Cache key bumped to `-v3` (was `-v2`, originally `public-word-rows`).
-  // The Next.js Data Cache survives deploys, and `unstable_cache` will
-  // happily cache a `null` returned from the catch arm below — including
-  // the `null`s persisted while a) the count was running with `{ head:
-  // true }` (returned 0 rows), and b) parallel pagination was tripping
-  // statement_timeout (returned `null`). Tag-based revalidation only
-  // fires when an import changes data, so without bumping the key those
-  // poisoned `null` slots would outlive the underlying bug fixes until
-  // either the 5min TTL elapses *with traffic* or someone re-imports.
-  ["public-word-rows-v3"],
+  // Bumped to `-v3` paired with the catch-outside refactor (see CACHE-
+  // POISONING NOTE above).
+  ["public-default-word-rows-v3"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
   },
 );
 
-const getCachedDefaultPublicWordRows = unstable_cache(
-  async (offset: number, limit: number): Promise<CachedPublicWordIndexRecord[] | null> => {
-    const supabase = getPublicSupabaseClientOrNull();
-    if (!supabase) {
-      return null;
-    }
+async function getCachedDefaultPublicWordRows(
+  offset: number,
+  limit: number,
+): Promise<CachedPublicWordIndexRecord[] | null> {
+  try {
+    return await fetchDefaultPublicWordRowsUncached(offset, limit);
+  } catch (err) {
+    console.error("[words] Failed to fetch default public word rows:", err);
+    return null;
+  }
+}
 
-    try {
-      return await withTransientPublicReadRetry(
-        `default public word rows offset=${offset} limit=${limit}`,
-        async () => {
-          const { data, error } = await supabase
-            .from("words")
-            .select(WORD_SELECT)
-            .eq("is_published", true)
-            .eq("is_deleted", false)
-            .order("lemma")
-            .range(offset, offset + limit - 1);
-
-          if (error) {
-            throw error;
-          }
-
-          return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
-        },
-      );
-    } catch (err) {
-      console.error("[words] Failed to fetch default public word rows:", err);
-      return null;
-    }
-  },
-  // Cache key bumped to `-v2` to evict any null slots persisted while
-  // upstream count/select edge cases were poisoning the cache.
-  ["public-default-word-rows-v2"],
-  {
-    revalidate: PUBLIC_REVALIDATE_SECONDS,
-    tags: [PUBLIC_CACHE_TAGS.wordIndex],
-  },
-);
-
-const getCachedFilteredPublicWordRows = unstable_cache(
+const fetchFilteredPublicWordRowsUncached = unstable_cache(
   async (
     semantic: string,
     freq: string,
     offset: number,
     limit: number,
-  ): Promise<PublicWordRowsPage | null> => {
+  ): Promise<PublicWordRowsPage> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
-      return null;
+      throw new Error("Public Supabase client not configured");
     }
 
-    try {
-      return await withTransientPublicReadRetry(
-        `filtered public word rows semantic=${semantic || "-"} freq=${freq || "-"} offset=${offset} limit=${limit}`,
-        async () => {
-          const query = applyDatabaseWordMetadataFilters(
-            supabase
-              .from("words")
-              .select(WORD_SELECT, { count: "exact" })
-              .eq("is_published", true)
-              .eq("is_deleted", false)
-              .order("lemma")
-              .range(offset, offset + limit - 1),
-            {
-              freq,
-              q: "",
-              review: "all",
-              semantic,
-            },
-          );
-          const { data, error, count } = await query;
+    return await withTransientPublicReadRetry(
+      `filtered public word rows semantic=${semantic || "-"} freq=${freq || "-"} offset=${offset} limit=${limit}`,
+      async () => {
+        const query = applyDatabaseWordMetadataFilters(
+          supabase
+            .from("words")
+            .select(WORD_SELECT, { count: "exact" })
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("lemma")
+            .range(offset, offset + limit - 1),
+          {
+            freq,
+            q: "",
+            review: "all",
+            semantic,
+          },
+        );
+        const { data, error, count } = await query;
 
-          if (error) {
-            throw error;
-          }
+        if (error) {
+          throw error;
+        }
 
-          return {
-            rows: ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord),
-            total: count ?? 0,
-          };
-        },
-      );
-    } catch (err) {
-      console.error("[words] Failed to fetch filtered public word rows:", err);
-      return null;
-    }
+        return {
+          rows: ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord),
+          total: count ?? 0,
+        };
+      },
+    );
   },
-  // Cache key bumped to `-v2`. Owner traffic was routed through the
-  // fallback path before commit e2f4e25 (Fix A removed `!isOwner` from
-  // canUseDatabaseFilteredPublicWordsPath); under the parallel-fan-out
-  // experiment that followed, this DB-filter path's cache slots could
-  // also have been poisoned with `null` from concurrent statement_timeout
-  // failures. Bumping forces a fresh read on next access.
-  ["public-filtered-word-rows-v2"],
+  // Bumped to `-v3` paired with the catch-outside refactor (see CACHE-
+  // POISONING NOTE above). The /api/words?semantic=抽象关系 regression
+  // that surfaced this design problem was fixed here: the JSONB
+  // containment query intermittently hits Supabase's 8s statement_
+  // timeout without a GIN index on `metadata`, and the old catch-inside
+  // shape memoised the failure as `null` for the full TTL window.
+  ["public-filtered-word-rows-v3"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
   },
 );
+
+async function getCachedFilteredPublicWordRows(
+  semantic: string,
+  freq: string,
+  offset: number,
+  limit: number,
+): Promise<PublicWordRowsPage | null> {
+  try {
+    return await fetchFilteredPublicWordRowsUncached(semantic, freq, offset, limit);
+  } catch (err) {
+    console.error("[words] Failed to fetch filtered public word rows:", err);
+    return null;
+  }
+}
 
 const getCachedPublicWordFilterOptions = unstable_cache(
   async (): Promise<PublicWordFilterOptions> => {
