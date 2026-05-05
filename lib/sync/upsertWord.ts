@@ -43,8 +43,13 @@ function isWordFilterFacetRelationMissing(error: unknown) {
 }
 
 function buildSourcePathLikeFilter() {
+  // PostgREST requires `*` as the LIKE wildcard when the filter is embedded in
+  // an `.or(...)` string — `%` conflicts with URL percent-encoding and silently
+  // produces empty result sets or request errors (e.g. when the prefix itself
+  // contains non-ASCII bytes like `L0_超纲词`, those get encoded to `%XX` and
+  // the trailing `/%` wildcard is no longer parseable server-side).
   return env.wordsPrefixes
-    .map((prefix) => `source_path.like.${prefix}/%`)
+    .map((prefix) => `source_path.like.${prefix}/*`)
     .join(",");
 }
 
