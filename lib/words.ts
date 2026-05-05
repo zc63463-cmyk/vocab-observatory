@@ -669,17 +669,30 @@ async function loadLegacyPublicWordFilterOptions(
     };
   }
 
-  const { data, error } = await supabase
-    .from("words")
-    .select(WORD_FILTER_METADATA_SELECT)
-    .eq("is_published", true)
-    .eq("is_deleted", false);
-
-  if (error) {
-    throw error;
+  // Paginated to bypass PostgREST's silent 1000-row cap on .select() with no
+  // Range header. See same fix in getCachedPublicWordRows below.
+  const PAGE_SIZE = 500;
+  const accumulated: BarePublicWordMetadataRow[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("words")
+      .select(WORD_FILTER_METADATA_SELECT)
+      .eq("is_published", true)
+      .eq("is_deleted", false)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      throw error;
+    }
+    const rows = (data ?? []) as BarePublicWordMetadataRow[];
+    accumulated.push(...rows);
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
   }
 
-  return buildPublicWordFilterOptions((data ?? []) as BarePublicWordMetadataRow[]);
+  return buildPublicWordFilterOptions(accumulated);
 }
 
 async function getOwnerProgressMap(
@@ -805,18 +818,35 @@ const getCachedPublicWordRows = unstable_cache(
 
     try {
       return await withTransientPublicReadRetry("public word index", async () => {
-        const { data, error } = await supabase
-          .from("words")
-          .select(WORD_SELECT)
-          .eq("is_published", true)
-          .eq("is_deleted", false)
-          .order("lemma");
-
-        if (error) {
-          throw error;
+        // PostgREST caps unpaginated SELECTs at db-max-rows (1000 by default
+        // on Supabase). Without explicit .range() pagination, the owner /words
+        // page that hangs off this cache silently truncates to the first
+        // 1000 rows once the corpus grows past that. Walk the full table
+        // explicitly with a 500-row page size for a comfortable safety
+        // margin.
+        const PAGE_SIZE = 500;
+        const accumulated: BarePublicWordSummary[] = [];
+        let offset = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_SELECT)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("lemma")
+            .range(offset, offset + PAGE_SIZE - 1);
+          if (error) {
+            throw error;
+          }
+          const rows = (data ?? []) as BarePublicWordSummary[];
+          accumulated.push(...rows);
+          if (rows.length < PAGE_SIZE) {
+            break;
+          }
+          offset += PAGE_SIZE;
         }
 
-        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        return accumulated.map(toCachedPublicWordIndexRecord);
       });
     } catch (err) {
       console.error("[words] Failed to fetch public word index:", err);
@@ -980,18 +1010,34 @@ const getCachedPublicWordSlugs = unstable_cache(
 
     try {
       return await withTransientPublicReadRetry("public word slugs", async () => {
-        const { data, error } = await supabase
-          .from("words")
-          .select(WORD_SLUG_SELECT)
-          .eq("is_published", true)
-          .eq("is_deleted", false)
-          .order("lemma");
-
-        if (error) {
-          throw error;
+        // Paginated for the same reason as getCachedPublicWordRows above —
+        // generateStaticParams and sitemap callers walk the full slug list
+        // and must not be silently truncated.
+        const PAGE_SIZE = 500;
+        const slugs: string[] = [];
+        let offset = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_SLUG_SELECT)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("lemma")
+            .range(offset, offset + PAGE_SIZE - 1);
+          if (error) {
+            throw error;
+          }
+          const rows = (data ?? []) as Array<{ slug: string }>;
+          for (const row of rows) {
+            slugs.push(row.slug);
+          }
+          if (rows.length < PAGE_SIZE) {
+            break;
+          }
+          offset += PAGE_SIZE;
         }
 
-        return ((data ?? []) as Array<{ slug: string }>).map((row) => row.slug);
+        return slugs;
       });
     } catch (err) {
       console.error("[words] Failed to fetch public word slugs:", err);
