@@ -627,10 +627,13 @@ function matchesReviewFilter(
 
 function canUseDatabaseFilteredPublicWordsPath(
   filters: NormalizedWordQueryFilters,
-  isOwner: boolean,
 ) {
+  // The DB-filter path returns one paginated page directly from PostgREST.
+  // It works for any visitor (anonymous OR signed-in owner) as long as the
+  // active filter set doesn't depend on per-user data: review status needs
+  // user_word_progress (so review !== 'all' falls back), and free-text q
+  // is JS substring matching (no DB index yet, so q !== '' also falls back).
   return (
-    !isOwner &&
     filters.review === "all" &&
     filters.q === "" &&
     (filters.semantic !== "" || filters.freq !== "")
@@ -699,19 +702,44 @@ async function getOwnerProgressMap(
   ownerUserId: string,
   supabase: ServerSupabaseClient,
 ) {
-  const { data, error } = await supabase
-    .from("user_word_progress")
-    .select(
-      "word_id, id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
-    )
-    .eq("user_id", ownerUserId);
-
-  if (error) {
-    throw error;
+  // Paginated for the same reason public-words reads are paginated:
+  // PostgREST silently caps unbounded SELECTs at db-max-rows (1000 by
+  // default), and an owner who has tracked more than 1000 words would
+  // otherwise see review-state filters silently miss the surplus.
+  const PAGE_SIZE = 500;
+  type ProgressRow = {
+    again_count: number | null;
+    due_at: string | null;
+    id: string;
+    lapse_count: number | null;
+    last_reviewed_at: string | null;
+    review_count: number | null;
+    state: string | null;
+    word_id: string;
+  };
+  const data: ProgressRow[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await supabase
+      .from("user_word_progress")
+      .select(
+        "word_id, id, due_at, review_count, state, last_reviewed_at, lapse_count, again_count",
+      )
+      .eq("user_id", ownerUserId)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (page.error) {
+      throw page.error;
+    }
+    const rows = (page.data ?? []) as ProgressRow[];
+    data.push(...rows);
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
   }
 
   return new Map(
-    ((data ?? []) as Array<{
+    (data as Array<{
       again_count: number | null;
       due_at: string | null;
       id: string;
@@ -819,31 +847,42 @@ const getCachedPublicWordRows = unstable_cache(
     try {
       return await withTransientPublicReadRetry("public word index", async () => {
         // PostgREST caps unpaginated SELECTs at db-max-rows (1000 by default
-        // on Supabase). Without explicit .range() pagination, the owner /words
-        // page that hangs off this cache silently truncates to the first
-        // 1000 rows once the corpus grows past that. Walk the full table
-        // explicitly with a 500-row page size for a comfortable safety
-        // margin.
+        // on Supabase). Walk the full table with a 500-row page size, but
+        // issue all page requests in parallel after a single count query
+        // — sequential pagination (11 round trips at ~150ms each on cold
+        // cache) was the dominant latency on the owner /words fallback
+        // path before this change.
         const PAGE_SIZE = 500;
+        const { count, error: countError } = await supabase
+          .from("words")
+          .select("id", { count: "exact", head: true })
+          .eq("is_published", true)
+          .eq("is_deleted", false);
+        if (countError) {
+          throw countError;
+        }
+        const total = count ?? 0;
+        if (total === 0) {
+          return [] as CachedPublicWordIndexRecord[];
+        }
+        const totalPages = Math.ceil(total / PAGE_SIZE);
+        const pages = await Promise.all(
+          Array.from({ length: totalPages }, (_, pageIndex) =>
+            supabase
+              .from("words")
+              .select(WORD_SELECT)
+              .eq("is_published", true)
+              .eq("is_deleted", false)
+              .order("lemma")
+              .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1),
+          ),
+        );
         const accumulated: BarePublicWordSummary[] = [];
-        let offset = 0;
-        while (true) {
-          const { data, error } = await supabase
-            .from("words")
-            .select(WORD_SELECT)
-            .eq("is_published", true)
-            .eq("is_deleted", false)
-            .order("lemma")
-            .range(offset, offset + PAGE_SIZE - 1);
-          if (error) {
-            throw error;
+        for (const page of pages) {
+          if (page.error) {
+            throw page.error;
           }
-          const rows = (data ?? []) as BarePublicWordSummary[];
-          accumulated.push(...rows);
-          if (rows.length < PAGE_SIZE) {
-            break;
-          }
-          offset += PAGE_SIZE;
+          accumulated.push(...((page.data ?? []) as BarePublicWordSummary[]));
         }
 
         return accumulated.map(toCachedPublicWordIndexRecord);
@@ -1379,13 +1418,26 @@ export async function getPublicWords(
 
   const publicFilterOptionsPromise = getCachedPublicWordFilterOptions();
 
-  if (!isOwner && isDefaultPublicWordFilters(normalizedFilters)) {
-    const [defaultRows, filterOptions, total] = await Promise.all([
+  // Owners can use the same DB-paginated fast paths as anonymous visitors as
+  // long as their active filter set doesn't depend on per-user state
+  // (user_word_progress) or free-text q matching. We just fetch the progress
+  // map alongside and overlay it onto the visible page — cheap because the
+  // overlay only runs for ~60 rows.
+  const ownerProgressMapPromise: Promise<Map<string, OwnerWordProgressSummary>> =
+    isOwner
+      ? getOwnerProgressMap(options!.ownerUserId!, options!.ownerSupabase!)
+      : Promise.resolve(new Map<string, OwnerWordProgressSummary>());
+
+  if (isDefaultPublicWordFilters(normalizedFilters)) {
+    const [defaultRows, filterOptions, total, ownerProgressMap] = await Promise.all([
       getCachedDefaultPublicWordRows(pagination.offset, pagination.limit),
       publicFilterOptionsPromise,
       getCachedPublicWordsCountValue(),
+      ownerProgressMapPromise,
     ]);
-    const visibleWords = (defaultRows ?? []).map((word) => toPublicWordSummary(word, null));
+    const visibleWords = (defaultRows ?? []).map((word) =>
+      toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
+    );
     const pageState = createPublicWordsPageState(total, pagination, visibleWords.length);
 
     return {
@@ -1393,13 +1445,13 @@ export async function getPublicWords(
       ...pageState,
       filterOptions,
       filters: normalizedFilters,
-      isOwner: false,
+      isOwner,
       words: visibleWords,
     };
   }
 
-  if (canUseDatabaseFilteredPublicWordsPath(normalizedFilters, isOwner)) {
-    const [filteredPage, filterOptions] = await Promise.all([
+  if (canUseDatabaseFilteredPublicWordsPath(normalizedFilters)) {
+    const [filteredPage, filterOptions, ownerProgressMap] = await Promise.all([
       getCachedFilteredPublicWordRows(
         normalizedFilters.semantic,
         normalizedFilters.freq,
@@ -1407,8 +1459,11 @@ export async function getPublicWords(
         pagination.limit,
       ),
       publicFilterOptionsPromise,
+      ownerProgressMapPromise,
     ]);
-    const visibleWords = (filteredPage?.rows ?? []).map((word) => toPublicWordSummary(word, null));
+    const visibleWords = (filteredPage?.rows ?? []).map((word) =>
+      toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
+    );
     const pageState = createPublicWordsPageState(
       filteredPage?.total ?? visibleWords.length,
       pagination,
@@ -1420,16 +1475,17 @@ export async function getPublicWords(
       ...pageState,
       filterOptions,
       filters: normalizedFilters,
-      isOwner: false,
+      isOwner,
       words: visibleWords,
     };
   }
 
+  // Fallback path: q !== '' (free-text search) or review !== 'all'. Both
+  // require the full corpus in JS — q because there's no Postgres-side
+  // text index yet, review because it joins user_word_progress per-row.
   const [allWords, ownerProgressMap, filterOptions] = await Promise.all([
     getCachedPublicWordRows(),
-    isOwner
-      ? getOwnerProgressMap(options!.ownerUserId!, options!.ownerSupabase!)
-      : Promise.resolve(new Map<string, OwnerWordProgressSummary>()),
+    ownerProgressMapPromise,
     publicFilterOptionsPromise,
   ]);
 
