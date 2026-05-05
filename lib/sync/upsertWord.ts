@@ -42,17 +42,6 @@ function isWordFilterFacetRelationMissing(error: unknown) {
   );
 }
 
-function buildSourcePathLikeFilter(prefixes: readonly string[]) {
-  // PostgREST requires `*` as the LIKE wildcard when the filter is embedded in
-  // an `.or(...)` string — `%` conflicts with URL percent-encoding and silently
-  // produces empty result sets or request errors (e.g. when the prefix itself
-  // contains non-ASCII bytes like `L0_超纲词`, those get encoded to `%XX` and
-  // the trailing `/%` wildcard is no longer parseable server-side).
-  return prefixes
-    .map((prefix) => `source_path.like.${prefix}/*`)
-    .join(",");
-}
-
 // PostgREST returns at most `db-max-rows` (1000 by default on Supabase) per
 // SELECT, even without an explicit `.limit()`. The import pipeline has two
 // reads that must enumerate every existing row in scope:
@@ -64,33 +53,39 @@ function buildSourcePathLikeFilter(prefixes: readonly string[]) {
 //   2. `wordsWithIds` — builds the `slug → id` map used to insert
 //      `word_tags`. Truncation here is a real data bug: every word past the
 //      first 1000 in a prefix gets no tag associations.
-// Paginate explicitly so both reads stay correct as the corpus grows.
+//
+// We iterate each prefix individually with `.like(..., '${prefix}/%')` rather
+// than a combined `.or(...)` filter. The `.or()` form was observed to ignore
+// `.range()` pagination on this Supabase project — every page-2 request
+// returned the same first 1000 rows, regardless of offset. Per-prefix
+// `.like()` plays nicely with Range headers and stays simple.
 async function selectAllInScope<TRow>(
   admin: AdminClient,
   table: "words",
   columns: string,
   prefixes: readonly string[],
 ): Promise<TRow[]> {
-  const PAGE_SIZE = 1000;
-  const filter = buildSourcePathLikeFilter(prefixes);
+  const PAGE_SIZE = 500;
   const accumulated: TRow[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await admin
-      .from(table)
-      .select(columns)
-      .or(filter)
-      .order("source_path")
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) {
-      throw error;
+  for (const prefix of prefixes) {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await admin
+        .from(table)
+        .select(columns)
+        .like("source_path", `${prefix}/%`)
+        .order("source_path")
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        throw error;
+      }
+      const rows = (data ?? []) as TRow[];
+      accumulated.push(...rows);
+      if (rows.length < PAGE_SIZE) {
+        break;
+      }
+      offset += PAGE_SIZE;
     }
-    const rows = (data ?? []) as TRow[];
-    accumulated.push(...rows);
-    if (rows.length < PAGE_SIZE) {
-      break;
-    }
-    offset += PAGE_SIZE;
   }
   return accumulated;
 }
