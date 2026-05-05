@@ -14,6 +14,11 @@ import {
   type CollocationItem,
   type CoreDefinition,
   type CorpusItem,
+  type DerivedWord,
+  type Mnemonic,
+  type Morphology,
+  type PosConversion,
+  type SemanticChain,
   type SynonymItem,
 } from "@/lib/structured-word";
 import { escapePostgrestLike, slugifyLabel } from "@/lib/utils";
@@ -77,11 +82,19 @@ export interface PublicWordDetail extends PublicWordSummary {
   core_definitions: CoreDefinition[];
   corpus_items: CorpusItem[];
   definition_md: string;
+  // Extended structured fields surfaced from `metadata` JSON for direct access
+  // by view components. They mirror parser output and are nullable/empty for
+  // older rows that predate the new corpus format.
+  derived_words: DerivedWord[];
   examples: Json;
+  mnemonic: Mnemonic | null;
+  morphology: Morphology | null;
   pos: string | null;
+  pos_conversions: PosConversion[];
   prototype_text: string | null;
   resolved_antonym_items: ResolvedAntonymItem[];
   resolved_synonym_items: ResolvedSynonymItem[];
+  semantic_chain: SemanticChain | null;
   source_path: string;
   synonym_items: SynonymItem[];
   tags: Array<{ label: string; slug: string }>;
@@ -731,10 +744,24 @@ export function resolveAntonymItems(
   }));
 }
 
+function getMetadataField<T>(metadata: Json, key: string): T | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const value = (metadata as Record<string, Json>)[key];
+  return value == null ? null : (value as unknown as T);
+}
+
+function getMetadataArray<T>(metadata: Json, key: string): T[] {
+  const raw = getMetadataField<unknown>(metadata, key);
+  return Array.isArray(raw) ? (raw as T[]) : [];
+}
+
 function withStructuredFallback(
   word: Record<string, Json | string | null>,
 ): Omit<PublicWordDetail, "progress" | "tags"> {
   const structuredDefaults = createEmptyStructuredWordFields();
+  const metadata = (word.metadata as Json) ?? {};
 
   return {
     antonym_items: parseStructuredArray(word.antonym_items as Json, isAntonymItem),
@@ -743,18 +770,23 @@ function withStructuredFallback(
     core_definitions: parseStructuredArray(word.core_definitions as Json, isCoreDefinition),
     corpus_items: parseStructuredArray(word.corpus_items as Json, isCorpusItem),
     definition_md: String(word.definition_md ?? ""),
+    derived_words: getMetadataArray<DerivedWord>(metadata, "derived_words"),
     examples: (word.examples as Json) ?? [],
     id: String(word.id),
     ipa: (word.ipa as string | null) ?? null,
     lemma: String(word.lemma),
-    metadata: (word.metadata as Json) ?? {},
+    metadata,
+    mnemonic: getMetadataField<Mnemonic>(metadata, "mnemonic"),
+    morphology: getMetadataField<Morphology>(metadata, "morphology"),
     pos: (word.pos as string | null) ?? null,
+    pos_conversions: getMetadataArray<PosConversion>(metadata, "pos_conversions"),
     prototype_text:
       (word.prototype_text as string | null) ??
-      getWordMetadataString((word.metadata as Json) ?? {}, "prototype") ??
+      getWordMetadataString(metadata, "prototype") ??
       structuredDefaults.prototypeText,
     resolved_antonym_items: [],
     resolved_synonym_items: [],
+    semantic_chain: getMetadataField<SemanticChain>(metadata, "semantic_chain"),
     short_definition: (word.short_definition as string | null) ?? null,
     slug: String(word.slug),
     source_path: String(word.source_path ?? ""),

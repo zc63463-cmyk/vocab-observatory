@@ -10,9 +10,14 @@ import { WordAntonyms } from "@/components/words/WordAntonyms";
 import { WordCollocations } from "@/components/words/WordCollocations";
 import { WordCorpus } from "@/components/words/WordCorpus";
 import { WordDefinitions } from "@/components/words/WordDefinitions";
+import { WordDerivedWords } from "@/components/words/WordDerivedWords";
 import { WordHeader } from "@/components/words/WordHeader";
+import { WordMnemonic } from "@/components/words/WordMnemonic";
+import { WordMorphology } from "@/components/words/WordMorphology";
+import { WordPosConversions } from "@/components/words/WordPosConversions";
 import { PrototypeReveal } from "@/components/words/PrototypeReveal";
 import { WordSectionTOC } from "@/components/words/WordSectionTOC";
+import { WordSemanticChain } from "@/components/words/WordSemanticChain";
 import { WordSynonyms } from "@/components/words/WordSynonyms";
 import { VocabTopologyGraphIsland } from "@/components/vocab/VocabTopologyGraphIsland";
 import { buildLocalVocabGraph, type VocabGraphData } from "@/lib/vocab-graph";
@@ -181,8 +186,13 @@ export async function WordDetailContent({
   // dead link. Logic lives in lib/word-section-toc.ts so it's covered
   // by `tests/word-section-toc.test.ts` without a DOM.
   const tocSections = buildWordTOCSections({
-    hasPrototype: Boolean(result.word.prototype_text),
     hasBody: result.word.body_md.trim().length > 0,
+    hasDerivedWords: result.word.derived_words.length > 0,
+    hasMnemonic: Boolean(result.word.mnemonic),
+    hasMorphology: Boolean(result.word.morphology),
+    hasPosConversions: result.word.pos_conversions.length > 0,
+    hasPrototype: Boolean(result.word.prototype_text),
+    hasSemanticChain: Boolean(result.word.semantic_chain),
   });
 
   // scroll-margin-top so smooth-scroll (and direct hash links) land
@@ -228,8 +238,32 @@ export async function WordDetailContent({
             </section>
           ) : null}
 
+          {result.word.morphology ? (
+            <section id="word-morphology" className={sectionScrollMt}>
+              <RevealSection delay={0.12}>
+                <WordMorphology morphology={result.word.morphology} />
+              </RevealSection>
+            </section>
+          ) : null}
+
+          {result.word.semantic_chain ? (
+            <section id="word-semantic-chain" className={sectionScrollMt}>
+              <RevealSection delay={0.14}>
+                <WordSemanticChain semanticChain={result.word.semantic_chain} />
+              </RevealSection>
+            </section>
+          ) : null}
+
+          {result.word.pos_conversions.length > 0 ? (
+            <section id="word-pos-conversions" className={sectionScrollMt}>
+              <RevealSection delay={0.16}>
+                <WordPosConversions posConversions={result.word.pos_conversions} />
+              </RevealSection>
+            </section>
+          ) : null}
+
           <section id="word-collocations" className={sectionScrollMt}>
-            <RevealSection delay={0.15}>
+            <RevealSection delay={0.18}>
               <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
             </RevealSection>
           </section>
@@ -263,6 +297,22 @@ export async function WordDetailContent({
               />
             </RevealSection>
           </section>
+
+          {result.word.derived_words.length > 0 ? (
+            <section id="word-derived-words" className={sectionScrollMt}>
+              <RevealSection delay={0.37}>
+                <WordDerivedWords derivedWords={result.word.derived_words} />
+              </RevealSection>
+            </section>
+          ) : null}
+
+          {result.word.mnemonic ? (
+            <section id="word-mnemonic" className={sectionScrollMt}>
+              <RevealSection delay={0.39}>
+                <WordMnemonic mnemonic={result.word.mnemonic} />
+              </RevealSection>
+            </section>
+          ) : null}
 
           {result.word.body_md.trim() ? (
             <section id="word-body" className={sectionScrollMt}>

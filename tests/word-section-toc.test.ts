@@ -82,6 +82,82 @@ describe("buildWordTOCSections", () => {
     expect(sections[sections.length - 1]?.id).toBe("word-body");
   });
 
+  it("inserts etymology-adjacent chips (词根/链路/词性) right after 笔记", () => {
+    const sections = buildWordTOCSections({
+      hasBody: false,
+      hasMorphology: true,
+      hasPosConversions: true,
+      hasPrototype: true,
+      hasSemanticChain: true,
+    });
+
+    // 笔记 first, then morphology → semantic-chain → pos-conversions, BEFORE 拓扑.
+    expect(sections.map((s) => s.id)).toEqual([
+      "word-definitions",
+      "word-prototype",
+      "word-notes",
+      "word-morphology",
+      "word-semantic-chain",
+      "word-pos-conversions",
+      "word-topology",
+      "word-synonyms",
+      "word-antonyms",
+      "word-collocations",
+      "word-corpus",
+    ]);
+  });
+
+  it("slots 派生 between 反义 and 搭配 when hasDerivedWords is true", () => {
+    const sections = buildWordTOCSections({
+      hasBody: false,
+      hasDerivedWords: true,
+      hasPrototype: false,
+    });
+
+    const ids = sections.map((s) => s.id);
+    const antonymIdx = ids.indexOf("word-antonyms");
+    const derivedIdx = ids.indexOf("word-derived-words");
+    const collocationsIdx = ids.indexOf("word-collocations");
+
+    expect(antonymIdx).toBeGreaterThanOrEqual(0);
+    expect(derivedIdx).toBe(antonymIdx + 1);
+    expect(collocationsIdx).toBe(derivedIdx + 1);
+  });
+
+  it("slots 记忆 just before 正文 (or at the tail when 正文 is absent)", () => {
+    const withBody = buildWordTOCSections({
+      hasBody: true,
+      hasMnemonic: true,
+      hasPrototype: false,
+    });
+
+    const ids = withBody.map((s) => s.id);
+    expect(ids[ids.length - 2]).toBe("word-mnemonic");
+    expect(ids[ids.length - 1]).toBe("word-body");
+
+    const noBody = buildWordTOCSections({
+      hasBody: false,
+      hasMnemonic: true,
+      hasPrototype: false,
+    });
+    const noBodyIds = noBody.map((s) => s.id);
+    expect(noBodyIds[noBodyIds.length - 1]).toBe("word-mnemonic");
+  });
+
+  it("hides every extended-section chip when its flag is missing/false", () => {
+    const sections = buildWordTOCSections({
+      hasBody: false,
+      hasPrototype: false,
+    });
+
+    const ids = sections.map((s) => s.id);
+    expect(ids).not.toContain("word-morphology");
+    expect(ids).not.toContain("word-semantic-chain");
+    expect(ids).not.toContain("word-pos-conversions");
+    expect(ids).not.toContain("word-derived-words");
+    expect(ids).not.toContain("word-mnemonic");
+  });
+
   it("always anchors 释义 as the first chip regardless of optional flags", () => {
     const cases: Array<{ hasPrototype: boolean; hasBody: boolean }> = [
       { hasPrototype: false, hasBody: false },

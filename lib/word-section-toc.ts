@@ -29,10 +29,20 @@ export interface WordTOCSection {
 }
 
 export interface WordTOCSectionsInput {
-  /** Whether the prototype block is rendered (= word has prototype_text). */
-  hasPrototype: boolean;
   /** Whether the body block is rendered (= word.body_md.trim() non-empty). */
   hasBody: boolean;
+  /** Whether 派生词族 (derived words) has at least one row. */
+  hasDerivedWords?: boolean;
+  /** Whether 记忆锚点 has either etymology or breakdown narrative. */
+  hasMnemonic?: boolean;
+  /** Whether 词根词缀 (morphology) parsed at least a `raw` block. */
+  hasMorphology?: boolean;
+  /** Whether 词性转换 has at least one row. */
+  hasPosConversions?: boolean;
+  /** Whether the prototype block is rendered (= word has prototype_text). */
+  hasPrototype: boolean;
+  /** Whether 词义链路 has any of (chain / oneWord / centerExtension / validation). */
+  hasSemanticChain?: boolean;
 }
 
 /**
@@ -40,7 +50,12 @@ export interface WordTOCSectionsInput {
  *
  * Order is curated for priority access (see module docstring), NOT to
  * mirror DOM scroll order:
- *   释义 → [原型?] → 笔记 → 拓扑 → 同义 → 反义 → 搭配 → 语料 → [正文?]
+ *   释义 → [原型?] → 笔记 → [词根?] → [链路?] → [词性?] → 拓扑 → 同义 → 反义
+ *        → [派生?] → 搭配 → 语料 → [记忆?] → [正文?]
+ *
+ * Extended sections (词根, 链路, 词性, 派生, 记忆) chip in only when the
+ * underlying corpus actually has data for them, so legacy entries don't
+ * surface dead anchors.
  */
 export function buildWordTOCSections(
   input: WordTOCSectionsInput,
@@ -55,15 +70,40 @@ export function buildWordTOCSections(
 
   // 笔记 leads the post-prototype block: jump-to-notes is the feature
   // driver and we want it within thumb reach at the start of the bar.
+  sections.push({ id: "word-notes", label: "笔记" });
+
+  // Etymology-adjacent chips slot right after 笔记 because they unpack
+  // the prototype's reasoning — readers who tapped 原型 and want to
+  // dig further reach for these next.
+  if (input.hasMorphology) {
+    sections.push({ id: "word-morphology", label: "词根" });
+  }
+  if (input.hasSemanticChain) {
+    sections.push({ id: "word-semantic-chain", label: "链路" });
+  }
+  if (input.hasPosConversions) {
+    sections.push({ id: "word-pos-conversions", label: "词性" });
+  }
+
   sections.push(
-    { id: "word-notes", label: "笔记" },
     { id: "word-topology", label: "拓扑" },
     { id: "word-synonyms", label: "同义" },
     { id: "word-antonyms", label: "反义" },
-    // 搭配 / 语料 are long-form, demoted to the tail.
+  );
+
+  if (input.hasDerivedWords) {
+    sections.push({ id: "word-derived-words", label: "派生" });
+  }
+
+  // 搭配 / 语料 are long-form, demoted to the tail.
+  sections.push(
     { id: "word-collocations", label: "搭配" },
     { id: "word-corpus", label: "语料" },
   );
+
+  if (input.hasMnemonic) {
+    sections.push({ id: "word-mnemonic", label: "记忆" });
+  }
 
   // 正文 trails everything when present — it's the most scroll-heavy and
   // least suited to a one-tap jump (users typically read it linearly).
