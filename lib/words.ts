@@ -891,14 +891,16 @@ const getCachedPublicWordRows = unstable_cache(
       return null;
     }
   },
-  // Cache key bumped from `public-word-rows` to `-v2` to force-evict any
-  // entries cached during the brief window where this function was using
-  // `{ head: true }` for the count query and persisting `[]` after a null
-  // count. Next.js Data Cache survives across deployments, and tag-based
-  // revalidation only fires when an import actually changes data — so a
-  // user-visible regression (q-search/review-filter returning empty) could
-  // otherwise persist until either the next import or 5min TTL.
-  ["public-word-rows-v2"],
+  // Cache key bumped to `-v3` (was `-v2`, originally `public-word-rows`).
+  // The Next.js Data Cache survives deploys, and `unstable_cache` will
+  // happily cache a `null` returned from the catch arm below — including
+  // the `null`s persisted while a) the count was running with `{ head:
+  // true }` (returned 0 rows), and b) parallel pagination was tripping
+  // statement_timeout (returned `null`). Tag-based revalidation only
+  // fires when an import changes data, so without bumping the key those
+  // poisoned `null` slots would outlive the underlying bug fixes until
+  // either the 5min TTL elapses *with traffic* or someone re-imports.
+  ["public-word-rows-v3"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
@@ -936,7 +938,9 @@ const getCachedDefaultPublicWordRows = unstable_cache(
       return null;
     }
   },
-  ["public-default-word-rows"],
+  // Cache key bumped to `-v2` to evict any null slots persisted while
+  // upstream count/select edge cases were poisoning the cache.
+  ["public-default-word-rows-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
@@ -991,7 +995,13 @@ const getCachedFilteredPublicWordRows = unstable_cache(
       return null;
     }
   },
-  ["public-filtered-word-rows"],
+  // Cache key bumped to `-v2`. Owner traffic was routed through the
+  // fallback path before commit e2f4e25 (Fix A removed `!isOwner` from
+  // canUseDatabaseFilteredPublicWordsPath); under the parallel-fan-out
+  // experiment that followed, this DB-filter path's cache slots could
+  // also have been poisoned with `null` from concurrent statement_timeout
+  // failures. Bumping forces a fresh read on next access.
+  ["public-filtered-word-rows-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],

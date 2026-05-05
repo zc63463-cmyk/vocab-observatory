@@ -81,6 +81,10 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     deployedAt: new Date().toISOString(),
+    // VERCEL_GIT_COMMIT_SHA is set automatically on Vercel; in local dev
+    // it'll be undefined. Lets the user verify the live deployment matches
+    // a recent push without reading Vercel UI.
+    commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
     facets: {
       error: facetsQuery.error?.message ?? null,
       sample: (facetsQuery.data ?? []).slice(0, 20),
