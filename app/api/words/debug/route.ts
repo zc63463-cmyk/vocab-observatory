@@ -79,6 +79,44 @@ export async function GET(request: NextRequest) {
     };
   }
 
+  // 5) Mimic the EXACT query that getCachedFilteredPublicWordRows runs —
+  // same WORD_SELECT columns, same ORDER BY lemma, same range(0, 59) — to
+  // tell whether the discrepancy between debug (matched: 884) and the API
+  // (counts.total: 0) is due to ordering / column selection / range size.
+  // If this also returns 884, the problem is in the cache wrapper, not the
+  // query. If this returns 0, the problem is the query itself (likely a
+  // statement_timeout when sorting under JSONB filter without an index).
+  type MimicAttempt = {
+    error: string | null;
+    matched: number;
+    rowsLength: number;
+  } | null;
+  let mimicAttempt: MimicAttempt = null;
+  if (semanticParam || freqParam) {
+    let q = supabase
+      .from("words")
+      .select(
+        "id, slug, title, lemma, ipa, short_definition, metadata, updated_at",
+        { count: "exact" },
+      )
+      .eq("is_published", true)
+      .eq("is_deleted", false)
+      .order("lemma")
+      .range(0, 59);
+    if (semanticParam) {
+      q = q.contains("metadata", { semantic_field: semanticParam });
+    }
+    if (freqParam) {
+      q = q.contains("metadata", { word_freq: freqParam });
+    }
+    const { data, count, error } = await q;
+    mimicAttempt = {
+      error: error?.message ?? null,
+      matched: count ?? 0,
+      rowsLength: data?.length ?? 0,
+    };
+  }
+
   return NextResponse.json({
     deployedAt: new Date().toISOString(),
     // VERCEL_GIT_COMMIT_SHA is set automatically on Vercel; in local dev
@@ -91,6 +129,7 @@ export async function GET(request: NextRequest) {
       total: facetsQuery.data?.length ?? 0,
     },
     filteredAttempt,
+    mimicAttempt,
     firstFive: {
       error: firstFiveQuery.error?.message ?? null,
       rows: (firstFiveQuery.data ?? []).map((row) => ({
