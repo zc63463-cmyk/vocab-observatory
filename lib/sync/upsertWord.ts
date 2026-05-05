@@ -90,13 +90,22 @@ async function selectAllInScope<TRow>(
   return accumulated;
 }
 
+// Loosened from `ImportedWords` to a structural shape so we can also feed it
+// rows read from the DB (`words.metadata`) without round-tripping through the
+// parser. Used by the batched-import path to rebuild facets from the entire
+// corpus rather than from just the active prefix's incoming words.
+type FacetSourceWord = { metadata: Record<string, unknown> | null };
+
 function buildWordFilterFacetRows(
-  words: ImportedWords,
+  words: readonly FacetSourceWord[],
   now: string,
 ): Database["public"]["Tables"]["word_filter_facets"]["Insert"][] {
   const counts = new Map<string, number>();
 
   for (const word of words) {
+    if (!word.metadata) {
+      continue;
+    }
     for (const dimension of WORD_FILTER_FACET_DIMENSIONS) {
       const value = word.metadata[dimension];
       if (typeof value !== "string") {
@@ -328,7 +337,20 @@ export async function syncGitHubWords(
     }
 
     let wordFilterFacetsAvailable = true;
-    const wordFilterFacetRows = buildWordFilterFacetRows(incomingWords, now);
+    // Batched runs (`?prefix=...`) only carry the active prefix's words in
+    // `incomingWords`, but the facets table is global — wiping it and writing
+    // only one prefix's aggregates would erase the others. Read every
+    // configured prefix's metadata back from the DB so the rebuild reflects
+    // the full corpus regardless of which subset this invocation upserted.
+    const facetSourceWords: readonly FacetSourceWord[] = options?.prefixesOverride
+      ? await selectAllInScope<FacetSourceWord>(
+          admin,
+          "words",
+          "metadata",
+          env.wordsPrefixes,
+        )
+      : incomingWords;
+    const wordFilterFacetRows = buildWordFilterFacetRows(facetSourceWords, now);
     const { error: clearWordFilterFacetError } = await admin
       .from("word_filter_facets")
       .delete()
