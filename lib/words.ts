@@ -847,50 +847,41 @@ const getCachedPublicWordRows = unstable_cache(
     try {
       return await withTransientPublicReadRetry("public word index", async () => {
         // PostgREST caps unpaginated SELECTs at db-max-rows (1000 by default
-        // on Supabase). Walk the full table with a 500-row page size, but
-        // issue all page requests in parallel after a single count query
-        // — sequential pagination (11 round trips at ~150ms each on cold
-        // cache) was the dominant latency on the owner /words fallback
-        // path before this change.
+        // on Supabase) when no Range header is sent, so we have to paginate
+        // explicitly. Walk the full table sequentially with a 500-row page
+        // size.
+        //
+        // We tried a count + Promise.all parallel-fan-out variant in the
+        // perf push (commits e2f4e25 → 87ba36c) — on Supabase's shared
+        // worker pool, 11 concurrent ORDER BY lemma scans against an
+        // unindexed sort key were enough to push at least one query past
+        // the default 8s statement_timeout. A single failed page short-
+        // circuits the catch below to `null`, which the fallback path
+        // converts to an empty `safeWords`, which makes owner q-search
+        // and review-filter both return 0 rows. Sequential pagination is
+        // ~1.6s on cold cache and reliably stays under the per-query
+        // timeout; the 5-minute unstable_cache TTL absorbs the cost on
+        // every subsequent request.
         const PAGE_SIZE = 500;
-        // Same shape as getCachedPublicWordsCountValue elsewhere in this
-        // file: avoid `{ head: true }` because PostgREST HEAD requests
-        // have known edge cases where Content-Range is omitted and the
-        // returned count silently comes back as null. A null count here
-        // would short-circuit the fallback path (`total = 0` → returns
-        // []), making q-search and review-filter look broken to the
-        // owner, which is exactly the regression this comment commemorates.
-        const { count, error: countError } = await supabase
-          .from("words")
-          .select("id", { count: "exact" })
-          .eq("is_published", true)
-          .eq("is_deleted", false)
-          .limit(1);
-        if (countError) {
-          throw countError;
-        }
-        const total = count ?? 0;
-        if (total === 0) {
-          return [] as CachedPublicWordIndexRecord[];
-        }
-        const totalPages = Math.ceil(total / PAGE_SIZE);
-        const pages = await Promise.all(
-          Array.from({ length: totalPages }, (_, pageIndex) =>
-            supabase
-              .from("words")
-              .select(WORD_SELECT)
-              .eq("is_published", true)
-              .eq("is_deleted", false)
-              .order("lemma")
-              .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1),
-          ),
-        );
         const accumulated: BarePublicWordSummary[] = [];
-        for (const page of pages) {
-          if (page.error) {
-            throw page.error;
+        let offset = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("words")
+            .select(WORD_SELECT)
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .order("lemma")
+            .range(offset, offset + PAGE_SIZE - 1);
+          if (error) {
+            throw error;
           }
-          accumulated.push(...((page.data ?? []) as BarePublicWordSummary[]));
+          const rows = (data ?? []) as BarePublicWordSummary[];
+          accumulated.push(...rows);
+          if (rows.length < PAGE_SIZE) {
+            break;
+          }
+          offset += PAGE_SIZE;
         }
 
         return accumulated.map(toCachedPublicWordIndexRecord);
