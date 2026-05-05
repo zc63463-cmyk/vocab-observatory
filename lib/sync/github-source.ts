@@ -34,10 +34,18 @@ export async function fetchRepositoryArchive() {
   return response.arrayBuffer();
 }
 
-export async function importWordsFromGitHubArchive(): Promise<ImportedGitHubRepository> {
+export async function importWordsFromGitHubArchive(
+  options?: {
+    // Narrows the zip scan to a subset of the configured prefixes. The batched
+    // manual import endpoint uses this to keep each invocation under Vercel's
+    // function timeout; the cron path omits it and syncs everything.
+    prefixes?: readonly string[];
+  },
+): Promise<ImportedGitHubRepository> {
   const zip = await JSZip.loadAsync(await fetchRepositoryArchive());
   const repoRoot = `${env.repoName}-${env.repoBranch}/`;
-  const wordPrefixes = env.wordsPrefixes.map((prefix) => `${repoRoot}${prefix}/`);
+  const activePrefixes = options?.prefixes ?? env.wordsPrefixes;
+  const wordPrefixes = activePrefixes.map((prefix) => `${repoRoot}${prefix}/`);
   const collectionNotes: ParsedCollectionNote[] = [];
   const errors: ImportFileError[] = [];
   const words: ParsedWord[] = [];

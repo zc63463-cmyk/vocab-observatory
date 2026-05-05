@@ -42,13 +42,13 @@ function isWordFilterFacetRelationMissing(error: unknown) {
   );
 }
 
-function buildSourcePathLikeFilter() {
+function buildSourcePathLikeFilter(prefixes: readonly string[]) {
   // PostgREST requires `*` as the LIKE wildcard when the filter is embedded in
   // an `.or(...)` string — `%` conflicts with URL percent-encoding and silently
   // produces empty result sets or request errors (e.g. when the prefix itself
   // contains non-ASCII bytes like `L0_超纲词`, those get encoded to `%XX` and
   // the trailing `/%` wildcard is no longer parseable server-side).
-  return env.wordsPrefixes
+  return prefixes
     .map((prefix) => `source_path.like.${prefix}/*`)
     .join(",");
 }
@@ -177,16 +177,27 @@ function createCollectionNoteUpsertPayload(
   };
 }
 
+export interface SyncGitHubWordsOptions {
+  // Lets a manual call narrow the sync to a single prefix (e.g. only
+  // `Wiki/L0_超纲词`). When omitted we fall back to the full configured list,
+  // which is what the daily cron wants. A narrowed run still produces a
+  // complete import_run record; its soft-delete scope is likewise narrowed
+  // so untouched prefixes keep their existing rows.
+  prefixesOverride?: readonly string[];
+  triggerType?: string;
+}
+
 export async function syncGitHubWords(
   admin: AdminClient,
-  options?: { triggerType?: string },
+  options?: SyncGitHubWordsOptions,
 ) {
   const triggerType = options?.triggerType ?? "manual";
+  const activePrefixes = options?.prefixesOverride ?? env.wordsPrefixes;
   const importRun = await createImportRun(admin, triggerType);
   const importErrors: ImportFileError[] = [];
 
   try {
-    const imported = await importWordsFromGitHubArchive();
+    const imported = await importWordsFromGitHubArchive({ prefixes: activePrefixes });
     const incomingCollectionNotes = imported.collectionNotes;
     const incomingWords = imported.words;
     importErrors.push(...imported.errors);
@@ -194,7 +205,7 @@ export async function syncGitHubWords(
     const { data: existingRows, error: existingError } = await admin
       .from("words")
       .select("slug, source_path, content_hash, is_deleted")
-      .or(buildSourcePathLikeFilter());
+      .or(buildSourcePathLikeFilter(activePrefixes));
 
     if (existingError) {
       throw existingError;
@@ -399,7 +410,7 @@ export async function syncGitHubWords(
     const { data: wordsWithIds, error: wordsError } = await admin
       .from("words")
       .select("id, slug")
-      .or(buildSourcePathLikeFilter());
+      .or(buildSourcePathLikeFilter(activePrefixes));
 
     if (wordsError) {
       throw wordsError;
