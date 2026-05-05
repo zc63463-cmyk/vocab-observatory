@@ -900,7 +900,14 @@ const getCachedPublicWordRows = unstable_cache(
       return null;
     }
   },
-  ["public-word-rows"],
+  // Cache key bumped from `public-word-rows` to `-v2` to force-evict any
+  // entries cached during the brief window where this function was using
+  // `{ head: true }` for the count query and persisting `[]` after a null
+  // count. Next.js Data Cache survives across deployments, and tag-based
+  // revalidation only fires when an import actually changes data — so a
+  // user-visible regression (q-search/review-filter returning empty) could
+  // otherwise persist until either the next import or 5min TTL.
+  ["public-word-rows-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
