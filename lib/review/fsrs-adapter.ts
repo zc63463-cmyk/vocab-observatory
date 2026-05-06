@@ -14,8 +14,26 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
  *
  * The signature is a JSON of the rounded weights. Cheap and collision-free
  * for realistic values; avoids depending on a hashing lib.
+ *
+ * The cache is bounded to avoid unbounded growth in long-running server
+ * processes (one scheduler per (retention, weights) pair — every new
+ * optimised weights vector would otherwise leak forever). Map's insertion
+ * order gives us an O(1) LRU: on hit we delete+re-set to bump the key to
+ * the tail; on insert, if we're at the cap, we evict whatever sits at the
+ * head (oldest). `100` comfortably covers a per-user weights vector plus
+ * the handful of retention presets without meaningfully changing hit rate.
  */
+export const SCHEDULER_CACHE_LIMIT = 100;
 const schedulerCache = new Map<string, ReturnType<typeof fsrs>>();
+
+/**
+ * Exposes the current cache size for observability (monitoring / tests).
+ * Kept as a function rather than a getter to discourage accidental
+ * reads via destructuring that would freeze the value at import time.
+ */
+export function getSchedulerCacheSize() {
+  return schedulerCache.size;
+}
 
 function signWeights(weights: readonly number[] | null | undefined): string {
   if (!weights || weights.length === 0) return "default";
@@ -58,6 +76,10 @@ function getScheduler(
   const cached = schedulerCache.get(cacheKey);
 
   if (cached) {
+    // LRU refresh: re-insert bumps the key to the tail of Map's insertion
+    // order so the next eviction targets a genuinely-cold entry.
+    schedulerCache.delete(cacheKey);
+    schedulerCache.set(cacheKey, cached);
     return cached;
   }
 
@@ -68,6 +90,14 @@ function getScheduler(
     // back to its built-in defaults is the correct "untrained" behavior.
     ...(weights && weights.length > 0 ? { w: [...weights] } : {}),
   });
+  // Evict the oldest entry (head of insertion order) before inserting so
+  // the cache size stays bounded by SCHEDULER_CACHE_LIMIT.
+  if (schedulerCache.size >= SCHEDULER_CACHE_LIMIT) {
+    const oldestKey = schedulerCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      schedulerCache.delete(oldestKey);
+    }
+  }
   schedulerCache.set(cacheKey, scheduler);
   return scheduler;
 }

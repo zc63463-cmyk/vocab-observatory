@@ -1,13 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
+// Import the shared, TZ-pinned version so session-day cutoffs match every
+// other "today" caller (`@/lib/dashboard.ts`, hydration-safe formatters).
+// See `@/lib/utils.ts` startOfTodayIso JSDoc for why the local copy used to
+// produce an 8-hour drift between Vercel SSR (UTC) and a Shanghai CSR.
+import { startOfTodayIso } from "@/lib/utils";
 
 type OwnerSupabaseClient = SupabaseClient<Database>;
-
-function startOfTodayIso() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today.toISOString();
-}
 
 export async function getOrCreateReviewSession(
   supabase: OwnerSupabaseClient,
