@@ -8,6 +8,7 @@ import { useZenReviewContext } from "./ZenReviewProvider";
 import type { ReviewQueueItem } from "@/lib/review/types";
 import { speakLemma, canSpeak } from "@/lib/tts";
 import { WordRelationLinks } from "./WordRelationLinks";
+import { ZenDefinitionRenderer } from "./ZenDefinitionRenderer";
 
 function FlashcardFront({
   item,
@@ -153,14 +154,29 @@ function FlashcardBack({ item }: FlashcardBackProps) {
           <p className="mt-2 text-lg text-[var(--color-ink-soft)]">{item.ipa}</p>
         )}
 
-        {/* Definition */}
-        <div className="mt-6 border-t border-[var(--color-border)] pt-6">
+        {/*
+          Definition panel. Wrapped in its own framed card (rounded
+          border + subtle surface tint) so that the nested callout
+          rows inside ZenDefinitionRenderer (原型义 / 延伸维度 /
+          隐喻类型 small chips) read as children of a first-class
+          section rather than floating freely on the flashcard.
+
+          `definition_md` takes priority over `short_definition`
+          because it's the structured markdown source — it's what
+          carries the `> [!tip]` callouts and `` `V N` `` grammar
+          markers we want to surface. `short_definition` is the
+          one-line summary used only as a fallback when the word
+          entry predates structured fields.
+        */}
+        <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
             核心释义
           </p>
-          <p className="mt-3 text-lg leading-relaxed text-[var(--color-ink)]">
-            {item.short_definition || item.definition_md || "暂无释义"}
-          </p>
+          <div className="mt-4">
+            <ZenDefinitionRenderer
+              markdown={item.definition_md?.trim() || item.short_definition || ""}
+            />
+          </div>
         </div>
 
         {/* Examples */}
