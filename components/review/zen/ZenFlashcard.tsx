@@ -100,19 +100,29 @@ function FlashcardBack({ item }: FlashcardBackProps) {
     >
       {/*
         Scroll container. Takes remaining vertical space via flex-1.
-        On mobile (`items-start`) the answer card anchors to the top of the
-        scroll region so the word lemma + IPA are always visible — without
-        this anchor, `align-items: center` would push the top of the card
-        above the visible scroll area whenever content (definition + examples
-        + relations) overflows the cramped 4:3 mobile card. From `sm:` up the
-        viewport is wide enough that content fits and we can afford the
-        nicer-looking vertical centering. `min-h-0` is required so flex-1 can
-        shrink past intrinsic size and overflow-y-auto actually kicks in.
+        `min-h-0` is required so flex-1 can shrink past intrinsic size
+        and overflow-y-auto actually kicks in.
+
+        We use `items-start` at every breakpoint and delegate vertical
+        centering to the card's own `my-auto`. This sidesteps the
+        classic flexbox + overflow trap that `items-center` creates:
+        when the card's content is taller than the scroll container
+        (definition panel with framed sub-cards + examples + relations
+        + review-count footer routinely overflows a 4:3 flashcard), a
+        center-aligned flex item distributes the overflow *symmetrically*
+        above and below the container. `overflow-y-auto` can only scroll
+        the range [0, scrollHeight - clientHeight], which means the top
+        half of the overflow sits above the viewport and the user
+        literally cannot reach the word lemma / IPA / top tags no matter
+        how hard they scroll. `my-auto` on the child collapses to 0
+        whenever the child overflows, pinning it to the top and making
+        the full height scrollable; when the child fits, auto margins
+        expand to fill the cross axis, yielding the same visual centering.
       */}
-      <div className="flex w-full min-h-0 flex-1 items-start justify-center overflow-y-auto sm:items-center">
+      <div className="flex w-full min-h-0 flex-1 items-start justify-center overflow-y-auto">
       {/* Answer Card */}
       <div 
-        className="w-full max-w-2xl rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-lg backdrop-blur-lg sm:p-10"
+        className="my-auto w-full max-w-2xl rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-lg backdrop-blur-lg sm:p-10"
         style={{ 
           background: "var(--color-panel)",
           backdropFilter: "blur(18px)",
