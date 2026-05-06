@@ -1300,8 +1300,16 @@ const getCachedPublicWordsCountValue = unstable_cache(
   },
 );
 
-const getCachedPublicWordDetailRecord = unstable_cache(
-  async (slug: string) => {
+// Raw layer: DB read + tag join + structured-field shaping. Crucially this
+// returns `PublicWordDetail` *without* the four rendered HTML strings — for
+// long-form words those strings double the payload and historically pushed
+// the combined record past Next.js's 2 MB-per-entry unstable_cache limit,
+// which silently disabled caching ("items over 2MB can not be cached"
+// build warnings) and made every detail visit re-run the entire fetch +
+// markdown render + sanitize pipeline from scratch. Splitting them out
+// keeps the cached payload comfortably under the cap.
+const getCachedPublicWordDetailRaw = unstable_cache(
+  async (slug: string): Promise<PublicWordDetail | null> => {
     const supabase = getPublicSupabaseClientOrNull();
     if (!supabase) {
       return null;
@@ -1311,96 +1319,61 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       return await withTransientPublicReadRetry(
         `word detail slug "${slug}"`,
         async () => {
-      let word: Record<string, Json | string | null> | null = null;
-      const structuredAttempt = await supabase
-        .from("words")
-        .select(WORD_DETAIL_STRUCTURED_SELECT)
-        .eq("slug", escapePostgrestLike(slug))
-        .eq("is_published", true)
-        .eq("is_deleted", false)
-        .maybeSingle();
+          let word: Record<string, Json | string | null> | null = null;
+          const structuredAttempt = await supabase
+            .from("words")
+            .select(WORD_DETAIL_STRUCTURED_SELECT)
+            .eq("slug", escapePostgrestLike(slug))
+            .eq("is_published", true)
+            .eq("is_deleted", false)
+            .maybeSingle();
 
-      if (isStructuredWordColumnsMissing(structuredAttempt.error)) {
-        const legacyAttempt = await supabase
-          .from("words")
-          .select(WORD_DETAIL_LEGACY_SELECT)
-          .eq("slug", escapePostgrestLike(slug))
-          .eq("is_published", true)
-          .eq("is_deleted", false)
-          .maybeSingle();
+          if (isStructuredWordColumnsMissing(structuredAttempt.error)) {
+            const legacyAttempt = await supabase
+              .from("words")
+              .select(WORD_DETAIL_LEGACY_SELECT)
+              .eq("slug", escapePostgrestLike(slug))
+              .eq("is_published", true)
+              .eq("is_deleted", false)
+              .maybeSingle();
 
-        if (legacyAttempt.error) {
-          throw legacyAttempt.error;
-        }
+            if (legacyAttempt.error) {
+              throw legacyAttempt.error;
+            }
 
-        word = legacyAttempt.data as Record<string, Json | string | null> | null;
-      } else {
-        if (structuredAttempt.error) {
-          throw structuredAttempt.error;
-        }
+            word = legacyAttempt.data as Record<string, Json | string | null> | null;
+          } else {
+            if (structuredAttempt.error) {
+              throw structuredAttempt.error;
+            }
 
-        word = structuredAttempt.data as Record<string, Json | string | null> | null;
-      }
+            word = structuredAttempt.data as Record<string, Json | string | null> | null;
+          }
 
-      if (!word) {
-        return null;
-      }
+          if (!word) {
+            return null;
+          }
 
-      const { data: tagRows, error: tagError } = await supabase
-        .from("word_tags")
-        .select("tags!inner(label, slug)")
-        .eq("word_id", word.id as string);
+          const { data: tagRows, error: tagError } = await supabase
+            .from("word_tags")
+            .select("tags!inner(label, slug)")
+            .eq("word_id", word.id as string);
 
-      if (tagError) {
-        throw tagError;
-      }
+          if (tagError) {
+            throw tagError;
+          }
 
-      const publicWord = withStructuredFallback(word);
-      const hasStructuredSynonyms = publicWord.synonym_items.length > 0;
-      const hasStructuredAntonyms = publicWord.antonym_items.length > 0;
-      const synonymSection = getSection(publicWord.body_md, "同义词辨析");
-      const antonymSection = getSection(publicWord.body_md, "反义词");
-      const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
-        renderObsidianMarkdown(publicWord.body_md),
-        publicWord.definition_md
-          ? renderObsidianMarkdown(publicWord.definition_md)
-          : Promise.resolve(""),
-        !hasStructuredSynonyms && synonymSection
-          ? renderObsidianMarkdown(synonymSection)
-          : Promise.resolve(""),
-        !hasStructuredAntonyms && antonymSection
-          ? renderObsidianMarkdown(antonymSection)
-          : Promise.resolve(""),
-      ]);
+          const publicWord = withStructuredFallback(word);
 
-      // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page)
-      let bodyHtml = rawBodyHtml;
-      let definitionHtml = rawDefinitionHtml;
-      let synonymHtml = rawSynonymHtml;
-      let antonymHtml = rawAntonymHtml;
-      try {
-        const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
-        bodyHtml = sanitizeHtmlServer(rawBodyHtml);
-        definitionHtml = sanitizeHtmlServer(rawDefinitionHtml);
-        synonymHtml = sanitizeHtmlServer(rawSynonymHtml);
-        antonymHtml = sanitizeHtmlServer(rawAntonymHtml);
-      } catch (sanitizeError) {
-        console.error("[words] HTML sanitization skipped:", sanitizeError);
-      }
-
-      return {
-        ...publicWord,
-        antonym_html: antonymHtml,
-        body_html: bodyHtml,
-        definition_html: definitionHtml,
-        progress: null,
-        resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items),
-        resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items),
-        synonym_html: synonymHtml,
-        tags: ((tagRows ?? []) as unknown as Array<{ tags: { label: string; slug: string } }>).map(
-          (row) => row.tags,
-        ),
-      } satisfies CachedPublicWordDetail;
+          return {
+            ...publicWord,
+            progress: null,
+            resolved_antonym_items: resolveAntonymItems(publicWord.antonym_items),
+            resolved_synonym_items: resolveSynonymItems(publicWord.synonym_items),
+            tags: (
+              (tagRows ?? []) as unknown as Array<{ tags: { label: string; slug: string } }>
+            ).map((row) => row.tags),
+          } satisfies PublicWordDetail;
         },
       );
     } catch (err) {
@@ -1410,12 +1383,94 @@ const getCachedPublicWordDetailRecord = unstable_cache(
       return null;
     }
   },
-  ["public-word-detail"],
+  // v2: bumped after splitting HTML out so any pre-existing oversized
+  // entries from the v1 key are abandoned cleanly.
+  ["public-word-detail-raw-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordDetail],
   },
 );
+
+// Render layer: pure markdown → HTML transform with defensive sanitisation.
+// Not cached — each call costs ~50-200 ms depending on body length. Under
+// `force-static + revalidate=300` page configuration this runs once per
+// revalidation interval per slug, not per request, so the absolute cost
+// is negligible compared to the savings from re-enabling the raw cache.
+async function renderPublicWordDetailHtml(word: PublicWordDetail): Promise<{
+  antonym_html: string;
+  body_html: string;
+  definition_html: string;
+  synonym_html: string;
+}> {
+  const hasStructuredSynonyms = word.synonym_items.length > 0;
+  const hasStructuredAntonyms = word.antonym_items.length > 0;
+  const synonymSection = getSection(word.body_md, "同义词辨析");
+  const antonymSection = getSection(word.body_md, "反义词");
+
+  const [rawBodyHtml, rawDefinitionHtml, rawSynonymHtml, rawAntonymHtml] = await Promise.all([
+    renderObsidianMarkdown(word.body_md),
+    word.definition_md ? renderObsidianMarkdown(word.definition_md) : Promise.resolve(""),
+    !hasStructuredSynonyms && synonymSection
+      ? renderObsidianMarkdown(synonymSection)
+      : Promise.resolve(""),
+    !hasStructuredAntonyms && antonymSection
+      ? renderObsidianMarkdown(antonymSection)
+      : Promise.resolve(""),
+  ]);
+
+  // Sanitize all rendered HTML to prevent XSS (defensive — never crash the page).
+  let bodyHtml = rawBodyHtml;
+  let definitionHtml = rawDefinitionHtml;
+  let synonymHtml = rawSynonymHtml;
+  let antonymHtml = rawAntonymHtml;
+  try {
+    const { sanitizeHtmlServer } = await import("@/lib/sanitize-server");
+    bodyHtml = sanitizeHtmlServer(rawBodyHtml);
+    definitionHtml = sanitizeHtmlServer(rawDefinitionHtml);
+    synonymHtml = sanitizeHtmlServer(rawSynonymHtml);
+    antonymHtml = sanitizeHtmlServer(rawAntonymHtml);
+  } catch (sanitizeError) {
+    console.error("[words] HTML sanitization skipped:", sanitizeError);
+  }
+
+  return {
+    antonym_html: antonymHtml,
+    body_html: bodyHtml,
+    definition_html: definitionHtml,
+    synonym_html: synonymHtml,
+  };
+}
+
+// Compose layer: same name and signature as the original cached function so
+// consumers (`getPublicWordBySlug`, page routes, modal) need no changes.
+async function getCachedPublicWordDetailRecord(
+  slug: string,
+): Promise<CachedPublicWordDetail | null> {
+  const raw = await getCachedPublicWordDetailRaw(slug);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const html = await renderPublicWordDetailHtml(raw);
+    return { ...raw, ...html };
+  } catch (renderError) {
+    // If markdown rendering itself blows up (rare; sanitisation is already
+    // handled defensively inside the render helper), fall back to empty
+    // HTML strings rather than 404'ing the whole page — the structured
+    // sections (definitions, examples, etc.) still render from the raw
+    // record, which is the more important content anyway.
+    console.error(`[words] Failed to render detail HTML for slug "${slug}":`, renderError);
+    return {
+      ...raw,
+      antonym_html: "",
+      body_html: "",
+      definition_html: "",
+      synonym_html: "",
+    };
+  }
+}
 
 export const getLandingSnapshot = unstable_cache(
   async (): Promise<LandingSnapshot> => {
