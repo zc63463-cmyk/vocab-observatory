@@ -1516,12 +1516,17 @@ export async function getPublicWords(
     ]);
 
     // Only honour the DB-filtered fast path when it actually returned data.
-    // null means the inner cached fetch threw — almost always Postgres
-    // statement_timeout on `.contains('metadata', {...})` because there's
-    // no GIN index on the metadata jsonb column, which is reliably fatal
-    // for the more selective freq facet (~1800 rows). In that case fall
-    // through to the JS-filter path below, which already has every row
-    // for the corpus warm in unstable_cache and can resolve any single
+    // null means the inner cached fetch threw — historically the Postgres
+    // statement_timeout on `.contains('metadata', {...})`. The metadata
+    // GIN index has existed since migration 0008, but `{ count: 'exact' }`
+    // forces a `count(*) OVER ()` window which has to materialise every
+    // matching row, and then `ORDER BY lemma` had no supporting index, so
+    // the GIN-scan → sort → window-count chain overflowed Supabase's 8s
+    // budget for selective filters (~1800 freq=必备词 rows). Migration
+    // 0018 adds a partial btree on lemma to fix the sort step. Until it
+    // ships — and as a permanent safety net for any future planner
+    // regression — fall through to the JS-filter path below, which has
+    // every row warm in unstable_cache and resolves any single
     // semantic/freq predicate in microseconds without touching PostgREST.
     if (filteredPage !== null) {
       const visibleWords = filteredPage.rows.map((word) =>
