@@ -14,6 +14,7 @@ import {
   Sprout,
 } from "lucide-react";
 import { BentoCard } from "@/components/ui/BentoCard";
+import { CollapsibleBypass } from "@/components/ui/CollapsiblePanel";
 import { RevealSection } from "@/components/motion/RevealSection";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
@@ -236,6 +237,23 @@ export async function WordDetailContent({
   const relatedReviewWordIds = getRelatedReviewWordIds(graphData);
   const bodySummary = excerpt(result.word.body_md, 180) || "展开查看完整词条正文";
 
+  // hasData flags mirror the null-return guards inside each leaf
+  // component (WordCollocations / WordCorpus / WordSynonyms /
+  // WordAntonyms). Lifting the check up to the page level lets us
+  // skip the entire BentoCard — otherwise users would tap a card
+  // only to open an empty modal, which is a regression vs. the old
+  // page where empty sections collapsed silently.
+  const hasCollocations =
+    result.word.collocations.length > 0 ||
+    legacyExamples.some((example) => example.source === "collocation");
+  const hasCorpus =
+    result.word.corpus_items.length > 0 ||
+    legacyExamples.some((example) => example.source === "corpus");
+  const hasSynonyms =
+    result.word.resolved_synonym_items.length > 0 || Boolean(result.word.synonym_html);
+  const hasAntonyms =
+    result.word.resolved_antonym_items.length > 0 || Boolean(result.word.antonym_html);
+
   // Build the in-page TOC for mobile/tablet so readers can jump straight
   // to the personal note section instead of scrolling past every block.
   // Conditional sections (prototype, body) are only listed when the
@@ -295,21 +313,32 @@ export async function WordDetailContent({
             </RevealSection>
           </section>
 
-          {result.word.morphology ? (
-            <section id="word-morphology" className={sectionScrollMt}>
-              <RevealSection delay={0.08}>
-                <WordMorphology morphology={result.word.morphology} />
-              </RevealSection>
-            </section>
-          ) : null}
+          {/*
+            CollapsibleBypass mode="flat" tells the inner
+            CollapsiblePanel (which both WordMorphology and
+            WordMnemonic self-wrap in) to drop its chevron toggle and
+            render content unconditionally. These two sections were
+            promoted to the always-visible main strip; keeping the
+            chevron would make users click again to see what we just
+            promised them.
+          */}
+          <CollapsibleBypass mode="flat">
+            {result.word.morphology ? (
+              <section id="word-morphology" className={sectionScrollMt}>
+                <RevealSection delay={0.08}>
+                  <WordMorphology morphology={result.word.morphology} />
+                </RevealSection>
+              </section>
+            ) : null}
 
-          {result.word.mnemonic ? (
-            <section id="word-mnemonic" className={sectionScrollMt}>
-              <RevealSection delay={0.1}>
-                <WordMnemonic mnemonic={result.word.mnemonic} />
-              </RevealSection>
-            </section>
-          ) : null}
+            {result.word.mnemonic ? (
+              <section id="word-mnemonic" className={sectionScrollMt}>
+                <RevealSection delay={0.1}>
+                  <WordMnemonic mnemonic={result.word.mnemonic} />
+                </RevealSection>
+              </section>
+            ) : null}
+          </CollapsibleBypass>
 
           {/*
             ──── Bento grid (lazy-mounted, click to expand) ───────────
@@ -371,75 +400,83 @@ export async function WordDetailContent({
                 </BentoCard>
               ) : null}
 
-              <BentoCard
-                className={sectionScrollMt}
-                id="word-collocations"
-                icon={<MessageSquareQuote size={16} strokeWidth={2.25} />}
-                preview={collocationPreview(
-                  result.word.collocations.length,
-                  legacyExamples,
-                )}
-                subtitle="collocations"
-                title="搭配"
-              >
-                <WordCollocations
-                  collocations={result.word.collocations}
-                  legacyExamples={legacyExamples}
-                />
-              </BentoCard>
+              {hasCollocations ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-collocations"
+                  icon={<MessageSquareQuote size={16} strokeWidth={2.25} />}
+                  preview={collocationPreview(
+                    result.word.collocations.length,
+                    legacyExamples,
+                  )}
+                  subtitle="collocations"
+                  title="搭配"
+                >
+                  <WordCollocations
+                    collocations={result.word.collocations}
+                    legacyExamples={legacyExamples}
+                  />
+                </BentoCard>
+              ) : null}
 
-              <BentoCard
-                className={sectionScrollMt}
-                id="word-corpus"
-                icon={<Quote size={16} strokeWidth={2.25} />}
-                preview={corpusPreview(
-                  result.word.corpus_items.length,
-                  legacyExamples,
-                )}
-                subtitle="corpus"
-                title="语料"
-              >
-                <WordCorpus
-                  corpusItems={result.word.corpus_items}
-                  legacyExamples={legacyExamples}
-                />
-              </BentoCard>
+              {hasCorpus ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-corpus"
+                  icon={<Quote size={16} strokeWidth={2.25} />}
+                  preview={corpusPreview(
+                    result.word.corpus_items.length,
+                    legacyExamples,
+                  )}
+                  subtitle="corpus"
+                  title="语料"
+                >
+                  <WordCorpus
+                    corpusItems={result.word.corpus_items}
+                    legacyExamples={legacyExamples}
+                  />
+                </BentoCard>
+              ) : null}
 
-              <BentoCard
-                className={sectionScrollMt}
-                id="word-synonyms"
-                icon={<Layers3 size={16} strokeWidth={2.25} />}
-                preview={
-                  result.word.resolved_synonym_items.length > 0
-                    ? `${result.word.resolved_synonym_items.length} 个同义/近义`
-                    : (result.word.synonym_html ? "查看同义辨析" : "暂无同义信息")
-                }
-                subtitle="synonyms"
-                title="同义辨析"
-              >
-                <WordSynonyms
-                  resolvedSynonymItems={result.word.resolved_synonym_items}
-                  fallbackHtml={result.word.synonym_html}
-                />
-              </BentoCard>
+              {hasSynonyms ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-synonyms"
+                  icon={<Layers3 size={16} strokeWidth={2.25} />}
+                  preview={
+                    result.word.resolved_synonym_items.length > 0
+                      ? `${result.word.resolved_synonym_items.length} 个同义/近义`
+                      : "查看同义辨析"
+                  }
+                  subtitle="synonyms"
+                  title="同义辨析"
+                >
+                  <WordSynonyms
+                    resolvedSynonymItems={result.word.resolved_synonym_items}
+                    fallbackHtml={result.word.synonym_html}
+                  />
+                </BentoCard>
+              ) : null}
 
-              <BentoCard
-                className={sectionScrollMt}
-                id="word-antonyms"
-                icon={<Scale size={16} strokeWidth={2.25} />}
-                preview={
-                  result.word.resolved_antonym_items.length > 0
-                    ? `${result.word.resolved_antonym_items.length} 个反义`
-                    : (result.word.antonym_html ? "查看反义对照" : "暂无反义信息")
-                }
-                subtitle="antonyms"
-                title="反义"
-              >
-                <WordAntonyms
-                  resolvedAntonymItems={result.word.resolved_antonym_items}
-                  fallbackHtml={result.word.antonym_html}
-                />
-              </BentoCard>
+              {hasAntonyms ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-antonyms"
+                  icon={<Scale size={16} strokeWidth={2.25} />}
+                  preview={
+                    result.word.resolved_antonym_items.length > 0
+                      ? `${result.word.resolved_antonym_items.length} 个反义`
+                      : "查看反义对照"
+                  }
+                  subtitle="antonyms"
+                  title="反义"
+                >
+                  <WordAntonyms
+                    resolvedAntonymItems={result.word.resolved_antonym_items}
+                    fallbackHtml={result.word.antonym_html}
+                  />
+                </BentoCard>
+              ) : null}
 
               {result.word.derived_words.length > 0 ? (
                 <BentoCard

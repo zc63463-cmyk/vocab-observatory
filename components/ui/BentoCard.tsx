@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRight, X } from "lucide-react";
+import { CollapsibleBypass } from "@/components/ui/CollapsiblePanel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -145,12 +146,19 @@ export function BentoCard({
         titleId={`${titleId}-title`}
       >
         {/*
-          The crucial line: children only mount while the modal is open.
-          Closing the modal unmounts the heavy sub-tree, releasing any
-          client-side state (e.g. vocab graph simulation, autoplay
-          timers) it had spun up.
+          The crucial line: children only mount while the modal is
+          open. Closing the modal unmounts the heavy sub-tree,
+          releasing any client-side state (e.g. vocab graph
+          simulation, autoplay timers) it had spun up.
+
+          Wrapped in `<CollapsibleBypass mode="naked">` because all 8
+          word-detail components (WordCollocations / WordCorpus /
+          WordSynonyms / ...) self-wrap in CollapsiblePanel by
+          default — without the bypass, opening this modal would
+          show only the inner CollapsiblePanel header, forcing the
+          user to click a second chevron just to see content.
         */}
-        {open ? children : null}
+        {open ? <CollapsibleBypass mode="naked">{children}</CollapsibleBypass> : null}
       </BentoModal>
     </>
   );
