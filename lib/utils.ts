@@ -39,6 +39,16 @@ export function excerpt(value: string, length = 160) {
   return `${text.slice(0, length).trim()}...`;
 }
 
+// Pin display TZ so SSR (Vercel runs in UTC) and CSR (user's local TZ) emit
+// byte-identical strings. Without this, any client component that SSRs a
+// formatted date — e.g. PlazaSearchShell rendering note.updated_at — produces
+// a different `2025-01-01` vs `2025-01-02` between server and client whenever
+// the source timestamp straddles UTC midnight, triggering React #418
+// (hydration text-mismatch). The app's content/audience is zh-CN, so we lock
+// to Asia/Shanghai. If this ever needs to vary per user, switch to a
+// post-mount client-only render path instead of relaxing this constant.
+const DISPLAY_TIME_ZONE = "Asia/Shanghai";
+
 export function formatDate(value: string | Date | null | undefined) {
   if (!value) {
     return "未记录";
@@ -53,6 +63,7 @@ export function formatDate(value: string | Date | null | undefined) {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(date);
 }
 
@@ -72,6 +83,7 @@ export function formatDateTime(value: string | Date | null | undefined) {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(date);
 }
 

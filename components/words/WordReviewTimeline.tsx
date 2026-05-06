@@ -39,10 +39,23 @@ const RATING_LABELS: Record<string, string> = {
   easy: "Easy",
 };
 
+// `getFullYear/Month/Date` returns calendar parts in the *runtime's* local TZ —
+// fine in the browser but on Vercel SSR it resolves in UTC, so the same ISO
+// string formats one day apart across the SSR/CSR boundary whenever it falls
+// late in the UTC day. Pin everything to Asia/Shanghai (the audience's TZ) so
+// every consumer of this string is hydration-stable. We use en-CA because its
+// short date pattern is `YYYY-MM-DD` natively.
+const REVIEW_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "Asia/Shanghai",
+});
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return REVIEW_DATE_FORMATTER.format(d);
 }
 
 function formatDays(days: number | null): string {
@@ -206,7 +219,7 @@ export function WordReviewTimeline({ logs, progressId }: WordReviewTimelineProps
                 const color = rating
                   ? (RATING_COLORS[rating] ?? "#94a3b8")
                   : "rgba(148,163,184,0.15)";
-                const dateLabel = `${day.date.getFullYear()}-${String(day.date.getMonth() + 1).padStart(2, "0")}-${String(day.date.getDate()).padStart(2, "0")}`;
+                const dateLabel = REVIEW_DATE_FORMATTER.format(day.date);
                 return (
                   <rect
                     key={`${weekIdx}-${dayIdx}`}

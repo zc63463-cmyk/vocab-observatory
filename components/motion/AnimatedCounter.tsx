@@ -63,9 +63,13 @@ export function AnimatedCounter({
     };
   }, [duration, prefersReducedMotion, target]);
 
+  // Pin locale so SSR (whose Node default may be `en-US`) and CSR (browser
+  // locale, often `zh-CN`) emit identical thousand-separator strings. The
+  // separator is a comma in both today, but ICU updates have shifted these
+  // before — making this a latent hydration risk we'd rather close now.
   if (prefersReducedMotion) {
-    return <span className={className}>{target.toLocaleString()}</span>;
+    return <span className={className}>{target.toLocaleString("zh-CN")}</span>;
   }
 
-  return <span className={className}>{display.toLocaleString()}</span>;
+  return <span className={className}>{display.toLocaleString("zh-CN")}</span>;
 }
