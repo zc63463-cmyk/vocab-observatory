@@ -1514,28 +1514,46 @@ export async function getPublicWords(
       publicFilterOptionsPromise,
       ownerProgressMapPromise,
     ]);
-    const visibleWords = (filteredPage?.rows ?? []).map((word) =>
-      toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
-    );
-    const pageState = createPublicWordsPageState(
-      filteredPage?.total ?? visibleWords.length,
-      pagination,
-      visibleWords.length,
-    );
 
-    return {
-      configured: true,
-      ...pageState,
-      filterOptions,
-      filters: normalizedFilters,
-      isOwner,
-      words: visibleWords,
-    };
+    // Only honour the DB-filtered fast path when it actually returned data.
+    // null means the inner cached fetch threw — almost always Postgres
+    // statement_timeout on `.contains('metadata', {...})` because there's
+    // no GIN index on the metadata jsonb column, which is reliably fatal
+    // for the more selective freq facet (~1800 rows). In that case fall
+    // through to the JS-filter path below, which already has every row
+    // for the corpus warm in unstable_cache and can resolve any single
+    // semantic/freq predicate in microseconds without touching PostgREST.
+    if (filteredPage !== null) {
+      const visibleWords = filteredPage.rows.map((word) =>
+        toPublicWordSummary(word, isOwner ? (ownerProgressMap.get(word.id) ?? null) : null),
+      );
+      const pageState = createPublicWordsPageState(
+        filteredPage.total,
+        pagination,
+        visibleWords.length,
+      );
+
+      return {
+        configured: true,
+        ...pageState,
+        filterOptions,
+        filters: normalizedFilters,
+        isOwner,
+        words: visibleWords,
+      };
+    }
   }
 
-  // Fallback path: q !== '' (free-text search) or review !== 'all'. Both
-  // require the full corpus in JS — q because there's no Postgres-side
-  // text index yet, review because it joins user_word_progress per-row.
+  // Fallback path. Reached when:
+  //   - q !== '' (free-text search needs the full corpus in JS, no Postgres-
+  //     side text index yet)
+  //   - review !== 'all' (per-user progress join needs every row)
+  //   - OR the DB-filtered fast path above returned null (transient
+  //     statement_timeout on JSONB containment without a GIN index — see
+  //     the explanatory comment in that branch).
+  // The .filter() block below correctly applies semantic/freq/q/review
+  // predicates against the cached full word list, so it acts as a
+  // universal correctness floor.
   const [allWords, ownerProgressMap, filterOptions] = await Promise.all([
     getCachedPublicWordRows(),
     ownerProgressMapPromise,
