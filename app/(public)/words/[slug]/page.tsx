@@ -1,7 +1,19 @@
 import type { Metadata, Route } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { CollapsiblePanel } from "@/components/ui/CollapsiblePanel";
+import {
+  ArrowLeftRight,
+  BookOpen,
+  GitBranch,
+  Layers3,
+  MessageSquareQuote,
+  Network,
+  Quote,
+  Scale,
+  Sparkles,
+  Sprout,
+} from "lucide-react";
+import { BentoCard } from "@/components/ui/BentoCard";
 import { RevealSection } from "@/components/motion/RevealSection";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
@@ -52,6 +64,51 @@ function getRelatedReviewWordIds(graphData: VocabGraphData) {
         .filter((wordId): wordId is string => Boolean(wordId)),
     ),
   ];
+}
+
+/**
+ * One-line preview shown on the collapsed `语义链路` Bento card.
+ * `SemanticChain` has four optional string fields — the cleanest
+ * thumbnail is whichever is filled in first, in the order the parser
+ * tends to populate them, falling back to a generic prompt.
+ */
+function semanticChainSummary(
+  chain: import("@/lib/structured-word").SemanticChain,
+): string {
+  const candidate = chain.oneWord ?? chain.chain ?? chain.centerExtension ?? chain.validation;
+  if (!candidate) return "";
+  return excerpt(candidate, 56);
+}
+
+/**
+ * Bento preview for the `搭配` card. Prefers the structured count
+ * (post-importer corpus has it) but falls back to counting legacy
+ * `ParsedExample` rows tagged as collocations so older entries still
+ * show a meaningful chip instead of "0 项".
+ */
+function collocationPreview(
+  structuredCount: number,
+  legacyExamples: ParsedExample[],
+): string {
+  if (structuredCount > 0) return `${structuredCount} 项搭配`;
+  const legacyCount = legacyExamples.filter(
+    (example) => example.source === "collocation",
+  ).length;
+  if (legacyCount > 0) return `${legacyCount} 项搭配 (来自正文)`;
+  return "暂无搭配";
+}
+
+/** Mirror of `collocationPreview` for the `语料` card. */
+function corpusPreview(
+  structuredCount: number,
+  legacyExamples: ParsedExample[],
+): string {
+  if (structuredCount > 0) return `${structuredCount} 条语料`;
+  const legacyCount = legacyExamples.filter(
+    (example) => example.source === "corpus",
+  ).length;
+  if (legacyCount > 0) return `${legacyCount} 条语料 (来自正文)`;
+  return "暂无语料";
 }
 
 export async function generateMetadata({
@@ -219,6 +276,14 @@ export async function WordDetailContent({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-6">
+          {/*
+            ──── Main strip (always SSR, full panels) ─────────────────
+            The four blocks the user always wants in front of them:
+            identity (Header), the structured definitions, the
+            morphology breakdown, and the mnemonic anchor. Everything
+            else is demoted to the Bento grid below to keep first
+            paint cheap.
+          */}
           <WordHeader word={result.word} />
 
           <section id="word-definitions" className={sectionScrollMt}>
@@ -230,107 +295,196 @@ export async function WordDetailContent({
             </RevealSection>
           </section>
 
-          {result.word.prototype_text ? (
-            <section id="word-prototype" className={sectionScrollMt}>
-              <RevealSection delay={0.1}>
-                <PrototypeReveal text={result.word.prototype_text} />
-              </RevealSection>
-            </section>
-          ) : null}
-
           {result.word.morphology ? (
             <section id="word-morphology" className={sectionScrollMt}>
-              <RevealSection delay={0.12}>
+              <RevealSection delay={0.08}>
                 <WordMorphology morphology={result.word.morphology} />
-              </RevealSection>
-            </section>
-          ) : null}
-
-          {result.word.semantic_chain ? (
-            <section id="word-semantic-chain" className={sectionScrollMt}>
-              <RevealSection delay={0.14}>
-                <WordSemanticChain semanticChain={result.word.semantic_chain} />
-              </RevealSection>
-            </section>
-          ) : null}
-
-          {result.word.pos_conversions.length > 0 ? (
-            <section id="word-pos-conversions" className={sectionScrollMt}>
-              <RevealSection delay={0.16}>
-                <WordPosConversions posConversions={result.word.pos_conversions} />
-              </RevealSection>
-            </section>
-          ) : null}
-
-          <section id="word-collocations" className={sectionScrollMt}>
-            <RevealSection delay={0.18}>
-              <WordCollocations collocations={result.word.collocations} legacyExamples={legacyExamples} />
-            </RevealSection>
-          </section>
-
-          <section id="word-corpus" className={sectionScrollMt}>
-            <RevealSection delay={0.2}>
-              <WordCorpus corpusItems={result.word.corpus_items} legacyExamples={legacyExamples} />
-            </RevealSection>
-          </section>
-
-          <section id="word-topology" className={sectionScrollMt}>
-            <RevealSection delay={0.25}>
-              <VocabTopologyGraphIsland data={graphData} maxNodes={60} />
-            </RevealSection>
-          </section>
-
-          <section id="word-synonyms" className={sectionScrollMt}>
-            <RevealSection delay={0.3}>
-              <WordSynonyms
-                resolvedSynonymItems={result.word.resolved_synonym_items}
-                fallbackHtml={result.word.synonym_html}
-              />
-            </RevealSection>
-          </section>
-
-          <section id="word-antonyms" className={sectionScrollMt}>
-            <RevealSection delay={0.35}>
-              <WordAntonyms
-                resolvedAntonymItems={result.word.resolved_antonym_items}
-                fallbackHtml={result.word.antonym_html}
-              />
-            </RevealSection>
-          </section>
-
-          {result.word.derived_words.length > 0 ? (
-            <section id="word-derived-words" className={sectionScrollMt}>
-              <RevealSection delay={0.37}>
-                <WordDerivedWords derivedWords={result.word.derived_words} />
               </RevealSection>
             </section>
           ) : null}
 
           {result.word.mnemonic ? (
             <section id="word-mnemonic" className={sectionScrollMt}>
-              <RevealSection delay={0.39}>
+              <RevealSection delay={0.1}>
                 <WordMnemonic mnemonic={result.word.mnemonic} />
               </RevealSection>
             </section>
           ) : null}
 
-          {result.word.body_md.trim() ? (
-            <section id="word-body" className={sectionScrollMt}>
-              <RevealSection delay={0.4}>
-                <CollapsiblePanel
+          {/*
+            ──── Bento grid (lazy-mounted, click to expand) ───────────
+            Each BentoCard renders only its preview chrome (icon +
+            title + count) up front; the heavier React subtree inside
+            `children` mounts into the DOM exclusively while the
+            modal is open. That makes the vocab topology graph (60
+            nodes of d3-style force layout, the single most expensive
+            client island on this page), the markdown body (often
+            multi-KB sanitized HTML), and ~7 other structured
+            sections completely free at first paint.
+
+            Card ids match the existing TOC chip ids 1:1 so the chip
+            bar's `scrollIntoView` and any external deep link
+            (/words/foo#word-collocations) still land on the right
+            target — they just land on the card, and the user taps
+            the card itself to expand the section.
+          */}
+          <RevealSection delay={0.12}>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {result.word.prototype_text ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-prototype"
+                  icon={<Sparkles size={16} strokeWidth={2.25} />}
+                  preview={excerpt(result.word.prototype_text, 56) || "查看原型描述"}
+                  subtitle="prototype"
+                  title="原型"
+                >
+                  <PrototypeReveal text={result.word.prototype_text} />
+                </BentoCard>
+              ) : null}
+
+              {result.word.semantic_chain ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-semantic-chain"
+                  icon={<GitBranch size={16} strokeWidth={2.25} />}
+                  preview={
+                    semanticChainSummary(result.word.semantic_chain) || "展开语义链路"
+                  }
+                  subtitle="semantic chain"
+                  title="语义链路"
+                >
+                  <WordSemanticChain semanticChain={result.word.semantic_chain} />
+                </BentoCard>
+              ) : null}
+
+              {result.word.pos_conversions.length > 0 ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-pos-conversions"
+                  icon={<ArrowLeftRight size={16} strokeWidth={2.25} />}
+                  preview={`${result.word.pos_conversions.length} 项词性转换`}
+                  subtitle="part-of-speech"
+                  title="词性转换"
+                >
+                  <WordPosConversions posConversions={result.word.pos_conversions} />
+                </BentoCard>
+              ) : null}
+
+              <BentoCard
+                className={sectionScrollMt}
+                id="word-collocations"
+                icon={<MessageSquareQuote size={16} strokeWidth={2.25} />}
+                preview={collocationPreview(
+                  result.word.collocations.length,
+                  legacyExamples,
+                )}
+                subtitle="collocations"
+                title="搭配"
+              >
+                <WordCollocations
+                  collocations={result.word.collocations}
+                  legacyExamples={legacyExamples}
+                />
+              </BentoCard>
+
+              <BentoCard
+                className={sectionScrollMt}
+                id="word-corpus"
+                icon={<Quote size={16} strokeWidth={2.25} />}
+                preview={corpusPreview(
+                  result.word.corpus_items.length,
+                  legacyExamples,
+                )}
+                subtitle="corpus"
+                title="语料"
+              >
+                <WordCorpus
+                  corpusItems={result.word.corpus_items}
+                  legacyExamples={legacyExamples}
+                />
+              </BentoCard>
+
+              <BentoCard
+                className={sectionScrollMt}
+                id="word-synonyms"
+                icon={<Layers3 size={16} strokeWidth={2.25} />}
+                preview={
+                  result.word.resolved_synonym_items.length > 0
+                    ? `${result.word.resolved_synonym_items.length} 个同义/近义`
+                    : (result.word.synonym_html ? "查看同义辨析" : "暂无同义信息")
+                }
+                subtitle="synonyms"
+                title="同义辨析"
+              >
+                <WordSynonyms
+                  resolvedSynonymItems={result.word.resolved_synonym_items}
+                  fallbackHtml={result.word.synonym_html}
+                />
+              </BentoCard>
+
+              <BentoCard
+                className={sectionScrollMt}
+                id="word-antonyms"
+                icon={<Scale size={16} strokeWidth={2.25} />}
+                preview={
+                  result.word.resolved_antonym_items.length > 0
+                    ? `${result.word.resolved_antonym_items.length} 个反义`
+                    : (result.word.antonym_html ? "查看反义对照" : "暂无反义信息")
+                }
+                subtitle="antonyms"
+                title="反义"
+              >
+                <WordAntonyms
+                  resolvedAntonymItems={result.word.resolved_antonym_items}
+                  fallbackHtml={result.word.antonym_html}
+                />
+              </BentoCard>
+
+              {result.word.derived_words.length > 0 ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  id="word-derived-words"
+                  icon={<Sprout size={16} strokeWidth={2.25} />}
+                  preview={`${result.word.derived_words.length} 个派生词族`}
+                  subtitle="derived"
+                  title="派生词"
+                >
+                  <WordDerivedWords derivedWords={result.word.derived_words} />
+                </BentoCard>
+              ) : null}
+
+              <BentoCard
+                className={sectionScrollMt}
+                gridSpan={3}
+                id="word-topology"
+                icon={<Network size={16} strokeWidth={2.25} />}
+                preview={`${graphData.nodes.length} 节点 · ${graphData.edges.length} 关联`}
+                subtitle="vocab topology"
+                title="词汇拓扑图谱"
+                variant="accent"
+              >
+                <VocabTopologyGraphIsland data={graphData} maxNodes={60} />
+              </BentoCard>
+
+              {result.word.body_md.trim() ? (
+                <BentoCard
+                  className={sectionScrollMt}
+                  gridSpan={3}
+                  id="word-body"
+                  icon={<BookOpen size={16} strokeWidth={2.25} />}
+                  preview={bodySummary}
+                  subtitle="full markdown body"
                   title="词条正文"
-                  defaultOpen={false}
-                  summary={bodySummary}
-                  subtitle="结构化区块优先展示；展开后查看完整原文。"
                 >
                   <div
                     className="prose-obsidian"
                     dangerouslySetInnerHTML={{ __html: result.word.body_html }}
                   />
-                </CollapsiblePanel>
-              </RevealSection>
-            </section>
-          ) : null}
+                </BentoCard>
+              ) : null}
+            </div>
+          </RevealSection>
         </div>
 
         <aside
