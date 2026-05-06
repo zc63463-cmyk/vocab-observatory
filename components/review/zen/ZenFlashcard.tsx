@@ -156,7 +156,7 @@ function FlashcardBack({ item }: FlashcardBackProps) {
         {/* Definition */}
         <div className="mt-6 border-t border-[var(--color-border)] pt-6">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-ink-soft)]">
-            释义
+            核心释义
           </p>
           <p className="mt-3 text-lg leading-relaxed text-[var(--color-ink)]">
             {item.short_definition || item.definition_md || "暂无释义"}
