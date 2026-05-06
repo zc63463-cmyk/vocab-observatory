@@ -19,14 +19,16 @@ import {
   getPublicSupabaseClientOrNull,
   withTransientPublicReadRetry,
 } from "@/lib/supabase/public";
-import type { PublicWordIndexEntry } from "@/lib/words";
+import {
+  WORD_INDEX_SELECT,
+  reconstructCompactMetadata,
+  type BareSlimPublicWordIndexRow,
+} from "@/lib/words";
 import type { Database, Json } from "@/types/database.types";
 
 const COLLECTION_NOTE_SELECT =
   "id, slug, kind, title, summary, metadata, tags, related_word_slugs, updated_at";
 const COLLECTION_NOTE_METADATA_SELECT = "slug, kind, title, summary";
-const RELATED_WORD_SELECT =
-  "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const KIND_ORDER: CollectionNoteKind[] = ["root_affix", "semantic_field"];
 
@@ -141,16 +143,20 @@ function toPublicSummary(summary: CachedCollectionNoteSummary): PublicCollection
   };
 }
 
-function toRelatedWord(word: PublicWordIndexEntry): PublicCollectionRelatedWord {
+function toRelatedWord(row: BareSlimPublicWordIndexRow): PublicCollectionRelatedWord {
   return {
-    id: word.id,
-    ipa: word.ipa,
-    lemma: word.lemma,
-    metadata: word.metadata,
-    short_definition: word.short_definition,
-    slug: word.slug,
-    title: word.title,
-    updated_at: word.updated_at,
+    id: row.id,
+    ipa: row.ipa,
+    lemma: row.lemma,
+    // PublicCollectionRelatedWord.metadata is consumed by <WordCard> for the
+    // word_freq badge; reconstructing the same compact metadata shape that
+    // the words-index path produces keeps the contract intact while still
+    // shipping only the projected jsonb sub-keys over the wire.
+    metadata: reconstructCompactMetadata(row),
+    short_definition: row.short_definition,
+    slug: row.slug,
+    title: row.title,
+    updated_at: row.updated_at,
   };
 }
 
@@ -259,7 +265,7 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
 
     const { data, error } = await supabase
       .from("words")
-      .select(RELATED_WORD_SELECT)
+      .select(WORD_INDEX_SELECT)
       .eq("is_published", true)
       .eq("is_deleted", false)
       .in("slug", note.related_word_slugs);
@@ -268,19 +274,18 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
       throw error;
     }
 
-    const wordBySlug = new Map(
-      ((data ?? []) as PublicWordIndexEntry[]).map((word) => [word.slug, word]),
-    );
+    const rows = (data ?? []) as unknown as BareSlimPublicWordIndexRow[];
+    const wordBySlug = new Map(rows.map((row) => [row.slug, row]));
 
     return note.related_word_slugs
       .map((slug) => wordBySlug.get(slug))
-      .filter((word): word is PublicWordIndexEntry => Boolean(word))
+      .filter((row): row is BareSlimPublicWordIndexRow => Boolean(row))
       .map(toRelatedWord);
   }
 
   const { data, error } = await supabase
     .from("words")
-    .select(RELATED_WORD_SELECT)
+    .select(WORD_INDEX_SELECT)
     .eq("is_published", true)
     .eq("is_deleted", false)
     .contains("metadata", { semantic_field: note.title })
@@ -290,7 +295,7 @@ async function getRelatedWords(note: PublicCollectionNoteSummary) {
     throw error;
   }
 
-  return ((data ?? []) as PublicWordIndexEntry[]).map(toRelatedWord);
+  return ((data ?? []) as unknown as BareSlimPublicWordIndexRow[]).map(toRelatedWord);
 }
 
 export const getCachedCollectionSummaries = unstable_cache(

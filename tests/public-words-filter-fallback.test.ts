@@ -22,11 +22,19 @@ vi.mock("@/lib/supabase/public", async (importOriginal) => {
   };
 });
 
+// Mirrors the slim shape returned by the WORD_INDEX_SELECT PostgREST
+// projection that production code now uses everywhere — the `metadata`
+// jsonb column is no longer fetched whole; instead five named sub-keys
+// come back as top-level columns aliased to `metadata_<key>`.
 interface FakeRow {
   id: string;
   ipa: string | null;
   lemma: string;
-  metadata: { semantic_field?: string; word_freq?: string };
+  metadata_antonyms: unknown;
+  metadata_roots: unknown;
+  metadata_semantic_field: string | null;
+  metadata_synonyms: unknown;
+  metadata_word_freq: string | null;
   short_definition: string | null;
   slug: string;
   title: string;
@@ -38,7 +46,11 @@ const FULL_CORPUS: FakeRow[] = [
     id: "1",
     ipa: "/eɪ/",
     lemma: "alpha",
-    metadata: { semantic_field: "抽象关系", word_freq: "必备词" },
+    metadata_antonyms: null,
+    metadata_roots: null,
+    metadata_semantic_field: "抽象关系",
+    metadata_synonyms: null,
+    metadata_word_freq: "必备词",
     short_definition: "first letter",
     slug: "alpha",
     title: "alpha",
@@ -48,7 +60,11 @@ const FULL_CORPUS: FakeRow[] = [
     id: "2",
     ipa: "/biː/",
     lemma: "beta",
-    metadata: { semantic_field: "抽象关系", word_freq: "基础词" },
+    metadata_antonyms: null,
+    metadata_roots: null,
+    metadata_semantic_field: "抽象关系",
+    metadata_synonyms: null,
+    metadata_word_freq: "基础词",
     short_definition: "second letter",
     slug: "beta",
     title: "beta",
@@ -58,7 +74,11 @@ const FULL_CORPUS: FakeRow[] = [
     id: "3",
     ipa: "/siː/",
     lemma: "gamma",
-    metadata: { semantic_field: "理性世界", word_freq: "必备词" },
+    metadata_antonyms: null,
+    metadata_roots: null,
+    metadata_semantic_field: "理性世界",
+    metadata_synonyms: null,
+    metadata_word_freq: "必备词",
     short_definition: "third letter",
     slug: "gamma",
     title: "gamma",

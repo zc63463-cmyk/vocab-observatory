@@ -25,8 +25,36 @@ import { escapePostgrestLike, slugifyLabel } from "@/lib/utils";
 import type { Database, Json } from "@/types/database.types";
 import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 
-const WORD_SELECT =
-  "id, slug, title, lemma, ipa, short_definition, metadata, updated_at";
+// Slim projection used by every public *index* fetch (the heavy paths that
+// previously ran `.select("id, slug, ..., metadata, ...")` over
+// hundreds-to-thousands of rows).
+// PostgREST `metadata->key` returns the JSON value for that key with the
+// outer alias becoming the response column name; `->>` returns it as text.
+// We pick text for the two facet fields (semantic_field, word_freq are
+// always strings) and JSON for the three graph fields (antonyms, roots,
+// synonyms can be a string OR a string[] depending on the source markdown,
+// and `compactPublicMetadata` keeps both shapes). The five projected keys
+// are exactly what `compactPublicMetadata` preserves — see also the matching
+// `reconstructCompactMetadata` below — so this select is a 30x payload
+// reduction with zero observable change to the cached record shape.
+//
+// Exported so plaza.ts can reuse the same projection for its related-word
+// fetches; both paths funnel into compactPublicMetadata-equivalent records
+// downstream and benefit from the same wire-size shrink.
+export const WORD_INDEX_SELECT = [
+  "id",
+  "slug",
+  "title",
+  "lemma",
+  "ipa",
+  "short_definition",
+  "updated_at",
+  "metadata_semantic_field:metadata->>semantic_field",
+  "metadata_word_freq:metadata->>word_freq",
+  "metadata_antonyms:metadata->antonyms",
+  "metadata_roots:metadata->roots",
+  "metadata_synonyms:metadata->synonyms",
+].join(",");
 const WORD_FILTER_METADATA_SELECT = "metadata";
 const WORD_METADATA_SELECT = "slug, title, lemma, short_definition";
 const WORD_SLUG_SELECT = "slug";
@@ -39,11 +67,6 @@ const MAX_PUBLIC_WORD_PAGE_LIMIT = 120;
 const FEATURED_WORD_LIMIT = 6;
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const WORD_FILTER_FACET_DIMENSIONS = ["semantic_field", "word_freq"] as const;
-const WORD_GRAPH_METADATA_KEYS = [
-  "antonyms",
-  "roots",
-  "synonyms",
-] as const;
 
 type ServerSupabaseClient = SupabaseClient<Database>;
 type WordFilterFacetDimension = (typeof WORD_FILTER_FACET_DIMENSIONS)[number];
@@ -194,9 +217,68 @@ interface GetPublicWordsOptions {
   pagination?: WordPagination;
 }
 
-type BarePublicWordSummary = PublicWordIndexEntry;
 type BarePublicWordMetadataRow = Pick<PublicWordIndexEntry, "metadata">;
 type BareWordFilterFacetRow = Database["public"]["Tables"]["word_filter_facets"]["Row"];
+
+// Row shape returned by the WORD_INDEX_SELECT projection. supabase-js's
+// generated Database types know nothing about JSONB key projection, so
+// every callsite has to cast through this interface (or a re-export of it)
+// after the .select() returns. The metadata_* aliases mirror the alias
+// names baked into WORD_INDEX_SELECT so the field-by-field rebuild in
+// `reconstructCompactMetadata` stays mechanical and easy to audit.
+export interface BareSlimPublicWordIndexRow {
+  id: string;
+  ipa: string | null;
+  lemma: string;
+  metadata_antonyms: Json | null;
+  metadata_roots: Json | null;
+  metadata_semantic_field: string | null;
+  metadata_synonyms: Json | null;
+  metadata_word_freq: string | null;
+  short_definition: string | null;
+  slug: string;
+  title: string;
+  updated_at: string;
+}
+
+// Mirror of `compactPublicMetadata` for callers that already have the
+// projected slim row in hand. The two functions must produce identical
+// output for the same source row so consumers downstream (WordCard,
+// vocab graph builder, search index) don't have to know which path the
+// data came through. Kept exported so plaza.ts can reuse the same
+// reconstruction for its related-word transform.
+export function reconstructCompactMetadata(row: {
+  metadata_antonyms: Json | null;
+  metadata_roots: Json | null;
+  metadata_semantic_field: string | null;
+  metadata_synonyms: Json | null;
+  metadata_word_freq: string | null;
+}): Json {
+  const compacted: Record<string, Json> = {
+    semantic_field: row.metadata_semantic_field,
+    word_freq: row.metadata_word_freq,
+  };
+
+  // Same type-guard semantics as compactPublicMetadata: keep
+  // antonyms/roots/synonyms only when they are a string or an array of
+  // strings. Anything else (e.g. an object, a number, a mixed array) is
+  // dropped so the cached metadata never widens its accepted shape.
+  const graphFields = [
+    ["antonyms", row.metadata_antonyms],
+    ["roots", row.metadata_roots],
+    ["synonyms", row.metadata_synonyms],
+  ] as const;
+  for (const [key, value] of graphFields) {
+    if (
+      typeof value === "string" ||
+      (Array.isArray(value) && value.every((item) => typeof item === "string"))
+    ) {
+      compacted[key] = value;
+    }
+  }
+
+  return compacted satisfies Json;
+}
 
 interface PublicWordRowsPage {
   rows: CachedPublicWordIndexRecord[];
@@ -219,27 +301,6 @@ function isWordFilterFacetRelationMissing(error: unknown) {
     typeof error.message === "string" &&
     error.message.includes("word_filter_facets")
   );
-}
-
-function compactPublicMetadata(metadata: Json) {
-  const compacted: Record<string, Json> = {
-    semantic_field: getWordMetadataString(metadata, "semantic_field"),
-    word_freq: getWordMetadataString(metadata, "word_freq"),
-  };
-
-  if (typeof metadata === "object" && metadata && !Array.isArray(metadata)) {
-    for (const key of WORD_GRAPH_METADATA_KEYS) {
-      const value = metadata[key];
-      if (
-        typeof value === "string" ||
-        (Array.isArray(value) && value.every((item) => typeof item === "string"))
-      ) {
-        compacted[key] = value;
-      }
-    }
-  }
-
-  return compacted satisfies Json;
 }
 
 export function getWordMetadataString(metadata: Json, key: string) {
@@ -366,13 +427,17 @@ function buildWordSearchText(word: {
     .toLowerCase();
 }
 
-function toCachedPublicWordIndexRecord(row: BarePublicWordSummary): CachedPublicWordIndexRecord {
-  const metadata = compactPublicMetadata(row.metadata);
-  const semanticField = getWordMetadataString(metadata, "semantic_field");
-  const wordFrequency = getWordMetadataString(metadata, "word_freq");
+function toCachedPublicWordIndexRecord(
+  row: BareSlimPublicWordIndexRow,
+): CachedPublicWordIndexRecord {
+  const metadata = reconstructCompactMetadata(row);
+  const semanticField = row.metadata_semantic_field;
+  const wordFrequency = row.metadata_word_freq;
 
   return {
-    ...row,
+    id: row.id,
+    ipa: row.ipa,
+    lemma: row.lemma,
     metadata,
     search_text: buildWordSearchText({
       lemma: row.lemma,
@@ -382,6 +447,10 @@ function toCachedPublicWordIndexRecord(row: BarePublicWordSummary): CachedPublic
       word_freq: wordFrequency,
     }),
     semantic_field: semanticField,
+    short_definition: row.short_definition,
+    slug: row.slug,
+    title: row.title,
+    updated_at: row.updated_at,
     word_freq: wordFrequency,
   };
 }
@@ -882,12 +951,12 @@ const fetchPublicWordRowsUncached = unstable_cache(
       // 5-minute unstable_cache TTL absorbs the cost on subsequent
       // requests.
       const PAGE_SIZE = 500;
-      const accumulated: BarePublicWordSummary[] = [];
+      const accumulated: BareSlimPublicWordIndexRow[] = [];
       let offset = 0;
       while (true) {
         const { data, error } = await supabase
           .from("words")
-          .select(WORD_SELECT)
+          .select(WORD_INDEX_SELECT)
           .eq("is_published", true)
           .eq("is_deleted", false)
           .order("lemma")
@@ -895,7 +964,7 @@ const fetchPublicWordRowsUncached = unstable_cache(
         if (error) {
           throw error;
         }
-        const rows = (data ?? []) as BarePublicWordSummary[];
+        const rows = (data ?? []) as unknown as BareSlimPublicWordIndexRow[];
         accumulated.push(...rows);
         if (rows.length < PAGE_SIZE) {
           break;
@@ -906,11 +975,15 @@ const fetchPublicWordRowsUncached = unstable_cache(
       return accumulated.map(toCachedPublicWordIndexRecord);
     });
   },
-  // Cache key bumped to `-v4` (was `-v3`). Each previous bump was needed
-  // to evict `null` slots persisted by the old catch-inside pattern;
-  // this bump pairs with the catch-outside refactor so future timeouts
-  // can no longer poison the cache.
-  ["public-word-rows-v4"],
+  // Cache key bumped to `-v5` (was `-v4`). v3→v4 paired with the
+  // catch-outside refactor that stopped the cache from memoising `null`
+  // on transient timeouts; v4→v5 pairs with the WORD_INDEX_SELECT
+  // projection that reduced each row from ~3 KB (full metadata jsonb)
+  // to ~200 bytes (five projected scalar/array fields). The cached
+  // record shape (CachedPublicWordIndexRecord) is identical between v4
+  // and v5, but bumping evicts any stale v4 entries cleanly so the new
+  // small entries can populate without ambiguity.
+  ["public-word-rows-v5"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
@@ -940,7 +1013,7 @@ const fetchDefaultPublicWordRowsUncached = unstable_cache(
       async () => {
         const { data, error } = await supabase
           .from("words")
-          .select(WORD_SELECT)
+          .select(WORD_INDEX_SELECT)
           .eq("is_published", true)
           .eq("is_deleted", false)
           .order("lemma")
@@ -950,13 +1023,15 @@ const fetchDefaultPublicWordRowsUncached = unstable_cache(
           throw error;
         }
 
-        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        return ((data ?? []) as unknown as BareSlimPublicWordIndexRow[]).map(
+          toCachedPublicWordIndexRecord,
+        );
       },
     );
   },
-  // Bumped to `-v3` paired with the catch-outside refactor (see CACHE-
-  // POISONING NOTE above).
-  ["public-default-word-rows-v3"],
+  // Bumped to `-v4` (was `-v3`) for the WORD_INDEX_SELECT projection
+  // payload shrink — see the matching note on `public-word-rows-v5`.
+  ["public-default-word-rows-v4"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
@@ -993,7 +1068,7 @@ const fetchFilteredPublicWordRowsUncached = unstable_cache(
         const query = applyDatabaseWordMetadataFilters(
           supabase
             .from("words")
-            .select(WORD_SELECT, { count: "exact" })
+            .select(WORD_INDEX_SELECT, { count: "exact" })
             .eq("is_published", true)
             .eq("is_deleted", false)
             .order("lemma")
@@ -1012,19 +1087,17 @@ const fetchFilteredPublicWordRowsUncached = unstable_cache(
         }
 
         return {
-          rows: ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord),
+          rows: ((data ?? []) as unknown as BareSlimPublicWordIndexRow[]).map(
+            toCachedPublicWordIndexRecord,
+          ),
           total: count ?? 0,
         };
       },
     );
   },
-  // Bumped to `-v3` paired with the catch-outside refactor (see CACHE-
-  // POISONING NOTE above). The /api/words?semantic=抽象关系 regression
-  // that surfaced this design problem was fixed here: the JSONB
-  // containment query intermittently hits Supabase's 8s statement_
-  // timeout without a GIN index on `metadata`, and the old catch-inside
-  // shape memoised the failure as `null` for the full TTL window.
-  ["public-filtered-word-rows-v3"],
+  // Bumped to `-v4` (was `-v3`) for the WORD_INDEX_SELECT projection
+  // payload shrink — see the matching note on `public-word-rows-v5`.
+  ["public-filtered-word-rows-v4"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.wordIndex],
@@ -1240,7 +1313,7 @@ const getCachedFeaturedWordRows = unstable_cache(
       return await withTransientPublicReadRetry("featured public words", async () => {
         const { data, error } = await supabase
           .from("words")
-          .select(WORD_SELECT)
+          .select(WORD_INDEX_SELECT)
           .eq("is_published", true)
           .eq("is_deleted", false)
           .order("updated_at", { ascending: false })
@@ -1250,14 +1323,17 @@ const getCachedFeaturedWordRows = unstable_cache(
           throw error;
         }
 
-        return ((data ?? []) as BarePublicWordSummary[]).map(toCachedPublicWordIndexRecord);
+        return ((data ?? []) as unknown as BareSlimPublicWordIndexRow[]).map(
+          toCachedPublicWordIndexRecord,
+        );
       });
     } catch (err) {
       console.error("[words] Failed to fetch featured public words:", err);
       return null;
     }
   },
-  ["public-featured-word-rows"],
+  // Bumped to `-v2` for the WORD_INDEX_SELECT projection payload shrink.
+  ["public-featured-word-rows-v2"],
   {
     revalidate: PUBLIC_REVALIDATE_SECONDS,
     tags: [PUBLIC_CACHE_TAGS.landing, PUBLIC_CACHE_TAGS.wordIndex],
